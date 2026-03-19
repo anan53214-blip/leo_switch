@@ -1,0 +1,58 @@
+{
+  "source": "results/full_train_v2/training_history.json",
+  "window": 10,
+  "num_training_records": 32,
+  "num_eval_records": 3,
+  "config": {
+    "exp_name": "han_mappo_standard",
+    "seed": 42,
+    "device": "cuda",
+    "num_planes": 6,
+    "sats_per_plane": 11,
+    "altitude_km": 550.0,
+    "inclination_deg": 53.0,
+    "num_users": 10,
+    "max_steps": 2000,
+    "time_step_sec": 1.0,
+    "max_visible_sats": 10,
+    "han_hidden_dim": 64,
+    "han_out_dim": 64,
+    "han_num_heads": 4,
+    "han_num_layers": 2,
+    "han_dropout": 0.1,
+    "actor_hidden_dims": [
+      256,
+      128
+    ],
+    "critic_hidden_dims": [
+      256,
+      256,
+      128
+    ],
+    "learning_rate": 5e-05,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "value_loss_coef": 0.5,
+    "entropy_coef": 0.05,
+    "max_grad_norm": 0.5,
+    "n_epochs": 4,
+    "batch_size": 128,
+    "total_timesteps": 1000000,
+    "n_steps": 2048,
+    "eval_interval": 20000,
+    "eval_episodes": 5,
+    "save_interval": 100000,
+    "log_interval": 1,
+    "save_path": "results/full_train_v2",
+    "log_path": "results/logs",
+    "load_path": null,
+    "early_stop_patience": 30
+  },
+  "summary": {
+    "total_steps": 65536,
+    "total_episodes": 32,
+    "best_reward": 263.9425051747255,
+    "training_time_sec": 9545.153693199158
+  }
+}
