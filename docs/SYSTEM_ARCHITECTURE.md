@@ -1,7 +1,7 @@
 # LEO 卫星网络 HAN+MAPPO 联合优化系统 — 完整技术文档
 
-> **文档版本**: v3.0  
-> **更新日期**: 2026-03-11  
+> **文档版本**: v3.1  
+> **更新日期**: 2026-03-23  
 > **适用范围**: 系统架构、模块设计、数据流、参数规格  
 > **说明**: 本文档内容已与代码逐行校对，以代码为准
 
@@ -116,7 +116,7 @@ $$
 
 #### 3.1.2 地面用户 (`user.py`)
 
-- **用户数**: 可配置 (3~20)，默认 5
+- **用户数**: 可配置 (3~20)，`train.py` 默认 5；`run_server_training.py` 标准方案默认 10
 - **分布区域**: 北京 (39.9°N, 116.4°E) 为中心，半径约 100 km
 - **状态机**: `IDLE → CONNECTED ⇄ HANDOVER → BLOCKED`
 - **每个用户是一个独立智能体**
@@ -293,7 +293,7 @@ SNR = 接收功率 - 噪声功率
 参数量: 183,169
 ```
 
-#### PPO 更新
+#### PPO 更新（`train.py` 默认）
 
 | 超参数 | 默认值 | 说明 |
 |--------|--------|------|
@@ -305,6 +305,30 @@ SNR = 接收功率 - 噪声功率
 | `batch_size` | 64 | 小批量大小 |
 | `entropy_coef` | 0.01 | 熵正则系数 |
 | `max_grad_norm` | 0.5 | 梯度裁剪 |
+
+#### 训练与早停参数（`train.py` 默认）
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `num_users` | 5 | 默认用户数 |
+| `max_steps` | 1000 | 每个 episode 最大步数 |
+| `total_timesteps` | 500,000 | 总训练步数 |
+| `n_steps` | 2048 | 每次更新收集步数 |
+| `eval_interval` | 10,000 | 评估间隔 |
+| `eval_episodes` | 5 | 每次评估 episode 数 |
+| `save_interval` | 50,000 | 检查点保存间隔 |
+| `save_path` | `results/models` | 默认模型输出目录 |
+| `log_path` | `results/logs` | 默认日志目录 |
+| `early_stop_patience` | 30 | 连续 N 次更新无改善则提前停止（0=禁用） |
+
+#### 服务器训练方案参数（`run_server_training.py`）
+
+| 方案 | 用户数 | `max_steps` | `total_timesteps` | `n_steps` | `batch_size` | `early_stop_patience` | 输出目录 |
+|------|--------|-------------|-------------------|-----------|--------------|-----------------------|----------|
+| `quick` | 5 | 1000 | 100,000 | 1024 | 64 | 15 | `results/quick_test` |
+| `standard` | 10 | 2000 | 1,000,000 | 2048 | 64 | 50 | `results/full_train_v4` |
+| `large` | 20 | 3000 | 2,000,000 | 4096 | 256 | 50 | `results/large_train` |
+| `multi_seed` | 基于 standard | 同 standard | 同 standard（可被 `--steps` 覆盖） | 同 standard | 同 standard | 同 standard | `results/multi_seed/seed_*` |
 
 ---
 
