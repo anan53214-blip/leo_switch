@@ -178,11 +178,25 @@ def format_steps(x, _):
         return f'{x:.0f}'
 
 
+def detect_objective(config: Dict) -> str:
+    """根据训练配置推断优化目标类型。"""
+    exp_name = str(config.get('exp_name', '')).lower()
+    save_path = str(config.get('save_path', '')).lower()
+
+    combined = f"{exp_name} {save_path}"
+    if 'delay_only' in combined:
+        return 'delay_only'
+    if 'energy_only' in combined:
+        return 'energy_only'
+    return 'multi_objective'
+
+
 # ============================================================
 # 单独图表绘制函数
 # ============================================================
 
-def plot_reward_curve(records: List[Dict], window: int, save_dir: Path):
+def plot_reward_curve(records: List[Dict], window: int, save_dir: Path,
+                      objective: str = 'multi_objective'):
     """
     图1: 奖励收敛曲线
     - 原始 episode 奖励（浅色）
@@ -205,8 +219,18 @@ def plot_reward_curve(records: List[Dict], window: int, save_dir: Path):
             label=f'Moving Avg (w={window})')
     
     ax.set_xlabel('Training Steps')
-    ax.set_ylabel('Mean Episode Reward')
-    ax.set_title('Reward Convergence')
+    if objective == 'delay_only':
+        ylabel = 'Objective Reward (-ΔDelay)'
+        title = 'Delay-Only Objective Convergence'
+    elif objective == 'energy_only':
+        ylabel = 'Objective Reward (-ΔEnergy)'
+        title = 'Energy-Only Objective Convergence'
+    else:
+        ylabel = 'Mean Episode Reward'
+        title = 'Reward Convergence'
+
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
     ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
     ax.legend(loc='lower right')
     
@@ -330,7 +354,8 @@ def plot_handover_task(records: List[Dict], window: int, save_dir: Path):
     print("  ✓ handover_task_rate.png / .pdf")
 
 
-def plot_delay_energy(records: List[Dict], window: int, save_dir: Path):
+def plot_delay_energy(records: List[Dict], window: int, save_dir: Path,
+                      objective: str = 'multi_objective'):
     """
     图5: 平均时延 & 能耗曲线
     """
@@ -338,24 +363,58 @@ def plot_delay_energy(records: List[Dict], window: int, save_dir: Path):
     _, total_energy = extract_series(records, 'total_energy')
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
-    
-    # 平均时延
     delay_ms = avg_delay * 1000  # 转毫秒
-    ax1.plot(steps, smooth(delay_ms, window), color=COLORS['info'], linewidth=1.8)
-    mean_d, lower_d, upper_d = compute_confidence_band(delay_ms, window)
-    ax1.fill_between(steps, lower_d, upper_d, alpha=COLORS['fill_alpha'],
-                     color=COLORS['info'])
-    ax1.set_xlabel('Training Steps')
-    ax1.set_ylabel('Avg Delay (ms)')
-    ax1.set_title('Average Task Delay')
-    ax1.xaxis.set_major_formatter(FuncFormatter(format_steps))
-    
-    # 能耗
-    ax2.plot(steps, smooth(total_energy, window), color=COLORS['warning'], linewidth=1.8)
-    ax2.set_xlabel('Training Steps')
-    ax2.set_ylabel('Total Energy (J)')
-    ax2.set_title('Energy Consumption per Episode')
-    ax2.xaxis.set_major_formatter(FuncFormatter(format_steps))
+
+    if objective == 'delay_only':
+        # 左图主指标：时延
+        ax1.plot(steps, smooth(delay_ms, window), color=COLORS['info'], linewidth=2.0)
+        mean_d, lower_d, upper_d = compute_confidence_band(delay_ms, window)
+        ax1.fill_between(steps, lower_d, upper_d, alpha=COLORS['fill_alpha'],
+                         color=COLORS['info'])
+        ax1.set_xlabel('Training Steps')
+        ax1.set_ylabel('Avg Delay (ms)')
+        ax1.set_title('Primary Objective: Delay')
+        ax1.xaxis.set_major_formatter(FuncFormatter(format_steps))
+
+        # 右图参考指标：能耗
+        ax2.plot(steps, smooth(total_energy, window), color=COLORS['warning'], linewidth=1.6)
+        ax2.set_xlabel('Training Steps')
+        ax2.set_ylabel('Total Energy (J)')
+        ax2.set_title('Reference Metric: Energy')
+        ax2.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    elif objective == 'energy_only':
+        # 左图主指标：能耗
+        ax1.plot(steps, smooth(total_energy, window), color=COLORS['warning'], linewidth=2.0)
+        ax1.set_xlabel('Training Steps')
+        ax1.set_ylabel('Total Energy (J)')
+        ax1.set_title('Primary Objective: Energy')
+        ax1.xaxis.set_major_formatter(FuncFormatter(format_steps))
+
+        # 右图参考指标：时延
+        ax2.plot(steps, smooth(delay_ms, window), color=COLORS['info'], linewidth=1.6)
+        mean_d, lower_d, upper_d = compute_confidence_band(delay_ms, window)
+        ax2.fill_between(steps, lower_d, upper_d, alpha=COLORS['fill_alpha'],
+                         color=COLORS['info'])
+        ax2.set_xlabel('Training Steps')
+        ax2.set_ylabel('Avg Delay (ms)')
+        ax2.set_title('Reference Metric: Delay')
+        ax2.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    else:
+        # 默认多目标
+        ax1.plot(steps, smooth(delay_ms, window), color=COLORS['info'], linewidth=1.8)
+        mean_d, lower_d, upper_d = compute_confidence_band(delay_ms, window)
+        ax1.fill_between(steps, lower_d, upper_d, alpha=COLORS['fill_alpha'],
+                         color=COLORS['info'])
+        ax1.set_xlabel('Training Steps')
+        ax1.set_ylabel('Avg Delay (ms)')
+        ax1.set_title('Average Task Delay')
+        ax1.xaxis.set_major_formatter(FuncFormatter(format_steps))
+
+        ax2.plot(steps, smooth(total_energy, window), color=COLORS['warning'], linewidth=1.8)
+        ax2.set_xlabel('Training Steps')
+        ax2.set_ylabel('Total Energy (J)')
+        ax2.set_title('Energy Consumption per Episode')
+        ax2.xaxis.set_major_formatter(FuncFormatter(format_steps))
     
     fig.tight_layout()
     fig.savefig(save_dir / 'delay_energy.png')
@@ -426,7 +485,8 @@ def plot_clip_fraction(records: List[Dict], window: int, save_dir: Path):
 # ============================================================
 
 def plot_dashboard(records: List[Dict], eval_records: List[Dict],
-                   window: int, save_dir: Path, summary: Dict):
+                   window: int, save_dir: Path, summary: Dict,
+                   objective: str = 'multi_objective'):
     """
     图8: 6合1综合仪表盘
     
@@ -455,9 +515,19 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     ax.plot(steps, rewards, alpha=0.2, color=COLORS['primary'], linewidth=0.6)
     mean_r = smooth(rewards, window)
     ax.plot(steps, mean_r, color=COLORS['primary'], linewidth=2)
-    ax.set_title('Reward Convergence')
+    if objective == 'delay_only':
+        reward_title = 'Delay Objective Reward'
+        reward_ylabel = '-ΔDelay Reward'
+    elif objective == 'energy_only':
+        reward_title = 'Energy Objective Reward'
+        reward_ylabel = '-ΔEnergy Reward'
+    else:
+        reward_title = 'Reward Convergence'
+        reward_ylabel = 'Reward'
+
+    ax.set_title(reward_title)
     ax.set_xlabel('Steps')
-    ax.set_ylabel('Reward')
+    ax.set_ylabel(reward_ylabel)
     ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
     
     # ---- (0,1) Loss 曲线 ----
@@ -511,7 +581,14 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     ax_e.plot(steps, smooth(total_energy, window), color=COLORS['warning'],
               linewidth=1.5, label='Energy (J)')
     ax_e.spines['right'].set_visible(True)
-    ax.set_title('Delay & Energy')
+    if objective == 'delay_only':
+        de_title = 'Primary: Delay | Ref: Energy'
+    elif objective == 'energy_only':
+        de_title = 'Primary: Energy | Ref: Delay'
+    else:
+        de_title = 'Delay & Energy'
+
+    ax.set_title(de_title)
     ax.set_xlabel('Steps')
     ax.set_ylabel('Delay (ms)', color=COLORS['info'])
     ax_e.set_ylabel('Energy (J)', color=COLORS['warning'])
@@ -549,7 +626,14 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
                 fontfamily='monospace',
                 bbox=dict(boxstyle='round,pad=0.8', facecolor='#f5f5f5', alpha=0.8))
     
-    fig.suptitle('HAN+MAPPO LEO Satellite Network Training Dashboard', fontsize=16, fontweight='bold', y=0.98)
+    if objective == 'delay_only':
+        dashboard_title = 'HAN+MAPPO LEO Training Dashboard (Delay-Only Objective)'
+    elif objective == 'energy_only':
+        dashboard_title = 'HAN+MAPPO LEO Training Dashboard (Energy-Only Objective)'
+    else:
+        dashboard_title = 'HAN+MAPPO LEO Satellite Network Training Dashboard'
+
+    fig.suptitle(dashboard_title, fontsize=16, fontweight='bold', y=0.98)
     fig.savefig(save_dir / 'dashboard.png')
     fig.savefig(save_dir / 'dashboard.pdf')
     plt.close(fig)
@@ -659,6 +743,7 @@ def generate_all_plots(history_path: str, output_dir: str, window: int = 10):
     eval_records = data.get('evaluation', [])
     summary = data.get('summary', {})
     config = data.get('config', {})
+    objective = detect_objective(config)
     
     if not records:
         print("错误: 训练历史为空，无法生成图表。")
@@ -668,6 +753,7 @@ def generate_all_plots(history_path: str, output_dir: str, window: int = 10):
     print(f"  评估记录: {len(eval_records)} 条")
     print(f"  总步数:   {summary.get('total_steps', 'N/A')}")
     print(f"  最佳奖励: {summary.get('best_reward', 'N/A')}")
+    print(f"  目标类型: {objective}")
     print()
     
     # 创建输出目录
@@ -676,14 +762,14 @@ def generate_all_plots(history_path: str, output_dir: str, window: int = 10):
     
     # 生成各图
     print("生成图表:")
-    plot_reward_curve(records, window, save_dir)
+    plot_reward_curve(records, window, save_dir, objective=objective)
     plot_loss_curves(records, window, save_dir)
     plot_entropy_kl(records, window, save_dir)
     plot_handover_task(records, window, save_dir)
-    plot_delay_energy(records, window, save_dir)
+    plot_delay_energy(records, window, save_dir, objective=objective)
     plot_eval_curve(eval_records, save_dir)
     plot_clip_fraction(records, window, save_dir)
-    plot_dashboard(records, eval_records, window, save_dir, summary)
+    plot_dashboard(records, eval_records, window, save_dir, summary, objective=objective)
     
     # 保存配置信息
     info_path = save_dir / 'plot_info.json'
@@ -695,6 +781,7 @@ def generate_all_plots(history_path: str, output_dir: str, window: int = 10):
             'num_eval_records': len(eval_records),
             'config': config,
             'summary': summary,
+            'objective': objective,
         }, f, ensure_ascii=False, indent=2)
     
     print(f"\n所有图表已保存至: {save_dir}")

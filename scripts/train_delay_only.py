@@ -14,6 +14,7 @@
 import sys
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 import torch
 
@@ -29,6 +30,25 @@ except ModuleNotFoundError:
     # 兼容 `python scripts/train_delay_only.py` 直接执行场景
     from train import TrainConfig, HANMAPPOTrainer
 from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
+
+
+def generate_plots(save_path: str, window: int = 10):
+    """训练/评估结束后生成可视化图表。"""
+    try:
+        from scripts.plot_results import generate_all_plots, setup_plot_style
+    except ModuleNotFoundError:
+        from plot_results import generate_all_plots, setup_plot_style
+
+    history_file = Path(save_path) / "training_history.json"
+    output_dir = Path(save_path) / "figures"
+
+    if not history_file.exists():
+        print(f"[WARNING] 找不到训练历史: {history_file}")
+        return
+
+    setup_plot_style()
+    generate_all_plots(str(history_file), str(output_dir), window=window)
+    print(f"图表已保存至: {output_dir}")
 
 
 class DelayOnlyEnv(LEOSatelliteEnv):
@@ -105,10 +125,17 @@ def parse_args():
     parser.add_argument("--han_num_heads", type=int, default=4, help="注意力头数")
     parser.add_argument("--han_num_layers", type=int, default=2, help="HAN层数")
 
-    parser.add_argument("--save_path", type=str, default="results/delay_only_train", help="模型保存路径")
+    parser.add_argument("--save_path", type=str, default=None,
+                        help="模型保存路径（显式指定时将直接使用）")
+    parser.add_argument("--save_root", type=str, default="results/delay_only_train",
+                        help="未指定save_path时的结果根目录，将自动创建时间戳子目录")
+    parser.add_argument("--run_name", type=str, default=None,
+                        help="运行名（用于自动目录名后缀，默认使用时间戳）")
     parser.add_argument("--load_path", type=str, default=None, help="加载检查点路径")
     parser.add_argument("--eval_interval", type=int, default=10000, help="评估间隔")
     parser.add_argument("--eval_only", action="store_true", help="仅评估，不训练")
+    parser.add_argument("--no_plot", action="store_true", help="结束后不自动生成可视化图表")
+    parser.add_argument("--plot_window", type=int, default=10, help="绘图平滑窗口大小")
 
     return parser.parse_args()
 
@@ -130,7 +157,9 @@ def build_config(args) -> TrainConfig:
     config.han_hidden_dim = args.han_hidden_dim
     config.han_num_heads = args.han_num_heads
     config.han_num_layers = args.han_num_layers
-    config.save_path = args.save_path
+    run_suffix = args.run_name or datetime.now().strftime("%Y%m%d_%H%M%S")
+    auto_save_path = Path(args.save_root) / f"{args.exp_name}_{run_suffix}"
+    config.save_path = args.save_path if args.save_path else str(auto_save_path)
     config.load_path = args.load_path
     config.eval_interval = args.eval_interval
     return config
@@ -139,6 +168,7 @@ def build_config(args) -> TrainConfig:
 def main():
     args = parse_args()
     config = build_config(args)
+    print(f"[INFO] 本次结果路径: {config.save_path}")
 
     trainer = DelayOnlyTrainer(config)
 
@@ -149,6 +179,9 @@ def main():
         trainer._evaluate()
     else:
         trainer.train()
+
+    if not args.no_plot:
+        generate_plots(config.save_path, window=args.plot_window)
 
 
 if __name__ == "__main__":

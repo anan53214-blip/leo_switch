@@ -115,3 +115,82 @@ C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_energy_only.py
   - `num_users` / `max_steps` / `total_timesteps`
   - 评估间隔与评估 episode 数
 - 可扩展参数化版本（如 `--objective delay|energy`），减少脚本维护成本。
+
+---
+
+## 8. 二次增量更新（2026-03-27）
+
+本节记录在上述基础上新增的能力，确保服务器训练流程与 `run_server_training.py` 的体验一致。
+
+### 8.1 训练结果目录策略升级（每次运行独立目录）
+
+已在以下文件生效：
+
+- `scripts/train_delay_only.py`
+- `scripts/train_energy_only.py`
+
+新增参数：
+
+- `--save_path`：显式指定最终保存目录（优先级最高）
+- `--save_root`：当未指定 `save_path` 时的结果根目录
+- `--run_name`：运行名后缀（未指定时默认使用时间戳）
+
+默认行为：
+
+- 若未指定 `--save_path`，每次训练都会自动生成独立目录：
+  - Delay-only: `results/delay_only_train/<exp_name>_<timestamp>`
+  - Energy-only: `results/energy_only_train/<exp_name>_<timestamp>`
+
+这样可避免不同实验互相覆盖，并便于后续批量对比。
+
+### 8.2 自动可视化增强
+
+两个单目标脚本均支持训练结束后自动调用绘图：
+
+- 默认：自动生成图表
+- `--no_plot`：关闭自动绘图
+- `--plot_window`：指定平滑窗口大小
+
+图表输出目录固定为：`<save_path>/figures`。
+
+### 8.3 `plot_results.py` 单目标语义适配
+
+已在 `scripts/plot_results.py` 增加目标识别与图表语义调整：
+
+- 自动识别 `delay_only` / `energy_only` / `multi_objective`
+- 在单目标场景下：
+  - 奖励图标题与纵轴改为目标奖励语义（如 `-ΔDelay` / `-ΔEnergy`）
+  - Delay/Energy 双图中，主优化指标作为主展示，另一项作为参考指标
+  - Dashboard 总标题和关键子图标题按目标类型切换
+- 在 `plot_info.json` 中新增 `objective` 字段
+
+### 8.4 图表标题与坐标轴语言规范
+
+按当前要求，图内文本（`set_xlabel` / `set_ylabel` / `set_title` / `suptitle`）统一使用英文。
+
+说明：中文主要保留在注释、文档字符串和终端提示，不影响图表论文展示。
+
+---
+
+## 9. 更新后的运行示例
+
+### 9.1 自动创建独立结果目录（推荐）
+
+```powershell
+C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_delay_only.py --total_timesteps 500000 --num_users 10
+C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_energy_only.py --total_timesteps 500000 --num_users 10
+```
+
+### 9.2 指定结果根目录 + 自定义运行名
+
+```powershell
+C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_delay_only.py --save_root results/delay_only_train --run_name server_run_01
+C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_energy_only.py --save_root results/energy_only_train --run_name server_run_01
+```
+
+### 9.3 显式指定最终目录（手动管理）
+
+```powershell
+C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_delay_only.py --save_path results/my_delay_exp
+C:/Users/19704/.conda/envs/satellite.env/python.exe scripts/train_energy_only.py --save_path results/my_energy_exp
+```
