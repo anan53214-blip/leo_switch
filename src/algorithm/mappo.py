@@ -79,6 +79,9 @@ class MAPPOConfig:
     clip_range: float = 0.2             # PPO clip范围
     clip_range_vf: Optional[float] = None  # 价值函数clip（None则不clip）
     target_kl: Optional[float] = 0.02   # 目标KL散度（早停），防止策略偏移过大
+    value_loss_type: str = 'huber'      # 价值损失: mse / huber
+    normalize_returns: bool = True      # 价值损失前是否标准化returns
+    value_huber_beta: float = 10.0      # Huber beta（仅huber生效）
     
     # ---------- 损失系数 ----------
     value_loss_coef: float = 0.5        # 价值损失系数 c1
@@ -347,19 +350,36 @@ class MAPPO:
                 obs_dim = self.config.obs_dim
                 gs_reshaped = global_states.view(-1, num_agents, obs_dim)
                 new_values = self.critic(gs_reshaped, satellite_embeddings).squeeze(-1)  # (batch,)
+
+                # 可选：标准化returns，降低critic loss量级和训练抖动
+                if self.config.normalize_returns:
+                    returns_mean = returns.mean()
+                    returns_std = returns.std() + 1e-8
+                    returns_for_loss = (returns - returns_mean) / returns_std
+                    new_values_for_loss = (new_values - returns_mean) / returns_std
+                    old_values_for_loss = (old_values - returns_mean) / returns_std
+                else:
+                    returns_for_loss = returns
+                    new_values_for_loss = new_values
+                    old_values_for_loss = old_values
+
+                def _value_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+                    if self.config.value_loss_type == 'huber':
+                        return F.smooth_l1_loss(pred, target, beta=self.config.value_huber_beta)
+                    return F.mse_loss(pred, target)
                 
                 if self.config.clip_range_vf is not None:
                     # Clipped value loss
-                    values_clipped = old_values + torch.clamp(
-                        new_values - old_values,
+                    values_clipped = old_values_for_loss + torch.clamp(
+                        new_values_for_loss - old_values_for_loss,
                         -self.config.clip_range_vf,
                         self.config.clip_range_vf
                     )
-                    value_loss1 = F.mse_loss(new_values, returns)
-                    value_loss2 = F.mse_loss(values_clipped, returns)
+                    value_loss1 = _value_loss(new_values_for_loss, returns_for_loss)
+                    value_loss2 = _value_loss(values_clipped, returns_for_loss)
                     critic_loss = torch.max(value_loss1, value_loss2)
                 else:
-                    critic_loss = F.mse_loss(new_values, returns)
+                    critic_loss = _value_loss(new_values_for_loss, returns_for_loss)
                 
                 # ---------- 总损失（entropy_coef 线性衰减）----------
                 entropy_coef = self.config.entropy_coef * max(1.0 - self.train_step / 300, 0.1)

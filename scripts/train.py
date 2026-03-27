@@ -108,7 +108,11 @@ class TrainConfig:
     gamma: float = 0.99                   # 折扣因子
     gae_lambda: float = 0.95              # GAE参数
     clip_range: float = 0.2               # PPO clip
+    clip_range_vf: Optional[float] = 0.2  # 价值函数clip（抑制Critic剧烈波动）
     value_loss_coef: float = 0.5          # 值函数损失系数
+    value_loss_type: str = "huber"       # 值函数损失类型: mse/huber
+    normalize_returns: bool = True        # 是否标准化returns后再计算value loss
+    value_huber_beta: float = 10.0        # Huber损失beta（仅value_loss_type=huber时有效）
     entropy_coef: float = 0.01            # 熵系数（v4: 从0.05降至0.01）
     max_grad_norm: float = 0.5            # 梯度裁剪
     n_epochs: int = 10                    # 更新轮数（v4: 从4增至10）
@@ -119,6 +123,7 @@ class TrainConfig:
     n_steps: int = 2048                   # 每次更新收集步数
     eval_interval: int = 10_000           # 评估间隔
     eval_episodes: int = 5                # 评估episode数
+    graph_update_interval: int = 20       # 图重建间隔（步），增大可提速
     save_interval: int = 50_000           # 保存间隔
     log_interval: int = 1                 # 日志间隔
     
@@ -339,7 +344,11 @@ class HANMAPPOTrainer:
             actor_hidden_dims=list(self.config.actor_hidden_dims),
             critic_hidden_dims=list(self.config.critic_hidden_dims),
             clip_range=self.config.clip_range,
+            clip_range_vf=self.config.clip_range_vf,
             value_loss_coef=self.config.value_loss_coef,
+            value_loss_type=self.config.value_loss_type,
+            normalize_returns=self.config.normalize_returns,
+            value_huber_beta=self.config.value_huber_beta,
             entropy_coef=self.config.entropy_coef,
             learning_rate=self.config.learning_rate,
             max_grad_norm=self.config.max_grad_norm,
@@ -439,7 +448,7 @@ class HANMAPPOTrainer:
         性能优化：HAN编码每 graph_update_interval 步才重新计算一次，
         中间步骤只更新轻量级特征（task/rvt/available_actions）。
         """
-        graph_update_interval = 10  # 每10步重建一次图+HAN
+        graph_update_interval = max(1, int(self.config.graph_update_interval))
         
         need_full_update = (
             not hasattr(self, '_cached_han_user_embed') or
@@ -563,14 +572,15 @@ class HANMAPPOTrainer:
             
             # 处理奖励（可以是标量或数组）
             if isinstance(rewards, (int, float)):
-                reward = float(rewards)
-                agent_rewards = np.full(self.num_agents, reward)
+                shared_reward = float(rewards)
+                agent_rewards = np.full(self.num_agents, shared_reward)
             elif isinstance(rewards, dict):
                 agent_rewards = np.array([rewards.get(f'user_{i}', 0) for i in range(self.num_agents)])
-                reward = np.sum(agent_rewards)
             else:
                 agent_rewards = np.array(rewards)
-                reward = np.sum(agent_rewards)
+
+            # 统计口径：使用每步全局平均奖励（避免多智能体重复求和导致量纲放大）
+            reward = float(np.mean(agent_rewards))
             
             # 追踪每步奖励
             step_rewards.append(reward)
@@ -665,6 +675,8 @@ class HANMAPPOTrainer:
         self.logger.info("开始训练")
         self.logger.info(f"  总步数: {self.config.total_timesteps:,}")
         self.logger.info(f"  每轮步数: {self.config.n_steps}")
+        self.logger.info(f"  图更新间隔: {self.config.graph_update_interval}")
+        self.logger.info(f"  评估episodes: {self.config.eval_episodes}")
         self.logger.info(f"  设备: {self.device}")
         self.logger.info("=" * 60)
         
@@ -987,6 +999,14 @@ def parse_args():
     # 评估
     parser.add_argument('--eval_interval', type=int, default=10000,
                         help='评估间隔')
+    parser.add_argument('--eval_episodes', type=int, default=5,
+                        help='每次评估的episode数')
+    parser.add_argument('--graph_update_interval', type=int, default=20,
+                        help='图重建间隔（步），增大可提速')
+    parser.add_argument('--value_loss_type', type=str, default='huber', choices=['mse', 'huber'],
+                        help='Critic损失类型')
+    parser.add_argument('--disable_return_norm', action='store_true',
+                        help='禁用returns标准化（默认开启）')
     parser.add_argument('--eval_only', action='store_true',
                         help='仅评估，不训练')
     
@@ -1021,6 +1041,10 @@ def main():
     config.save_path = args.save_path
     config.load_path = args.load_path
     config.eval_interval = args.eval_interval
+    config.eval_episodes = args.eval_episodes
+    config.graph_update_interval = args.graph_update_interval
+    config.value_loss_type = args.value_loss_type
+    config.normalize_returns = not args.disable_return_norm
     
     # 创建训练器
     trainer = HANMAPPOTrainer(config)

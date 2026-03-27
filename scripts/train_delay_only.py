@@ -133,6 +133,8 @@ def parse_args():
                         help="运行名（用于自动目录名后缀，默认使用时间戳）")
     parser.add_argument("--load_path", type=str, default=None, help="加载检查点路径")
     parser.add_argument("--eval_interval", type=int, default=10000, help="评估间隔")
+    parser.add_argument("--eval_episodes", type=int, default=2, help="每次评估episode数（默认2以提速）")
+    parser.add_argument("--graph_update_interval", type=int, default=20, help="图重建间隔（步），增大可提速")
     parser.add_argument("--eval_only", action="store_true", help="仅评估，不训练")
     parser.add_argument("--no_plot", action="store_true", help="结束后不自动生成可视化图表")
     parser.add_argument("--plot_window", type=int, default=10, help="绘图平滑窗口大小")
@@ -162,6 +164,8 @@ def build_config(args) -> TrainConfig:
     config.save_path = args.save_path if args.save_path else str(auto_save_path)
     config.load_path = args.load_path
     config.eval_interval = args.eval_interval
+    config.eval_episodes = args.eval_episodes
+    config.graph_update_interval = args.graph_update_interval
     return config
 
 
