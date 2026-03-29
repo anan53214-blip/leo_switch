@@ -54,16 +54,41 @@ def generate_plots(save_path: str, window: int = 10):
 class DelayOnlyEnv(LEOSatelliteEnv):
     """时延单目标环境：奖励仅由时延增量决定。"""
 
+    def __init__(
+        self,
+        config: EnvConfig,
+        delay_violation_penalty: float = 5.0,
+        failed_handover_penalty: float = 1.0,
+    ):
+        super().__init__(config)
+        # 以“秒”为量纲的时延代理惩罚，防止策略通过牺牲服务质量规避时延
+        self.delay_violation_penalty = float(delay_violation_penalty)
+        self.failed_handover_penalty = float(failed_handover_penalty)
+
     def step(self, actions):
         prev_delay = float(self.stats.get("total_delay", 0.0))
+        prev_violations = int(self.stats.get("deadline_violations", 0))
+        prev_failed_ho = int(self.stats.get("failed_handovers", 0))
+
         observation, _raw_reward, terminated, truncated, info = super().step(actions)
 
         delay_increment = max(float(self.stats.get("total_delay", 0.0)) - prev_delay, 0.0)
-        objective_reward = -delay_increment
+        violation_increment = max(int(self.stats.get("deadline_violations", 0)) - prev_violations, 0)
+        failed_ho_increment = max(int(self.stats.get("failed_handovers", 0)) - prev_failed_ho, 0)
+
+        delay_equivalent_cost = (
+            delay_increment
+            + self.delay_violation_penalty * violation_increment
+            + self.failed_handover_penalty * failed_ho_increment
+        )
+        objective_reward = -delay_equivalent_cost
 
         info = dict(info)
         info["objective"] = "delay_only"
         info["delay_increment"] = delay_increment
+        info["violation_increment"] = violation_increment
+        info["failed_handover_increment"] = failed_ho_increment
+        info["delay_equivalent_cost"] = delay_equivalent_cost
         info["objective_reward"] = objective_reward
 
         return observation, objective_reward, terminated, truncated, info
@@ -90,7 +115,11 @@ class DelayOnlyTrainer(HANMAPPOTrainer):
             reward_qos_weight=0.0,
         )
 
-        self.env = DelayOnlyEnv(env_config)
+        self.env = DelayOnlyEnv(
+            env_config,
+            delay_violation_penalty=getattr(self.config, "delay_violation_penalty", 5.0),
+            failed_handover_penalty=getattr(self.config, "failed_handover_penalty", 1.0),
+        )
 
         # 与父类保持一致
         self.num_agents = self.config.num_users
@@ -135,6 +164,10 @@ def parse_args():
     parser.add_argument("--eval_interval", type=int, default=10000, help="评估间隔")
     parser.add_argument("--eval_episodes", type=int, default=2, help="每次评估episode数（默认2以提速）")
     parser.add_argument("--graph_update_interval", type=int, default=20, help="图重建间隔（步），增大可提速")
+    parser.add_argument("--delay_violation_penalty", type=float, default=5.0,
+                        help="每个deadline violation的时延等价值惩罚")
+    parser.add_argument("--failed_handover_penalty", type=float, default=1.0,
+                        help="每个failed handover的时延等价值惩罚")
     parser.add_argument("--eval_only", action="store_true", help="仅评估，不训练")
     parser.add_argument("--no_plot", action="store_true", help="结束后不自动生成可视化图表")
     parser.add_argument("--plot_window", type=int, default=10, help="绘图平滑窗口大小")
@@ -166,6 +199,8 @@ def build_config(args) -> TrainConfig:
     config.eval_interval = args.eval_interval
     config.eval_episodes = args.eval_episodes
     config.graph_update_interval = args.graph_update_interval
+    config.delay_violation_penalty = args.delay_violation_penalty
+    config.failed_handover_penalty = args.failed_handover_penalty
     return config
 
 
