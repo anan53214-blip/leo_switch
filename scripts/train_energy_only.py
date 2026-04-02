@@ -54,16 +54,52 @@ def generate_plots(save_path: str, window: int = 10):
 class EnergyOnlyEnv(LEOSatelliteEnv):
     """能耗单目标环境：奖励仅由能耗增量决定。"""
 
+    def __init__(
+        self,
+        config: EnvConfig,
+        qos_unmet_task_penalty: float = 0.5,
+        delay_violation_penalty: float = 1.0,
+        failed_handover_penalty: float = 0.5,
+    ):
+        super().__init__(config)
+        # 约束惩罚（能耗主目标下的服务质量约束）
+        self.qos_unmet_task_penalty = float(qos_unmet_task_penalty)
+        self.delay_violation_penalty = float(delay_violation_penalty)
+        self.failed_handover_penalty = float(failed_handover_penalty)
+
     def step(self, actions):
         prev_energy = float(self.stats.get("total_energy", 0.0))
+        prev_total_tasks = int(self.stats.get("total_tasks", 0))
+        prev_completed_tasks = int(self.stats.get("completed_tasks", 0))
+        prev_violations = int(self.stats.get("deadline_violations", 0))
+        prev_failed_ho = int(self.stats.get("failed_handovers", 0))
+
         observation, _raw_reward, terminated, truncated, info = super().step(actions)
 
         energy_increment = max(float(self.stats.get("total_energy", 0.0)) - prev_energy, 0.0)
-        objective_reward = -energy_increment
+        task_increment = max(int(self.stats.get("total_tasks", 0)) - prev_total_tasks, 0)
+        completed_increment = max(int(self.stats.get("completed_tasks", 0)) - prev_completed_tasks, 0)
+        unmet_task_increment = max(task_increment - completed_increment, 0)
+        violation_increment = max(int(self.stats.get("deadline_violations", 0)) - prev_violations, 0)
+        failed_ho_increment = max(int(self.stats.get("failed_handovers", 0)) - prev_failed_ho, 0)
+
+        constrained_energy_cost = (
+            energy_increment
+            + self.qos_unmet_task_penalty * unmet_task_increment
+            + self.delay_violation_penalty * violation_increment
+            + self.failed_handover_penalty * failed_ho_increment
+        )
+        objective_reward = -constrained_energy_cost
 
         info = dict(info)
         info["objective"] = "energy_only"
         info["energy_increment"] = energy_increment
+        info["task_increment"] = task_increment
+        info["completed_increment"] = completed_increment
+        info["unmet_task_increment"] = unmet_task_increment
+        info["violation_increment"] = violation_increment
+        info["failed_handover_increment"] = failed_ho_increment
+        info["constrained_energy_cost"] = constrained_energy_cost
         info["objective_reward"] = objective_reward
 
         return observation, objective_reward, terminated, truncated, info
@@ -90,7 +126,12 @@ class EnergyOnlyTrainer(HANMAPPOTrainer):
             reward_qos_weight=0.0,
         )
 
-        self.env = EnergyOnlyEnv(env_config)
+        self.env = EnergyOnlyEnv(
+            env_config,
+            qos_unmet_task_penalty=getattr(self.config, "qos_unmet_task_penalty", 0.5),
+            delay_violation_penalty=getattr(self.config, "delay_violation_penalty", 1.0),
+            failed_handover_penalty=getattr(self.config, "failed_handover_penalty", 0.5),
+        )
 
         # 与父类保持一致
         self.num_agents = self.config.num_users
@@ -135,6 +176,12 @@ def parse_args():
     parser.add_argument("--eval_interval", type=int, default=10000, help="评估间隔")
     parser.add_argument("--eval_episodes", type=int, default=2, help="每次评估episode数（默认2以提速）")
     parser.add_argument("--graph_update_interval", type=int, default=20, help="图重建间隔（步），增大可提速")
+    parser.add_argument("--qos_unmet_task_penalty", type=float, default=0.5,
+                        help="每个未完成任务（QoS缺口）的能耗等价值惩罚")
+    parser.add_argument("--delay_violation_penalty", type=float, default=1.0,
+                        help="每个deadline violation的能耗等价值惩罚")
+    parser.add_argument("--failed_handover_penalty", type=float, default=0.5,
+                        help="每个failed handover的能耗等价值惩罚")
     parser.add_argument("--eval_only", action="store_true", help="仅评估，不训练")
     parser.add_argument("--no_plot", action="store_true", help="结束后不自动生成可视化图表")
     parser.add_argument("--plot_window", type=int, default=10, help="绘图平滑窗口大小")
@@ -166,6 +213,9 @@ def build_config(args) -> TrainConfig:
     config.eval_interval = args.eval_interval
     config.eval_episodes = args.eval_episodes
     config.graph_update_interval = args.graph_update_interval
+    config.qos_unmet_task_penalty = args.qos_unmet_task_penalty
+    config.delay_violation_penalty = args.delay_violation_penalty
+    config.failed_handover_penalty = args.failed_handover_penalty
     return config
 
 
