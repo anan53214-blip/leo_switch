@@ -216,7 +216,6 @@ class LEOSatelliteEnv(gym.Env):
 
     def _invalidate_visibility_cache(self):
         """使可见性缓存失效（每步调用一次）"""
-        self._visibility_cache_valid = True
         self._visibility_cache.clear()
 
     def _compute_visibility_batch(self, user_id: int) -> List[VisibilityInfo]:
@@ -288,16 +287,16 @@ class LEOSatelliteEnv(gym.Env):
         
         # 单用户观测空间
         self.single_observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
+            low=np.float32(-np.inf),
+            high=np.float32(np.inf),
             shape=(user_obs_dim,),
             dtype=np.float32
         )
         
         # 全局观测空间（所有用户）
         self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
+            low=np.float32(-np.inf),
+            high=np.float32(np.inf),
             shape=(self.num_users, user_obs_dim),
             dtype=np.float32
         )
@@ -317,8 +316,8 @@ class LEOSatelliteEnv(gym.Env):
         # [0]: 切换动作 (离散，但用连续表示，取整后使用)
         # [1]: 卸载比例
         self.action_space = spaces.Box(
-            low=np.array([[0.0, 0.0]] * self.num_users),
-            high=np.array([[self.handover_action_dim - 1, 1.0]] * self.num_users),
+            low=np.array([[0.0, 0.0]] * self.num_users, dtype=np.float32),
+            high=np.array([[self.handover_action_dim - 1, 1.0]] * self.num_users, dtype=np.float32),
             dtype=np.float32
         )
     
@@ -341,6 +340,7 @@ class LEOSatelliteEnv(gym.Env):
         
         if seed is not None:
             self.rng = np.random.default_rng(seed)
+            self.task_generator = TaskGenerator(seed=seed)
         
         # 重置星座时间
         self.constellation.reset()
@@ -497,11 +497,16 @@ class LEOSatelliteEnv(gym.Env):
         # ========== 处理切换 ==========
         visible_sats = self._get_visible_satellites(user)
         
-        if handover_action > 0 and len(visible_sats) >= handover_action:
+        if handover_action > 0:
             # 执行切换
-            target_sat = visible_sats[handover_action - 1]
-            reward += self._execute_handover(user, target_sat)
-        elif handover_action == 0:
+            if len(visible_sats) >= handover_action:
+                target_sat = visible_sats[handover_action - 1]
+                reward += self._execute_handover(user, target_sat)
+            else:
+                self.stats['total_handovers'] += 1
+                self.stats['failed_handovers'] += 1
+                reward -= 0.5
+        else:
             # 不切换，检查当前连接是否有效
             if user.serving_satellite >= 0:
                 current_visible = self._is_satellite_visible(user, user.serving_satellite)
@@ -511,6 +516,10 @@ class LEOSatelliteEnv(gym.Env):
                         best_sat = max(visible_sats, key=lambda x: x.elevation_deg)
                         reward += self._execute_handover(user, best_sat)
                     else:
+                        stale_server = self.mec_manager.get_server(user.serving_satellite)
+                        if stale_server:
+                            stale_server.remove_user(user.user_id)
+                        user.serving_satellite = -1
                         user.state = UserState.BLOCKED
                         reward -= 1.0  # 阻塞惩罚
         
@@ -618,7 +627,7 @@ class LEOSatelliteEnv(gym.Env):
         
         # 获取链路信息
         vis_info = self._get_satellite_visibility(user, sat_id)
-        if vis_info is None:
+        if vis_info is None or not vis_info.is_visible:
             return -0.5
         
         server = self.mec_manager.get_server(sat_id)
@@ -771,6 +780,12 @@ class LEOSatelliteEnv(gym.Env):
             if user.state == UserState.CONNECTED:
                 # 检查当前卫星是否仍可见
                 if not self._is_satellite_visible(user, user.serving_satellite):
+                    stale_sat_id = user.serving_satellite
+                    if stale_sat_id >= 0:
+                        stale_server = self.mec_manager.get_server(stale_sat_id)
+                        if stale_server:
+                            stale_server.remove_user(user.user_id)
+                    user.serving_satellite = -1
                     user.state = UserState.BLOCKED
                     self.stats['failed_handovers'] += 1
     

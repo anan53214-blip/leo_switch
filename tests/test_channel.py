@@ -5,6 +5,7 @@
 
 import sys
 import numpy as np
+import pytest
 
 sys.path.insert(0, 'd:\\python_code\\LEO_switch')
 
@@ -12,6 +13,11 @@ from src.environment.channel import (
     SatelliteChannel, ChannelConfig, MultiUserChannel,
     compute_link_capacity
 )
+
+
+@pytest.fixture
+def channel():
+    return SatelliteChannel()
 
 
 def test_channel_basic():

@@ -530,6 +530,25 @@ class HANMAPPOTrainer:
         env_actions[:, 1] = offload    # 卸载比例
         
         return env_actions
+
+    @staticmethod
+    def _empty_env_stats() -> Dict[str, float]:
+        return {
+            'total_handovers': 0,
+            'successful_handovers': 0,
+            'failed_handovers': 0,
+            'total_tasks': 0,
+            'completed_tasks': 0,
+            'deadline_violations': 0,
+            'total_delay': 0.0,
+            'total_energy': 0.0,
+        }
+
+    @classmethod
+    def _accumulate_env_stats(cls, target: Dict[str, float], source: Dict[str, float]) -> Dict[str, float]:
+        for key, default_value in cls._empty_env_stats().items():
+            target[key] += source.get(key, default_value)
+        return target
     
     def collect_rollouts(self) -> Dict[str, float]:
         """
@@ -550,6 +569,7 @@ class HANMAPPOTrainer:
         
         # 追踪每步奖励（用于没有完成episode时的统计）
         step_rewards = []
+        rollout_env_stats = self._empty_env_stats()
         
         obs, info = self.env.reset()
         observations, satellite_embeddings, available_actions = self._encode_graph_state()
@@ -606,6 +626,7 @@ class HANMAPPOTrainer:
             
             # 处理episode结束
             if done:
+                self._accumulate_env_stats(rollout_env_stats, info.get('stats', {}))
                 episode_rewards.append(current_reward)
                 episode_lengths.append(current_length)
                 self.recent_rewards.append(current_reward)
@@ -630,13 +651,16 @@ class HANMAPPOTrainer:
         
         # 计算优势和回报
         self.buffer.compute_returns_and_advantages(last_value, last_done=done)
+
+        if not done:
+            self._accumulate_env_stats(rollout_env_stats, self.env.stats.copy())
         
         # 统计信息
         rollout_total_reward = sum(step_rewards)
         rollout_mean_reward = np.mean(step_rewards) if step_rewards else 0
         
         # 获取环境统计（切换成功率、任务完成率、延迟、能耗等）
-        env_stats = self.env.stats.copy()
+        env_stats = rollout_env_stats
         
         stats = {
             'episodes': len(episode_rewards),
@@ -801,6 +825,7 @@ class HANMAPPOTrainer:
         
         eval_rewards = []
         eval_lengths = []
+        eval_env_stats = self._empty_env_stats()
         
         for ep in range(self.config.eval_episodes):
             obs, info = self.env.reset()
@@ -836,13 +861,13 @@ class HANMAPPOTrainer:
             
             eval_rewards.append(episode_reward)
             eval_lengths.append(episode_length)
+            self._accumulate_env_stats(eval_env_stats, info.get('stats', {}))
         
         mean_reward = np.mean(eval_rewards)
         std_reward = np.std(eval_rewards)
         mean_length = np.mean(eval_lengths)
         
         # 记录评估结果到 eval_history
-        eval_env_stats = self.env.stats.copy()
         eval_record = {
             'total_steps': self.total_steps,
             'episodes': self.episodes,

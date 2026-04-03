@@ -5,6 +5,7 @@ Gymnasium环境测试
 
 import sys
 import numpy as np
+import pytest
 
 sys.path.insert(0, 'd:\\python_code\\LEO_switch')
 
@@ -15,6 +16,15 @@ try:
 except ImportError:
     GYM_AVAILABLE = False
     print("警告: gymnasium未安装，请运行: pip install gymnasium")
+
+
+@pytest.fixture
+def env():
+    from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
+
+    env_obj = LEOSatelliteEnv(EnvConfig(num_users=5, max_steps=100, seed=42))
+    yield env_obj
+    env_obj.close()
 
 
 def test_env_creation():

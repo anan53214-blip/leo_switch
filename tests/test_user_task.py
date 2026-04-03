@@ -5,6 +5,7 @@
 
 import sys
 import numpy as np
+import pytest
 
 sys.path.insert(0, 'd:\\python_code\\LEO_switch')
 
@@ -17,6 +18,26 @@ from src.environment.task import (
 )
 from src.environment.constellation import WalkerConstellation
 from src.environment.visibility import VisibilityCalculator
+
+
+@pytest.fixture
+def users():
+    generator = UserGenerator(seed=42)
+    return generator.generate_users_in_circle(
+        center_lat=0.0,
+        center_lon=0.0,
+        radius_deg=2.0,
+        num_users=10,
+    )
+
+
+@pytest.fixture
+def tasks(users):
+    task_gen = TaskGenerator(seed=42)
+    return task_gen.generate_tasks_for_users(
+        user_ids=[u.user_id for u in users],
+        current_time=0.0,
+    )
 
 
 def test_user_generation():
