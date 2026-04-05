@@ -63,7 +63,15 @@ class EnvConfig:
     reward_delay_weight: float = 1.0
     reward_energy_weight: float = 0.8
     reward_handover_weight: float = 0.5
+    reward_load_balance_weight: float = 0.2
     reward_qos_weight: float = 0.3
+    reward_enqueue_bonus: float = 0.02
+    reward_invalid_action_penalty: float = 0.5
+    reward_blocked_penalty: float = 1.0
+    reward_queue_full_penalty: float = 0.3
+    reward_failed_handover_penalty: float = 0.6
+    reward_deadline_penalty: float = 1.0
+    reward_energy_reference: float = 10.0
     
     # 随机种子
     seed: Optional[int] = None
@@ -126,6 +134,7 @@ class LEOSatelliteEnv(gym.Env):
         self.current_step = 0
         self.current_time = 0.0
         self.episode_rewards = []
+        self._offload_task_meta: Dict[Tuple[int, int], Dict[str, float]] = {}
         
         # RVT估算用的仰角历史
         self._prev_elevations: Dict[tuple, float] = {}
@@ -138,16 +147,7 @@ class LEOSatelliteEnv(gym.Env):
         self._precompute_user_geometry()
         
         # 统计信息
-        self.stats = {
-            'total_handovers': 0,
-            'successful_handovers': 0,
-            'failed_handovers': 0,
-            'total_tasks': 0,
-            'completed_tasks': 0,
-            'deadline_violations': 0,
-            'total_delay': 0.0,
-            'total_energy': 0.0,
-        }
+        self.stats = self._build_stats()
     
     def _init_constellation(self):
         """初始化星座"""
@@ -217,6 +217,40 @@ class LEOSatelliteEnv(gym.Env):
     def _invalidate_visibility_cache(self):
         """使可见性缓存失效（每步调用一次）"""
         self._visibility_cache.clear()
+
+    @staticmethod
+    def _build_stats() -> Dict[str, float]:
+        """Initialize environment statistics and reward breakdown terms."""
+        return {
+            'total_handovers': 0,
+            'successful_handovers': 0,
+            'failed_handovers': 0,
+            'total_tasks': 0,
+            'completed_tasks': 0,
+            'deadline_violations': 0,
+            'total_delay': 0.0,
+            'total_energy': 0.0,
+            'reward_delay': 0.0,
+            'reward_energy': 0.0,
+            'reward_qos': 0.0,
+            'reward_handover': 0.0,
+            'reward_load_balance': 0.0,
+            'reward_enqueue': 0.0,
+            'penalty_deadline': 0.0,
+            'penalty_queue_full': 0.0,
+            'penalty_invalid_action': 0.0,
+            'penalty_blocked': 0.0,
+            'penalty_failed_handover': 0.0,
+            'penalty_handover_cost': 0.0,
+            'load_balance_sum': 0.0,
+            'load_balance_samples': 0,
+        }
+
+    def _record_reward_terms(self, **terms: float) -> None:
+        """Accumulate signed reward terms into the environment statistics."""
+        for key, value in terms.items():
+            if key in self.stats:
+                self.stats[key] += float(value)
 
     def _compute_visibility_batch(self, user_id: int) -> List[VisibilityInfo]:
         """向量化计算单个用户对所有卫星的可见性"""
@@ -365,18 +399,10 @@ class LEOSatelliteEnv(gym.Env):
         self.current_time = 0.0
         self.episode_rewards = []
         self.pending_rewards: Dict[int, float] = {}  # 待发放奖励池（用户ID -> 累积奖励）
+        self._offload_task_meta = {}
         self._prev_elevations = {}  # 重置RVT仰角历史
         self._invalidate_visibility_cache()
-        self.stats = {
-            'total_handovers': 0,
-            'successful_handovers': 0,
-            'failed_handovers': 0,
-            'total_tasks': 0,
-            'completed_tasks': 0,
-            'deadline_violations': 0,
-            'total_delay': 0.0,
-            'total_energy': 0.0,
-        }
+        self.stats = self._build_stats()
         
         # 初始连接：为每个用户选择最佳卫星
         self._initial_connection()
@@ -449,6 +475,9 @@ class LEOSatelliteEnv(gym.Env):
         # 4. 计算全局奖励
         total_reward = np.mean(user_rewards)
         self.episode_rewards.append(total_reward)
+        load_balance_score = self._compute_load_balance_score()
+        self.stats['load_balance_sum'] += load_balance_score
+        self.stats['load_balance_samples'] += 1
         
         # 5. 检查终止条件
         self.current_step += 1
@@ -505,7 +534,9 @@ class LEOSatelliteEnv(gym.Env):
             else:
                 self.stats['total_handovers'] += 1
                 self.stats['failed_handovers'] += 1
-                reward -= 0.5
+                invalid_penalty = -self.config.reward_invalid_action_penalty
+                reward += invalid_penalty
+                self._record_reward_terms(penalty_invalid_action=invalid_penalty)
         else:
             # 不切换，检查当前连接是否有效
             if user.serving_satellite >= 0:
@@ -521,7 +552,9 @@ class LEOSatelliteEnv(gym.Env):
                             stale_server.remove_user(user.user_id)
                         user.serving_satellite = -1
                         user.state = UserState.BLOCKED
-                        reward -= 1.0  # 阻塞惩罚
+                        blocked_penalty = -self.config.reward_blocked_penalty
+                        reward += blocked_penalty
+                        self._record_reward_terms(penalty_blocked=blocked_penalty)
         
         # ========== 处理任务卸载 ==========
         task = self.user_tasks[user.user_id]
@@ -530,6 +563,57 @@ class LEOSatelliteEnv(gym.Env):
             self.user_tasks[user.user_id] = None  # 任务已处理
         
         return reward
+
+    def _compute_load_balance_score(self) -> float:
+        """Use the spread of active satellite load as a cooperative signal."""
+        active_loads = []
+        for server in self.mec_manager.servers.values():
+            aggregate_load = server.queue_length + len(server.connected_users)
+            if aggregate_load > 0:
+                active_loads.append(float(aggregate_load))
+
+        if len(active_loads) <= 1:
+            return 1.0
+
+        return 1.0 / (1.0 + float(np.std(active_loads)))
+
+    def _compute_task_reward(
+        self,
+        total_delay: float,
+        total_energy: float,
+        max_delay: float,
+    ) -> Tuple[float, Dict[str, float]]:
+        """
+        Convert optimization targets into a reward signal.
+
+        Song Xiaoqin et al. optimize end-to-end service delay under constraints,
+        while Fu Yiyang et al. emphasize service continuity and collaboration.
+        This helper keeps delay/QoS dominant and adds energy as a secondary term.
+        """
+        max_delay = max(float(max_delay), 1e-6)
+        delay_ratio = float(total_delay) / max_delay
+        delay_reward = max(1.0 - min(delay_ratio, 1.0), 0.0)
+
+        energy_ref = max(float(self.config.reward_energy_reference), 1e-6)
+        energy_reward = max(1.0 - min(float(total_energy) / energy_ref, 1.0), 0.0)
+        qos_reward = 1.0 if delay_ratio <= 1.0 else -1.0
+
+        reward_delay = self.config.reward_delay_weight * delay_reward
+        reward_energy = self.config.reward_energy_weight * energy_reward
+        reward_qos = self.config.reward_qos_weight * qos_reward
+        penalty_deadline = 0.0
+
+        if delay_ratio > 1.0:
+            penalty_deadline = -self.config.reward_deadline_penalty * min(delay_ratio - 1.0, 2.0)
+
+        reward = reward_delay + reward_energy + reward_qos + penalty_deadline
+
+        return reward, {
+            'reward_delay': reward_delay,
+            'reward_energy': reward_energy,
+            'reward_qos': reward_qos,
+            'penalty_deadline': penalty_deadline,
+        }
     
     def _execute_handover(self, user: User, target_sat: VisibilityInfo) -> float:
         """
@@ -544,6 +628,7 @@ class LEOSatelliteEnv(gym.Env):
         """
         reward = 0.0
         self.stats['total_handovers'] += 1
+        balance_before = self._compute_load_balance_score()
         
         old_sat_id = user.serving_satellite
         
@@ -554,8 +639,7 @@ class LEOSatelliteEnv(gym.Env):
                 old_server.remove_user(user.user_id)
         
         # 切换时延惩罚（信令开销、链路重建等）
-        delay_penalty = self.config.handover_delay_sec / 5.0
-        reward -= delay_penalty
+        delay_penalty = min(self.config.handover_delay_sec / 2.0, 1.0)
         
         # 模拟切换过程
         user.start_handover(target_sat.sat_id, self.current_time)
@@ -579,19 +663,41 @@ class LEOSatelliteEnv(gym.Env):
                     new_sat_id=target_sat.sat_id,
                     handover_delay=self.config.handover_delay_sec
                 )
-                # 迁移惩罚
-                reward -= 0.05 * migration_result['migrated']
-                reward -= 0.1 * migration_result['failed']
+                migration_penalty = 0.05 * migration_result['migrated']
+                migration_penalty += 0.1 * migration_result['failed']
+            else:
+                migration_penalty = 0.0
             
             self.stats['successful_handovers'] += 1
             
-            # 奖励：根据目标卫星质量（增大正向奖励）
-            reward += 0.3 * (target_sat.elevation_deg / 90.0)  # 仰角越高越好
-            reward += 0.3 * (target_sat.rvt_seconds / 600.0)   # RVT越长越好
+            elevation_score = np.clip(target_sat.elevation_deg / 90.0, 0.0, 1.0)
+            rvt_score = np.clip(
+                target_sat.rvt_seconds / max(self.config.rvt_threshold_sec, 1.0),
+                0.0,
+                1.0,
+            )
+            balance_after = self._compute_load_balance_score()
+            balance_gain = balance_after - balance_before
+
+            handover_score = 0.5 * elevation_score + 0.5 * rvt_score
+            reward_handover = self.config.reward_handover_weight * handover_score
+            penalty_handover_cost = -self.config.reward_handover_weight * (
+                delay_penalty + migration_penalty
+            )
+            reward_load_balance = self.config.reward_load_balance_weight * balance_gain
+
+            reward += reward_handover + penalty_handover_cost + reward_load_balance
+            self._record_reward_terms(
+                reward_handover=reward_handover,
+                penalty_handover_cost=penalty_handover_cost,
+                reward_load_balance=reward_load_balance,
+            )
         else:
             user.complete_handover(-1, self.current_time, success=False)
             self.stats['failed_handovers'] += 1
-            reward -= 0.5  # 切换失败惩罚
+            failed_penalty = -self.config.reward_failed_handover_penalty
+            reward += failed_penalty
+            self._record_reward_terms(penalty_failed_handover=failed_penalty)
         
         return reward
     
@@ -643,9 +749,6 @@ class LEOSatelliteEnv(gym.Env):
         if local_cycles > 0:
             local_delay = self.offload_calc.compute_local_delay(local_cycles)
             local_energy = self.offload_calc.compute_local_energy(local_cycles)
-            
-            # 本地部分时延统计
-            self.stats['total_delay'] += local_delay
             self.stats['total_energy'] += local_energy
         
         # ========== 卸载部分（入队处理） ==========
@@ -683,8 +786,17 @@ class LEOSatelliteEnv(gym.Env):
                 task.offload_ratio = offload_ratio
                 task.local_delay = local_delay
                 task.local_energy = local_energy
-                # 小奖励：成功入队
-                reward += 0.05
+                task.transmission_energy = upload_energy
+                self._offload_task_meta[(user.user_id, task.task_id)] = {
+                    'local_delay': local_delay,
+                    'local_energy': local_energy,
+                }
+                queue_margin = 1.0 - (
+                    server.queue_length / max(server.config.max_queue_size, 1)
+                )
+                enqueue_bonus = self.config.reward_enqueue_bonus * max(queue_margin, 0.0)
+                reward += enqueue_bonus
+                self._record_reward_terms(reward_enqueue=enqueue_bonus)
             else:
                 # 队列已满，任务被拒绝 -> 强制本地执行或丢弃
                 # 这里选择：退化为完全本地执行
@@ -694,42 +806,47 @@ class LEOSatelliteEnv(gym.Env):
                 
                 local_delay += fallback_delay
                 local_energy += fallback_energy
-                self.stats['total_delay'] += fallback_delay
+                self.stats['total_delay'] += local_delay
                 self.stats['total_energy'] += fallback_energy
                 
                 # 惩罚：队列满导致无法卸载
-                reward -= 0.3
-                
-                # 检查本地执行是否满足 deadline
+                queue_penalty = -self.config.reward_queue_full_penalty
+                reward += queue_penalty
+                self._record_reward_terms(penalty_queue_full=queue_penalty)
+
                 if local_delay <= task.max_delay:
                     self.stats['completed_tasks'] += 1
-                    delay_reward = 1.0 - (local_delay / task.max_delay)
-                    reward += self.config.reward_delay_weight * max(delay_reward, 0.0)
                 else:
                     self.stats['deadline_violations'] += 1
-                    reward -= 0.5
+                task_reward, reward_terms = self._compute_task_reward(
+                    total_delay=local_delay,
+                    total_energy=local_energy + upload_energy,
+                    max_delay=task.max_delay,
+                )
+                reward += task_reward
+                self._record_reward_terms(**reward_terms)
                 
                 task.total_delay = local_delay
                 task.total_energy = local_energy + upload_energy
                 task.offload_ratio = 0.0  # 实际退化为本地
         else:
             # 完全本地执行
+            self.stats['total_delay'] += local_delay
             task.total_delay = local_delay
             task.total_energy = local_energy
             task.offload_ratio = 0.0
             
             if local_delay <= task.max_delay:
                 self.stats['completed_tasks'] += 1
-                delay_reward = 1.0 - (local_delay / task.max_delay)
-                max_energy = 10.0
-                energy_reward = 1.0 - (local_energy / max_energy)
-                
-                reward += self.config.reward_delay_weight * max(delay_reward, 0.0)
-                reward += self.config.reward_energy_weight * np.clip(energy_reward, 0.0, 1.0)
-                reward += self.config.reward_qos_weight * 1.0
             else:
                 self.stats['deadline_violations'] += 1
-                reward -= 0.5
+            task_reward, reward_terms = self._compute_task_reward(
+                total_delay=local_delay,
+                total_energy=local_energy,
+                max_delay=task.max_delay,
+            )
+            reward += task_reward
+            self._record_reward_terms(**reward_terms)
         
         return reward
     
@@ -749,26 +866,31 @@ class LEOSatelliteEnv(gym.Env):
         # 累积完成任务的奖励到 pending_rewards
         for task_info in completed_tasks:
             user_id = task_info['user_id']
-            if task_info['deadline_met']:
+            task_meta = self._offload_task_meta.pop(
+                (user_id, task_info['task_id']),
+                {},
+            )
+            total_delay = max(
+                float(task_info['total_delay']),
+                float(task_meta.get('local_delay', 0.0)),
+            )
+            total_energy = float(task_info.get('upload_energy', 0.0))
+            total_energy += float(task_meta.get('local_energy', 0.0))
+            deadline_met = total_delay <= task_info['max_delay']
+
+            if deadline_met:
                 self.stats['completed_tasks'] += 1
-                
-                # 计算时延奖励
-                delay_reward = 1.0 - (task_info['total_delay'] / task_info['max_delay'])
-                delay_reward = max(delay_reward, 0.0)
-                
-                # 计算能耗奖励
-                upload_energy = task_info.get('upload_energy', 0.0)
-                energy_reward = 1.0 - min(upload_energy / 10.0, 1.0)
-                
-                task_reward = self.config.reward_delay_weight * delay_reward
-                task_reward += self.config.reward_energy_weight * max(energy_reward, 0.0)
-                task_reward += self.config.reward_qos_weight * 1.0
             else:
                 self.stats['deadline_violations'] += 1
-                task_reward = -0.5
+            task_reward, reward_terms = self._compute_task_reward(
+                total_delay=total_delay,
+                total_energy=total_energy,
+                max_delay=task_info['max_delay'],
+            )
+            self._record_reward_terms(**reward_terms)
             
-            # 累积时延统计（卸载部分）
-            self.stats['total_delay'] += task_info['total_delay']
+            # Split-task delay follows the max(local, offloaded) model.
+            self.stats['total_delay'] += total_delay
             
             # 将奖励加入待发放池
             if user_id not in self.pending_rewards:
@@ -952,6 +1074,7 @@ class LEOSatelliteEnv(gym.Env):
             'step': self.current_step,
             'time': self.current_time,
             'stats': self.stats.copy(),
+            'load_balance_score': self._compute_load_balance_score(),
             'mean_reward': np.mean(self.episode_rewards) if self.episode_rewards else 0.0,
         }
     

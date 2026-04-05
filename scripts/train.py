@@ -86,6 +86,11 @@ class TrainConfig:
     num_users: int = 5                    # 用户数量
     max_steps: int = 1000                 # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
+    reward_delay_weight: float = 1.0
+    reward_energy_weight: float = 0.8
+    reward_handover_weight: float = 0.5
+    reward_load_balance_weight: float = 0.2
+    reward_qos_weight: float = 0.3
     
     # ---------- 图参数 ----------
     max_visible_sats: int = 10            # 最大可见卫星数（候选集）
@@ -274,6 +279,11 @@ class HANMAPPOTrainer:
             num_users=self.config.num_users,
             max_steps=self.config.max_steps,
             time_step_sec=self.config.time_step_sec,
+            reward_delay_weight=self.config.reward_delay_weight,
+            reward_energy_weight=self.config.reward_energy_weight,
+            reward_handover_weight=self.config.reward_handover_weight,
+            reward_load_balance_weight=self.config.reward_load_balance_weight,
+            reward_qos_weight=self.config.reward_qos_weight,
             seed=self.config.seed
         )
         
@@ -542,6 +552,20 @@ class HANMAPPOTrainer:
             'deadline_violations': 0,
             'total_delay': 0.0,
             'total_energy': 0.0,
+            'reward_delay': 0.0,
+            'reward_energy': 0.0,
+            'reward_qos': 0.0,
+            'reward_handover': 0.0,
+            'reward_load_balance': 0.0,
+            'reward_enqueue': 0.0,
+            'penalty_deadline': 0.0,
+            'penalty_queue_full': 0.0,
+            'penalty_invalid_action': 0.0,
+            'penalty_blocked': 0.0,
+            'penalty_failed_handover': 0.0,
+            'penalty_handover_cost': 0.0,
+            'load_balance_sum': 0.0,
+            'load_balance_samples': 0,
         }
 
     @classmethod
@@ -687,6 +711,21 @@ class HANMAPPOTrainer:
                 env_stats['total_delay'] / max(env_stats['total_tasks'], 1)
             ),
             'total_energy': env_stats.get('total_energy', 0.0),
+            'avg_load_balance_score': (
+                env_stats['load_balance_sum'] / max(env_stats['load_balance_samples'], 1)
+            ),
+            'reward_delay': env_stats.get('reward_delay', 0.0),
+            'reward_energy': env_stats.get('reward_energy', 0.0),
+            'reward_qos': env_stats.get('reward_qos', 0.0),
+            'reward_handover': env_stats.get('reward_handover', 0.0),
+            'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
+            'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
+            'penalty_deadline': env_stats.get('penalty_deadline', 0.0),
+            'penalty_queue_full': env_stats.get('penalty_queue_full', 0.0),
+            'penalty_invalid_action': env_stats.get('penalty_invalid_action', 0.0),
+            'penalty_blocked': env_stats.get('penalty_blocked', 0.0),
+            'penalty_failed_handover': env_stats.get('penalty_failed_handover', 0.0),
+            'penalty_handover_cost': env_stats.get('penalty_handover_cost', 0.0),
         }
         
         return stats
@@ -753,6 +792,19 @@ class HANMAPPOTrainer:
                 'task_completion_rate': rollout_stats.get('task_completion_rate', 0),
                 'avg_delay': rollout_stats.get('avg_delay', 0),
                 'total_energy': rollout_stats.get('total_energy', 0),
+                'avg_load_balance_score': rollout_stats.get('avg_load_balance_score', 0),
+                'reward_delay': rollout_stats.get('reward_delay', 0),
+                'reward_energy': rollout_stats.get('reward_energy', 0),
+                'reward_qos': rollout_stats.get('reward_qos', 0),
+                'reward_handover': rollout_stats.get('reward_handover', 0),
+                'reward_load_balance': rollout_stats.get('reward_load_balance', 0),
+                'reward_enqueue': rollout_stats.get('reward_enqueue', 0),
+                'penalty_deadline': rollout_stats.get('penalty_deadline', 0),
+                'penalty_queue_full': rollout_stats.get('penalty_queue_full', 0),
+                'penalty_invalid_action': rollout_stats.get('penalty_invalid_action', 0),
+                'penalty_blocked': rollout_stats.get('penalty_blocked', 0),
+                'penalty_failed_handover': rollout_stats.get('penalty_failed_handover', 0),
+                'penalty_handover_cost': rollout_stats.get('penalty_handover_cost', 0),
             }
             self.training_history.append(record)
             
@@ -816,6 +868,24 @@ class HANMAPPOTrainer:
             f"FPS: {fps:6.0f} | "
             f"Actor Loss: {update_stats.get('actor_loss', 0):.4f} | "
             f"Critic Loss: {update_stats.get('critic_loss', 0):.4f}"
+        )
+        self.logger.info(
+            "  Env | "
+            f"HO: {rollout_stats.get('handover_success_rate', 0):.2%} | "
+            f"Task: {rollout_stats.get('task_completion_rate', 0):.2%} | "
+            f"Delay: {rollout_stats.get('avg_delay', 0):.3f}s | "
+            f"Energy: {rollout_stats.get('total_energy', 0):.2f}J | "
+            f"LB: {rollout_stats.get('avg_load_balance_score', 0):.3f}"
+        )
+        self.logger.info(
+            "  Reward | "
+            f"D: {rollout_stats.get('reward_delay', 0):.2f} | "
+            f"E: {rollout_stats.get('reward_energy', 0):.2f} | "
+            f"Q: {rollout_stats.get('reward_qos', 0):.2f} | "
+            f"H: {rollout_stats.get('reward_handover', 0):.2f} | "
+            f"LB: {rollout_stats.get('reward_load_balance', 0):.2f} | "
+            f"Enq: {rollout_stats.get('reward_enqueue', 0):.2f} | "
+            f"Pen: {rollout_stats.get('penalty_deadline', 0) + rollout_stats.get('penalty_queue_full', 0) + rollout_stats.get('penalty_invalid_action', 0) + rollout_stats.get('penalty_blocked', 0) + rollout_stats.get('penalty_failed_handover', 0) + rollout_stats.get('penalty_handover_cost', 0):.2f}"
         )
     
     def _evaluate(self):
@@ -885,12 +955,30 @@ class HANMAPPOTrainer:
                 eval_env_stats['total_delay'] / max(eval_env_stats['total_tasks'], 1)
             ),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
+            'avg_load_balance_score': (
+                eval_env_stats['load_balance_sum'] / max(eval_env_stats['load_balance_samples'], 1)
+            ),
+            'reward_delay': eval_env_stats.get('reward_delay', 0.0),
+            'reward_energy': eval_env_stats.get('reward_energy', 0.0),
+            'reward_qos': eval_env_stats.get('reward_qos', 0.0),
+            'reward_handover': eval_env_stats.get('reward_handover', 0.0),
+            'reward_load_balance': eval_env_stats.get('reward_load_balance', 0.0),
+            'reward_enqueue': eval_env_stats.get('reward_enqueue', 0.0),
+            'penalty_deadline': eval_env_stats.get('penalty_deadline', 0.0),
+            'penalty_queue_full': eval_env_stats.get('penalty_queue_full', 0.0),
+            'penalty_invalid_action': eval_env_stats.get('penalty_invalid_action', 0.0),
+            'penalty_blocked': eval_env_stats.get('penalty_blocked', 0.0),
+            'penalty_failed_handover': eval_env_stats.get('penalty_failed_handover', 0.0),
+            'penalty_handover_cost': eval_env_stats.get('penalty_handover_cost', 0.0),
         }
         self.eval_history.append(eval_record)
         
         self.logger.info(
             f"评估结果: 奖励 = {mean_reward:.2f} ± {std_reward:.2f}, "
-            f"长度 = {mean_length:.0f}"
+            f"长度 = {mean_length:.0f}, "
+            f"时延 = {eval_record['avg_delay']:.3f}s, "
+            f"能耗 = {eval_record['total_energy']:.2f}J, "
+            f"负载均衡 = {eval_record['avg_load_balance_score']:.3f}"
         )
         
         # 更新最佳奖励
@@ -996,6 +1084,16 @@ def parse_args():
                         help='用户数量')
     parser.add_argument('--max_steps', type=int, default=1000,
                         help='每episode最大步数')
+    parser.add_argument('--reward_delay_weight', type=float, default=1.0,
+                        help='时延奖励权重')
+    parser.add_argument('--reward_energy_weight', type=float, default=0.8,
+                        help='能耗奖励权重')
+    parser.add_argument('--reward_handover_weight', type=float, default=0.5,
+                        help='切换奖励权重')
+    parser.add_argument('--reward_load_balance_weight', type=float, default=0.2,
+                        help='负载均衡奖励权重')
+    parser.add_argument('--reward_qos_weight', type=float, default=0.3,
+                        help='QoS奖励权重')
     
     # 训练参数
     parser.add_argument('--total_timesteps', type=int, default=500000,
@@ -1056,6 +1154,11 @@ def main():
     
     config.num_users = args.num_users
     config.max_steps = args.max_steps
+    config.reward_delay_weight = args.reward_delay_weight
+    config.reward_energy_weight = args.reward_energy_weight
+    config.reward_handover_weight = args.reward_handover_weight
+    config.reward_load_balance_weight = args.reward_load_balance_weight
+    config.reward_qos_weight = args.reward_qos_weight
     config.total_timesteps = args.total_timesteps
     config.n_steps = args.n_steps
     config.learning_rate = args.learning_rate
