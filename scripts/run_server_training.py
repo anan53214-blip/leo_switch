@@ -41,7 +41,9 @@ from datetime import datetime
 
 # ---- 确保路径正确 ----
 project_root = Path(__file__).parent.parent.resolve()
+scripts_dir = Path(__file__).parent.resolve()
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(scripts_dir))
 os.chdir(project_root)
 
 import numpy as np
@@ -139,7 +141,7 @@ MULTI_SEED_SEEDS = [42, 123, 456, 789, 2024]
 
 def run_training(config_dict: dict):
     """执行单次训练"""
-    from scripts.train import TrainConfig, HANMAPPOTrainer
+    from train import TrainConfig, HANMAPPOTrainer
 
     config = TrainConfig()
 
@@ -219,7 +221,7 @@ def run_multi_seed(base_config: dict, seeds: list):
 
 def generate_plots(save_path: str, window: int = 10):
     """训练完成后自动生成图表"""
-    from scripts.plot_results import generate_all_plots, setup_plot_style
+    from plot_results import generate_all_plots, setup_plot_style
 
     history_file = f"{save_path}/training_history.json"
     output_dir = f"{save_path}/figures"
@@ -235,7 +237,7 @@ def generate_plots(save_path: str, window: int = 10):
 
 def generate_comparison_plots(history_paths: list, window: int = 10):
     """多实验对比图表"""
-    from scripts.plot_results import (
+    from plot_results import (
         setup_plot_style, plot_comparison, plot_comparison_metrics
     )
 
