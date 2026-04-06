@@ -54,13 +54,18 @@ import torch
 
 # 方案 A: 标准训练（推荐首次使用，~2小时）
 STANDARD_CONFIG = {
-    'exp_name':         'han_mappo_standard',
+    'exp_name':         'han_mappo_delay_focus',
     'seed':             42,
     'device':           'cuda',          # 3090 自动使用 CUDA
 
     # 环境
     'num_users':        10,              # 10 个用户（增加竞争）
     'max_steps':        2000,            # 每 episode 2000 步（更长的决策序列）
+    'reward_delay_weight': 1.4,
+    'reward_energy_weight': 0.4,
+    'reward_handover_weight': 0.3,
+    'reward_load_balance_weight': 0.1,
+    'reward_qos_weight': 0.4,
 
     # HAN
     'han_hidden_dim':   64,
@@ -91,14 +96,14 @@ STANDARD_CONFIG = {
     'early_stop_patience': 50,           # v4: 放宽早停，给策略更多学习时间
 
     # 路径
-    'save_path':        'results/full_train_v4',
+    'save_path':        'results/full_train_delay_focus',
     'log_path':         'results/logs',
 }
 
 # 方案 B: 大规模用户训练（~4-6小时）
 LARGE_SCALE_CONFIG = {
     **STANDARD_CONFIG,
-    'exp_name':         'han_mappo_large',
+    'exp_name':         'han_mappo_delay_focus_large',
     'num_users':        20,              # 20 个用户
     'max_steps':        3000,            # 更长 episode
     'total_timesteps':  2_000_000,       # 200万步
@@ -107,13 +112,13 @@ LARGE_SCALE_CONFIG = {
     'eval_interval':    50_000,
     'save_interval':    200_000,
     'early_stop_patience': 50,
-    'save_path':        'results/large_train',
+    'save_path':        'results/large_train_delay_focus',
 }
 
 # 方案 C: 快速验证（~15-30分钟）
 QUICK_TEST_CONFIG = {
     **STANDARD_CONFIG,
-    'exp_name':         'han_mappo_quick',
+    'exp_name':         'han_mappo_delay_focus_quick',
     'num_users':        5,
     'max_steps':        1000,
     'total_timesteps':  100_000,         # 10万步
@@ -121,7 +126,7 @@ QUICK_TEST_CONFIG = {
     'eval_interval':    10_000,
     'save_interval':    50_000,
     'early_stop_patience': 15,
-    'save_path':        'results/quick_test',
+    'save_path':        'results/quick_test_delay_focus',
 }
 
 # 方案 D: 多种子对比实验（用于论文）

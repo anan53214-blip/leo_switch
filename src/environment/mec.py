@@ -87,7 +87,8 @@ class MECServer:
         
         # CPU状态
         self.cpu_freq_ghz = self.config.satellite_cpu_freq_ghz
-        self.available_freq_ghz = self.cpu_freq_ghz  # 可用计算资源
+        self.total_capacity_ghz = self.cpu_freq_ghz * max(self.config.satellite_num_cores, 1)
+        self.available_freq_ghz = self.total_capacity_ghz  # 可用计算资源
         
         # 任务队列
         self.task_queue: List[Dict] = []
@@ -113,7 +114,7 @@ class MECServer:
     @property
     def utilization(self) -> float:
         """CPU利用率"""
-        return 1.0 - (self.available_freq_ghz / self.cpu_freq_ghz)
+        return 1.0 - (self.available_freq_ghz / max(self.total_capacity_ghz, 1e-6))
     
     def add_user(self, user_id: int):
         """添加连接用户"""
@@ -153,7 +154,7 @@ class MECServer:
         """释放计算资源"""
         self.available_freq_ghz = min(
             self.available_freq_ghz + freq_ghz,
-            self.cpu_freq_ghz
+            self.total_capacity_ghz
         )
     
     def compute_processing_delay(
@@ -176,7 +177,7 @@ class MECServer:
         if allocated_freq_ghz is None:
             # 平均分配给所有用户
             num_users = max(len(self.connected_users), 1)
-            allocated_freq_ghz = self.cpu_freq_ghz / num_users
+            allocated_freq_ghz = self.total_capacity_ghz / num_users
         
         freq_hz = allocated_freq_ghz * 1e9
         delay = computation_cycles / freq_hz
@@ -194,12 +195,15 @@ class MECServer:
             self.utilization,
             self.queue_length / self.config.max_queue_size,
             len(self.connected_users) / 50.0,  # 归一化
-            self.available_freq_ghz / self.config.satellite_max_cpu_freq_ghz,
+            self.available_freq_ghz / max(
+                self.config.satellite_max_cpu_freq_ghz * max(self.config.satellite_num_cores, 1),
+                1e-6,
+            ),
         ])
     
     def reset(self):
         """重置MEC状态"""
-        self.available_freq_ghz = self.cpu_freq_ghz
+        self.available_freq_ghz = self.total_capacity_ghz
         self.task_queue.clear()
         self.connected_users.clear()
         self.current_load = 0.0
@@ -276,7 +280,7 @@ class MECServer:
         
         if not self.task_queue:
             # 无任务时释放所有资源
-            self.available_freq_ghz = self.cpu_freq_ghz
+            self.available_freq_ghz = self.total_capacity_ghz
             self.current_load = 0.0
             return completed_this_step
         
@@ -285,12 +289,12 @@ class MECServer:
         num_active = len(active_tasks)
         
         if num_active == 0:
-            self.available_freq_ghz = self.cpu_freq_ghz
+            self.available_freq_ghz = self.total_capacity_ghz
             self.current_load = 0.0
             return completed_this_step
         
         # 平均分配 CPU 频率给所有活跃任务
-        freq_per_task_ghz = self.cpu_freq_ghz / num_active
+        freq_per_task_ghz = self.total_capacity_ghz / num_active
         cycles_per_task = freq_per_task_ghz * 1e9 * time_step  # 本步可处理的 cycles
         
         # 更新负载
@@ -345,7 +349,7 @@ class MECServer:
         # 更新可用资源
         remaining_active = len([t for t in self.task_queue if t['status'] in ('queued', 'processing')])
         if remaining_active == 0:
-            self.available_freq_ghz = self.cpu_freq_ghz
+            self.available_freq_ghz = self.total_capacity_ghz
             self.current_load = 0.0
         else:
             self.available_freq_ghz = 0.0
@@ -365,7 +369,7 @@ class MECServer:
         
         total_remaining_cycles = sum(t['remaining_cycles'] for t in self.task_queue)
         # 假设新任务需要等待当前所有任务完成（悲观估计）
-        wait_time = total_remaining_cycles / (self.cpu_freq_ghz * 1e9)
+        wait_time = total_remaining_cycles / (self.total_capacity_ghz * 1e9)
         return wait_time
 
 
@@ -548,7 +552,10 @@ class OffloadingCalculator:
         
         # 使用默认值
         if satellite_freq_ghz is None:
-            satellite_freq_ghz = self.mec_config.satellite_cpu_freq_ghz
+            satellite_freq_ghz = (
+                self.mec_config.satellite_cpu_freq_ghz *
+                max(self.mec_config.satellite_num_cores, 1)
+            )
         if local_freq_ghz is None:
             local_freq_ghz = self.mec_config.user_cpu_freq_ghz
         

@@ -238,7 +238,7 @@ def plot_reward_curve(records: List[Dict], window: int, save_dir: Path,
     fig.savefig(save_dir / 'reward_curve.png')
     fig.savefig(save_dir / 'reward_curve.pdf')
     plt.close(fig)
-    print("  ✓ reward_curve.png / .pdf")
+    print("  saved reward_curve.png / .pdf")
 
 
 def plot_loss_curves(records: List[Dict], window: int, save_dir: Path):
@@ -278,7 +278,7 @@ def plot_loss_curves(records: List[Dict], window: int, save_dir: Path):
     fig.savefig(save_dir / 'loss_curves.png')
     fig.savefig(save_dir / 'loss_curves.pdf')
     plt.close(fig)
-    print("  ✓ loss_curves.png / .pdf")
+    print("  saved loss_curves.png / .pdf")
 
 
 def plot_entropy_kl(records: List[Dict], window: int, save_dir: Path):
@@ -314,7 +314,7 @@ def plot_entropy_kl(records: List[Dict], window: int, save_dir: Path):
     fig.savefig(save_dir / 'entropy_kl.png')
     fig.savefig(save_dir / 'entropy_kl.pdf')
     plt.close(fig)
-    print("  ✓ entropy_kl.png / .pdf")
+    print("  saved entropy_kl.png / .pdf")
 
 
 def plot_handover_task(records: List[Dict], window: int, save_dir: Path):
@@ -322,36 +322,47 @@ def plot_handover_task(records: List[Dict], window: int, save_dir: Path):
     图4: 切换成功率 & 任务完成率
     """
     steps, ho_rate = extract_series(records, 'handover_success_rate')
+    _, continuity_rate = extract_series(records, 'service_continuity_rate')
     _, task_rate = extract_series(records, 'task_completion_rate')
-    _, violations = extract_series(records, 'deadline_violations')
+    _, resolution_rate = extract_series(records, 'task_resolution_rate')
+    _, pending_rate = extract_series(records, 'pending_task_rate')
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
     
-    # 左图：成功率
+    # 左图：切换相关指标
     ax1.plot(steps, smooth(ho_rate * 100, window), color=COLORS['primary'],
              linewidth=1.8, label='Handover Success')
-    ax1.plot(steps, smooth(task_rate * 100, window), color=COLORS['success'],
-             linewidth=1.8, label='Task Completion')
+    if np.any(continuity_rate):
+        ax1.plot(steps, smooth(continuity_rate * 100, window), color=COLORS['info'],
+                 linewidth=1.8, linestyle='--', label='Service Continuity')
     ax1.set_xlabel('Training Steps')
     ax1.set_ylabel('Rate (%)')
-    ax1.set_title('Handover Success & Task Completion Rate')
+    ax1.set_title('Handover Reliability')
     ax1.set_ylim(-5, 105)
     ax1.xaxis.set_major_formatter(FuncFormatter(format_steps))
     ax1.legend()
     
-    # 右图：截止期违反次数
-    ax2.plot(steps, smooth(violations, window), color=COLORS['danger'],
-             linewidth=1.8)
+    # 右图：任务处理相关指标
+    ax2.plot(steps, smooth(task_rate * 100, window), color=COLORS['success'],
+             linewidth=1.8, label='Task Completion')
+    if np.any(resolution_rate):
+        ax2.plot(steps, smooth(resolution_rate * 100, window), color=COLORS['warning'],
+                 linewidth=1.8, linestyle='--', label='Task Resolution')
+    if np.any(pending_rate):
+        ax2.plot(steps, smooth(pending_rate * 100, window), color=COLORS['danger'],
+                 linewidth=1.4, linestyle=':', label='Pending Task Rate')
     ax2.set_xlabel('Training Steps')
-    ax2.set_ylabel('Deadline Violations')
-    ax2.set_title('Deadline Violations (per Episode)')
+    ax2.set_ylabel('Rate (%)')
+    ax2.set_title('Task Service Quality')
+    ax2.set_ylim(-5, 105)
     ax2.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    ax2.legend()
     
     fig.tight_layout()
     fig.savefig(save_dir / 'handover_task_rate.png')
     fig.savefig(save_dir / 'handover_task_rate.pdf')
     plt.close(fig)
-    print("  ✓ handover_task_rate.png / .pdf")
+    print("  saved handover_task_rate.png / .pdf")
 
 
 def plot_delay_energy(records: List[Dict], window: int, save_dir: Path,
@@ -420,7 +431,7 @@ def plot_delay_energy(records: List[Dict], window: int, save_dir: Path,
     fig.savefig(save_dir / 'delay_energy.png')
     fig.savefig(save_dir / 'delay_energy.pdf')
     plt.close(fig)
-    print("  ✓ delay_energy.png / .pdf")
+    print("  saved delay_energy.png / .pdf")
 
 
 def plot_eval_curve(eval_records: List[Dict], save_dir: Path):
@@ -428,7 +439,7 @@ def plot_eval_curve(eval_records: List[Dict], save_dir: Path):
     图6: 评估奖励曲线（带误差棒）
     """
     if not eval_records:
-        print("  ⚠ 无评估数据，跳过 eval_curve")
+        print("  skipped eval_curve (no evaluation data)")
         return
     
     steps = np.array([r['total_steps'] for r in eval_records])
@@ -453,7 +464,7 @@ def plot_eval_curve(eval_records: List[Dict], save_dir: Path):
     fig.savefig(save_dir / 'eval_curve.png')
     fig.savefig(save_dir / 'eval_curve.pdf')
     plt.close(fig)
-    print("  ✓ eval_curve.png / .pdf")
+    print("  saved eval_curve.png / .pdf")
 
 
 def plot_clip_fraction(records: List[Dict], window: int, save_dir: Path):
@@ -477,7 +488,7 @@ def plot_clip_fraction(records: List[Dict], window: int, save_dir: Path):
     fig.savefig(save_dir / 'clip_fraction.png')
     fig.savefig(save_dir / 'clip_fraction.pdf')
     plt.close(fig)
-    print("  ✓ clip_fraction.png / .pdf")
+    print("  saved clip_fraction.png / .pdf")
 
 
 # ============================================================
@@ -506,7 +517,9 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     _, entropy = extract_series(records, 'entropy')
     _, kl_div = extract_series(records, 'kl_divergence')
     _, ho_rate = extract_series(records, 'handover_success_rate')
+    _, continuity_rate = extract_series(records, 'service_continuity_rate')
     _, task_rate = extract_series(records, 'task_completion_rate')
+    _, resolution_rate = extract_series(records, 'task_resolution_rate')
     _, avg_delay = extract_series(records, 'avg_delay')
     _, total_energy = extract_series(records, 'total_energy')
     
@@ -563,9 +576,15 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     ax = fig.add_subplot(gs[1, 0])
     ax.plot(steps, smooth(ho_rate * 100, window), color=COLORS['primary'],
             linewidth=1.5, label='Handover Success')
+    if np.any(continuity_rate):
+        ax.plot(steps, smooth(continuity_rate * 100, window), color=COLORS['info'],
+                linewidth=1.5, linestyle='--', label='Continuity')
     ax.plot(steps, smooth(task_rate * 100, window), color=COLORS['success'],
             linewidth=1.5, label='Task Completion')
-    ax.set_title('Handover & Task Rate')
+    if np.any(resolution_rate):
+        ax.plot(steps, smooth(resolution_rate * 100, window), color=COLORS['warning'],
+                linewidth=1.5, linestyle=':', label='Task Resolution')
+    ax.set_title('Service Reliability')
     ax.set_xlabel('Steps')
     ax.set_ylabel('%')
     ax.set_ylim(-5, 105)
@@ -637,7 +656,7 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     fig.savefig(save_dir / 'dashboard.png')
     fig.savefig(save_dir / 'dashboard.pdf')
     plt.close(fig)
-    print("  ✓ dashboard.png / .pdf")
+    print("  saved dashboard.png / .pdf")
 
 
 # ============================================================
@@ -678,7 +697,7 @@ def plot_comparison(history_paths: List[str], window: int, save_dir: Path):
     fig.savefig(save_dir / 'comparison.png')
     fig.savefig(save_dir / 'comparison.pdf')
     plt.close(fig)
-    print("  ✓ comparison.png / .pdf")
+    print("  saved comparison.png / .pdf")
 
 
 def plot_comparison_metrics(history_paths: List[str], window: int, save_dir: Path):
@@ -720,7 +739,7 @@ def plot_comparison_metrics(history_paths: List[str], window: int, save_dir: Pat
     fig.savefig(save_dir / 'comparison_metrics.png')
     fig.savefig(save_dir / 'comparison_metrics.pdf')
     plt.close(fig)
-    print("  ✓ comparison_metrics.png / .pdf")
+    print("  saved comparison_metrics.png / .pdf")
 
 
 # ============================================================
@@ -770,6 +789,7 @@ def generate_all_plots(history_path: str, output_dir: str, window: int = 10):
     plot_eval_curve(eval_records, save_dir)
     plot_clip_fraction(records, window, save_dir)
     plot_dashboard(records, eval_records, window, save_dir, summary, objective=objective)
+    plot_dashboard_publication(records, eval_records, window, save_dir, summary, objective=objective)
     
     # 保存配置信息
     info_path = save_dir / 'plot_info.json'
@@ -786,6 +806,219 @@ def generate_all_plots(history_path: str, output_dir: str, window: int = 10):
     
     print(f"\n所有图表已保存至: {save_dir}")
     print(f"{'='*60}\n")
+
+
+def plot_dashboard_publication(records: List[Dict], eval_records: List[Dict],
+                               window: int, save_dir: Path, summary: Dict,
+                               objective: str = 'multi_objective'):
+    """Publication-oriented dashboard with cleaner narrative and annotations."""
+
+    def add_panel_label(ax, label: str) -> None:
+        ax.text(
+            0.01, 1.03, label, transform=ax.transAxes,
+            fontsize=11, fontweight='bold', va='bottom', ha='left'
+        )
+
+    def add_metric_box(ax, text: str, *, loc: str = 'upper left') -> None:
+        anchors = {
+            'upper left': (0.03, 0.97, 'left', 'top'),
+            'upper right': (0.97, 0.97, 'right', 'top'),
+            'lower left': (0.03, 0.03, 'left', 'bottom'),
+            'lower right': (0.97, 0.03, 'right', 'bottom'),
+        }
+        x, y, ha, va = anchors[loc]
+        ax.text(
+            x, y, text, transform=ax.transAxes,
+            fontsize=8.5, ha=ha, va=va,
+            bbox=dict(boxstyle='round,pad=0.35', facecolor='white', edgecolor='0.82', alpha=0.92)
+        )
+
+    fig = plt.figure(figsize=(16.5, 9.2))
+    gs = gridspec.GridSpec(2, 3, hspace=0.38, wspace=0.32)
+
+    steps, rewards = extract_series(records, 'recent_mean_reward')
+    _, actor_loss = extract_series(records, 'actor_loss')
+    _, critic_loss = extract_series(records, 'critic_loss')
+    _, entropy = extract_series(records, 'entropy')
+    _, kl_div = extract_series(records, 'kl_divergence')
+    _, ho_rate = extract_series(records, 'handover_success_rate')
+    _, continuity_rate = extract_series(records, 'service_continuity_rate')
+    _, task_rate = extract_series(records, 'task_completion_rate')
+    _, resolution_rate = extract_series(records, 'task_resolution_rate')
+    _, pending_rate = extract_series(records, 'pending_task_rate')
+    _, avg_delay = extract_series(records, 'avg_delay')
+    _, total_energy = extract_series(records, 'total_energy')
+
+    final_train = records[-1]
+    final_eval = eval_records[-1] if eval_records else {}
+
+    ax = fig.add_subplot(gs[0, 0])
+    reward_mean, reward_low, reward_high = compute_confidence_band(rewards, window)
+    ax.fill_between(steps, reward_low, reward_high, color=COLORS['primary'], alpha=0.12)
+    ax.plot(steps, rewards, alpha=0.10, color=COLORS['primary'], linewidth=0.8)
+    ax.plot(steps, reward_mean, color=COLORS['primary'], linewidth=2.2)
+    if objective == 'delay_only':
+        reward_title = 'Delay-Objective Convergence'
+        reward_ylabel = 'Objective Reward'
+    elif objective == 'energy_only':
+        reward_title = 'Energy-Objective Convergence'
+        reward_ylabel = 'Objective Reward'
+    else:
+        reward_title = 'Reward Convergence'
+        reward_ylabel = 'Mean Episode Reward'
+    ax.set_title(reward_title)
+    ax.set_xlabel('Training Steps')
+    ax.set_ylabel(reward_ylabel)
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    add_panel_label(ax, '(a)')
+    add_metric_box(ax, f"Final: {reward_mean[-1]:.2f}\nBest: {summary.get('best_reward', 0):.2f}")
+
+    ax = fig.add_subplot(gs[0, 1])
+    actor_s = smooth(actor_loss, window)
+    critic_s = smooth(critic_loss, window)
+    ax.plot(steps, actor_s, color=COLORS['primary'], linewidth=1.8, label='Actor loss')
+    ax.plot(steps, critic_s, color=COLORS['secondary'], linewidth=1.8, label='Critic loss')
+    ax.axhline(y=0.0, color='0.75', linestyle=':', linewidth=1.0)
+    ax.set_title('PPO Optimization Stability')
+    ax.set_xlabel('Training Steps')
+    ax.set_ylabel('Loss')
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    ax.legend(loc='upper right', fontsize=8.5)
+    add_panel_label(ax, '(b)')
+    add_metric_box(ax, f"Actor: {actor_s[-1]:.4f}\nCritic: {critic_s[-1]:.4f}", loc='lower left')
+
+    ax = fig.add_subplot(gs[0, 2])
+    entropy_s = smooth(entropy, window)
+    kl_s = smooth(kl_div, window)
+    ax.plot(steps, entropy_s, color=COLORS['purple'], linewidth=1.8, label='Entropy')
+    ax2 = ax.twinx()
+    ax2.plot(steps, kl_s, color=COLORS['warning'], linewidth=1.8, label='KL divergence')
+    ax2.axhline(y=0.01, color='0.55', linestyle=':', linewidth=1.0)
+    ax.set_title('Policy Regularity')
+    ax.set_xlabel('Training Steps')
+    ax.set_ylabel('Entropy', color=COLORS['purple'])
+    ax2.set_ylabel('KL Divergence', color=COLORS['warning'])
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8.2)
+    add_panel_label(ax, '(c)')
+    add_metric_box(ax, f"Entropy: {entropy_s[-1]:.3f}\nKL: {kl_s[-1]:.4f}", loc='lower left')
+
+    ax = fig.add_subplot(gs[1, 0])
+    ax.plot(steps, smooth(ho_rate * 100, window), color=COLORS['primary'],
+            linewidth=1.8, label='Handover success')
+    if np.any(continuity_rate):
+        ax.plot(steps, smooth(continuity_rate * 100, window), color=COLORS['info'],
+                linewidth=1.8, linestyle='--', label='Service continuity')
+    ax.plot(steps, smooth(task_rate * 100, window), color=COLORS['success'],
+            linewidth=1.8, label='Task completion')
+    if np.any(resolution_rate):
+        ax.plot(steps, smooth(resolution_rate * 100, window), color=COLORS['warning'],
+                linewidth=1.6, linestyle='-.', label='Task resolution')
+    if np.any(pending_rate):
+        ax.plot(steps, smooth(pending_rate * 100, window), color=COLORS['danger'],
+                linewidth=1.4, linestyle=':', label='Pending-task rate')
+    ax.set_title('Service Reliability and Task Service')
+    ax.set_xlabel('Training Steps')
+    ax.set_ylabel('Rate (%)')
+    ax.set_ylim(-5, 105)
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    ax.legend(loc='lower right', fontsize=8.0)
+    add_panel_label(ax, '(d)')
+    add_metric_box(
+        ax,
+        (
+            f"HO: {final_train.get('handover_success_rate', 0)*100:.1f}%\n"
+            f"Cont: {final_train.get('service_continuity_rate', 0)*100:.1f}%\n"
+            f"Task: {final_train.get('task_completion_rate', 0)*100:.1f}%"
+        ),
+    )
+
+    ax = fig.add_subplot(gs[1, 1])
+    delay_ms = avg_delay * 1000
+    delay_mean, delay_low, delay_high = compute_confidence_band(delay_ms, window)
+    ax.fill_between(steps, delay_low, delay_high, color=COLORS['info'], alpha=0.10)
+    ax.plot(steps, delay_mean, color=COLORS['info'], linewidth=1.9, label='Avg delay')
+    ax_e = ax.twinx()
+    energy_s = smooth(total_energy, window)
+    ax_e.plot(steps, energy_s, color=COLORS['warning'], linewidth=1.9, label='Total energy')
+    if objective == 'delay_only':
+        de_title = 'Delay-Centric Cost Trend'
+    elif objective == 'energy_only':
+        de_title = 'Energy-Centric Cost Trend'
+    else:
+        de_title = 'Delay-Energy Trade-off'
+    ax.set_title(de_title)
+    ax.set_xlabel('Training Steps')
+    ax.set_ylabel('Average Delay (ms)', color=COLORS['info'])
+    ax_e.set_ylabel('Total Energy (J)', color=COLORS['warning'])
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax_e.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8.2)
+    add_panel_label(ax, '(e)')
+    add_metric_box(ax, f"Delay: {delay_mean[-1]:.1f} ms\nEnergy: {energy_s[-1]:.1f} J", loc='lower left')
+
+    ax = fig.add_subplot(gs[1, 2])
+    if eval_records:
+        eval_steps = np.array([r['total_steps'] for r in eval_records])
+        eval_means = np.array([r['eval_mean_reward'] for r in eval_records])
+        eval_stds = np.array([r['eval_std_reward'] for r in eval_records])
+        ax.fill_between(
+            eval_steps,
+            eval_means - eval_stds,
+            eval_means + eval_stds,
+            color=COLORS['success'],
+            alpha=0.14,
+        )
+        ax.plot(eval_steps, eval_means, 'o-', color=COLORS['success'],
+                linewidth=1.8, markersize=4.5)
+        ax.set_title('Evaluation Performance')
+        ax.set_xlabel('Training Steps')
+        ax.set_ylabel('Evaluation Reward')
+        ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+        add_metric_box(
+            ax,
+            (
+                f"Best reward: {summary.get('best_reward', 0):.2f}\n"
+                f"Eval delay: {final_eval.get('avg_delay', 0)*1000:.1f} ms\n"
+                f"Eval task: {final_eval.get('task_completion_rate', 0)*100:.1f}%\n"
+                f"Eval cont: {final_eval.get('service_continuity_rate', 0)*100:.1f}%"
+            ),
+            loc='lower right',
+        )
+    else:
+        ax.axis('off')
+        summary_text = (
+            "Training Summary\n"
+            f"{'-' * 24}\n"
+            f"Total steps: {summary.get('total_steps', 0):,}\n"
+            f"Episodes: {summary.get('total_episodes', 0):,}\n"
+            f"Best reward: {summary.get('best_reward', 0):.2f}\n"
+            f"Training time: {summary.get('training_time_sec', 0)/3600:.2f} h\n"
+            f"Final reward: {float(reward_mean[-1]) if len(reward_mean) > 0 else 0:.2f}"
+        )
+        ax.text(
+            0.5, 0.5, summary_text, transform=ax.transAxes,
+            fontsize=11, va='center', ha='center', fontfamily='monospace',
+            bbox=dict(boxstyle='round,pad=0.8', facecolor='#f8f8f8', edgecolor='0.8', alpha=0.95)
+        )
+    add_panel_label(ax, '(f)')
+
+    if objective == 'delay_only':
+        dashboard_title = 'HAN-MAPPO Training Dashboard for Delay-Driven Optimization'
+    elif objective == 'energy_only':
+        dashboard_title = 'HAN-MAPPO Training Dashboard for Energy-Driven Optimization'
+    else:
+        dashboard_title = 'HAN-MAPPO Training Dashboard for Joint Handover and Offloading'
+
+    fig.suptitle(dashboard_title, fontsize=15, fontweight='bold', y=0.985)
+    fig.subplots_adjust(left=0.06, right=0.96, bottom=0.07, top=0.91, wspace=0.32, hspace=0.38)
+    fig.savefig(save_dir / 'dashboard_paper.png')
+    fig.savefig(save_dir / 'dashboard_paper.pdf')
+    plt.close(fig)
+    print("  paper dashboard exported")
 
 
 def main():

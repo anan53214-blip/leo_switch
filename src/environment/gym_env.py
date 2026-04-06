@@ -50,14 +50,14 @@ class EnvConfig:
     max_steps: int = 3600              # 最大步数 (1小时)
     
     # 可见性参数
-    min_elevation_deg: float = 15.0    # 提高最低仰角，减少可见卫星数
+    min_elevation_deg: float = 10.0    # More moderate visibility threshold
     
     # 切换参数
-    handover_delay_sec: float = 0.8    # 增大切换时延惩罚
-    rvt_threshold_sec: float = 30.0    # 降低RVT阈值，迫使更频繁切换决策
+    handover_delay_sec: float = 0.6    # Moderate signaling cost
+    rvt_threshold_sec: float = 60.0    # Encourage proactive switching
     
     # 任务参数
-    task_arrival_prob: float = 0.6     # 提高任务到达率，增加资源竞争
+    task_arrival_prob: float = 0.45    # Avoid pathological queue saturation
     
     # 奖励权重（增大正向奖励系数，平衡奖惩信号）
     reward_delay_weight: float = 1.0
@@ -225,6 +225,7 @@ class LEOSatelliteEnv(gym.Env):
             'total_handovers': 0,
             'successful_handovers': 0,
             'failed_handovers': 0,
+            'forced_disconnects': 0,
             'total_tasks': 0,
             'completed_tasks': 0,
             'deadline_violations': 0,
@@ -251,6 +252,45 @@ class LEOSatelliteEnv(gym.Env):
         for key, value in terms.items():
             if key in self.stats:
                 self.stats[key] += float(value)
+
+    @staticmethod
+    def _summarize_stats(stats: Dict[str, float]) -> Dict[str, float]:
+        """Add derived QoS and continuity metrics on top of raw counters."""
+        resolved_tasks = int(stats.get('completed_tasks', 0) + stats.get('deadline_violations', 0))
+        total_tasks = int(stats.get('total_tasks', 0))
+        pending_tasks = max(total_tasks - resolved_tasks, 0)
+        total_handovers = int(stats.get('total_handovers', 0))
+        forced_disconnects = int(stats.get('forced_disconnects', 0))
+        continuity_events = total_handovers + forced_disconnects
+
+        summary = stats.copy()
+        summary.update({
+            'resolved_tasks': resolved_tasks,
+            'pending_tasks': pending_tasks,
+            'handover_success_rate': (
+                float(stats.get('successful_handovers', 0)) / max(total_handovers, 1)
+            ),
+            'service_continuity_rate': (
+                1.0 - float(forced_disconnects) / max(continuity_events, 1)
+            ),
+            'task_completion_rate': (
+                float(stats.get('completed_tasks', 0)) / max(resolved_tasks, 1)
+            ),
+            'task_resolution_rate': (
+                float(resolved_tasks) / max(total_tasks, 1)
+            ),
+            'pending_task_rate': (
+                float(pending_tasks) / max(total_tasks, 1)
+            ),
+            'avg_delay': (
+                float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
+            ),
+            'avg_load_balance_score': (
+                float(stats.get('load_balance_sum', 0.0)) /
+                max(int(stats.get('load_balance_samples', 0)), 1)
+            ),
+        })
+        return summary
 
     def _compute_visibility_batch(self, user_id: int) -> List[VisibilityInfo]:
         """向量化计算单个用户对所有卫星的可见性"""
@@ -493,8 +533,9 @@ class LEOSatelliteEnv(gym.Env):
     def _generate_tasks(self):
         """为每个用户生成新任务"""
         for user_id in range(self.num_users):
+            user = self.user_manager.users[user_id]
             # 如果用户没有待处理任务，以一定概率生成新任务
-            if self.user_tasks[user_id] is None:
+            if self.user_tasks[user_id] is None and user.state == UserState.CONNECTED:
                 if self.rng.random() < self.config.task_arrival_prob:
                     task = self.task_generator.generate_task(
                         user_id=user_id,
@@ -614,6 +655,49 @@ class LEOSatelliteEnv(gym.Env):
             'reward_qos': reward_qos,
             'penalty_deadline': penalty_deadline,
         }
+
+    def _compute_handover_success_probability(
+        self,
+        elevation_deg: float,
+        rvt_seconds: float,
+        snr_db: float,
+        utilization: float,
+        queue_ratio: float,
+        migration_load: int = 0,
+    ) -> float:
+        """
+        Estimate handover success from channel quality and target load.
+
+        This makes the success signal sensitive to the chosen target satellite,
+        which is closer to the cooperative handover setting in the reference
+        papers than using a fixed success probability.
+        """
+        elevation_score = np.clip(
+            (elevation_deg - self.config.min_elevation_deg) /
+            max(90.0 - self.config.min_elevation_deg, 1.0),
+            0.0,
+            1.0,
+        )
+        rvt_score = np.clip(
+            rvt_seconds / max(2.0 * self.config.rvt_threshold_sec, 1.0),
+            0.0,
+            1.0,
+        )
+        snr_score = np.clip((snr_db + 5.0) / 30.0, 0.0, 1.0)
+        load_headroom = 1.0 - np.clip(utilization, 0.0, 1.0)
+        queue_headroom = 1.0 - np.clip(queue_ratio, 0.0, 1.0)
+        migration_penalty = np.clip(migration_load / 5.0, 0.0, 1.0)
+
+        success_prob = (
+            0.35
+            + 0.20 * elevation_score
+            + 0.15 * rvt_score
+            + 0.15 * snr_score
+            + 0.10 * load_headroom
+            + 0.10 * queue_headroom
+            - 0.10 * migration_penalty
+        )
+        return float(np.clip(success_prob, 0.1, 0.995))
     
     def _execute_handover(self, user: User, target_sat: VisibilityInfo) -> float:
         """
@@ -631,10 +715,16 @@ class LEOSatelliteEnv(gym.Env):
         balance_before = self._compute_load_balance_score()
         
         old_sat_id = user.serving_satellite
+        old_server = self.mec_manager.get_server(old_sat_id) if old_sat_id >= 0 else None
+        new_server = self.mec_manager.get_server(target_sat.sat_id)
+        migration_load = 0
+        if old_server is not None:
+            migration_load = sum(
+                1 for task in old_server.task_queue if task['user_id'] == user.user_id
+            )
         
         # 从旧卫星断开
         if old_sat_id >= 0:
-            old_server = self.mec_manager.get_server(old_sat_id)
             if old_server:
                 old_server.remove_user(user.user_id)
         
@@ -644,14 +734,29 @@ class LEOSatelliteEnv(gym.Env):
         # 模拟切换过程
         user.start_handover(target_sat.sat_id, self.current_time)
         
-        # 简化：假设切换成功
-        handover_success = self.rng.random() > 0.05  # 95%成功率
+        snr_db = self.channel.compute_snr_db(
+            target_sat.distance_km,
+            target_sat.elevation_deg,
+        )
+        queue_ratio = 1.0
+        utilization = 1.0
+        if new_server is not None:
+            queue_ratio = new_server.queue_length / max(new_server.config.max_queue_size, 1)
+            utilization = new_server.utilization
+        success_prob = self._compute_handover_success_probability(
+            elevation_deg=target_sat.elevation_deg,
+            rvt_seconds=target_sat.rvt_seconds,
+            snr_db=snr_db,
+            utilization=utilization,
+            queue_ratio=queue_ratio,
+            migration_load=migration_load,
+        )
+        handover_success = self.rng.random() < success_prob
         
         if handover_success:
             user.complete_handover(target_sat.sat_id, self.current_time, success=True)
             
             # 连接到新卫星的MEC
-            new_server = self.mec_manager.get_server(target_sat.sat_id)
             if new_server:
                 new_server.add_user(user.user_id)
             
@@ -909,7 +1014,7 @@ class LEOSatelliteEnv(gym.Env):
                             stale_server.remove_user(user.user_id)
                     user.serving_satellite = -1
                     user.state = UserState.BLOCKED
-                    self.stats['failed_handovers'] += 1
+                    self.stats['forced_disconnects'] += 1
     
     def _get_visible_satellites(self, user: User) -> List[VisibilityInfo]:
         """获取用户可见的卫星列表（带缓存）"""
@@ -1073,7 +1178,7 @@ class LEOSatelliteEnv(gym.Env):
         return {
             'step': self.current_step,
             'time': self.current_time,
-            'stats': self.stats.copy(),
+            'stats': self._summarize_stats(self.stats.copy()),
             'load_balance_score': self._compute_load_balance_score(),
             'mean_reward': np.mean(self.episode_rewards) if self.episode_rewards else 0.0,
         }
@@ -1096,10 +1201,14 @@ class LEOSatelliteEnv(gym.Env):
         print(f"Users: {connected} connected, {blocked} blocked")
         
         # 统计信息
+        summary = self._summarize_stats(self.stats.copy())
         print(f"Handovers: {self.stats['successful_handovers']}/{self.stats['total_handovers']}")
-        print(f"Tasks: {self.stats['completed_tasks']}/{self.stats['total_tasks']}")
-        if self.stats['total_tasks'] > 0:
-            print(f"Avg Delay: {self.stats['total_delay']/max(self.stats['total_tasks'],1)*1000:.2f}ms")
+        print(
+            f"Tasks: {self.stats['completed_tasks']}/{summary['resolved_tasks']} resolved, "
+            f"{summary['pending_tasks']} pending"
+        )
+        if summary['resolved_tasks'] > 0:
+            print(f"Avg Delay: {summary['avg_delay']*1000:.2f}ms")
     
     def close(self):
         """关闭环境"""

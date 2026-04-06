@@ -14,6 +14,11 @@ def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
     return LEOSatelliteEnv(config)
 
 
+class _DeterministicRng:
+    def random(self):
+        return 0.0
+
+
 def test_handover_weight_changes_reward_signal():
     env_low = _build_single_user_env(reward_handover_weight=0.0)
     env_high = _build_single_user_env(reward_handover_weight=1.0)
@@ -34,6 +39,8 @@ def test_handover_weight_changes_reward_signal():
         )
         assert action_index is not None
 
+        env_low.rng = _DeterministicRng()
+        env_high.rng = _DeterministicRng()
         actions = np.array([[float(action_index), 0.0]], dtype=np.float32)
         _, reward_low, *_ = env_low.step(actions)
         _, reward_high, *_ = env_high.step(actions)

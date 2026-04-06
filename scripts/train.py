@@ -86,11 +86,11 @@ class TrainConfig:
     num_users: int = 5                    # 用户数量
     max_steps: int = 1000                 # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
-    reward_delay_weight: float = 1.0
-    reward_energy_weight: float = 0.8
-    reward_handover_weight: float = 0.5
-    reward_load_balance_weight: float = 0.2
-    reward_qos_weight: float = 0.3
+    reward_delay_weight: float = 1.4
+    reward_energy_weight: float = 0.4
+    reward_handover_weight: float = 0.3
+    reward_load_balance_weight: float = 0.1
+    reward_qos_weight: float = 0.4
     
     # ---------- 图参数 ----------
     max_visible_sats: int = 10            # 最大可见卫星数（候选集）
@@ -547,6 +547,7 @@ class HANMAPPOTrainer:
             'total_handovers': 0,
             'successful_handovers': 0,
             'failed_handovers': 0,
+            'forced_disconnects': 0,
             'total_tasks': 0,
             'completed_tasks': 0,
             'deadline_violations': 0,
@@ -685,6 +686,13 @@ class HANMAPPOTrainer:
         
         # 获取环境统计（切换成功率、任务完成率、延迟、能耗等）
         env_stats = rollout_env_stats
+        resolved_tasks = (
+            env_stats.get('completed_tasks', 0) + env_stats.get('deadline_violations', 0)
+        )
+        pending_tasks = max(env_stats.get('total_tasks', 0) - resolved_tasks, 0)
+        continuity_events = (
+            env_stats.get('total_handovers', 0) + env_stats.get('forced_disconnects', 0)
+        )
         
         stats = {
             'episodes': len(episode_rewards),
@@ -698,17 +706,29 @@ class HANMAPPOTrainer:
             'total_handovers': env_stats.get('total_handovers', 0),
             'successful_handovers': env_stats.get('successful_handovers', 0),
             'failed_handovers': env_stats.get('failed_handovers', 0),
+            'forced_disconnects': env_stats.get('forced_disconnects', 0),
             'handover_success_rate': (
                 env_stats['successful_handovers'] / max(env_stats['total_handovers'], 1)
+            ),
+            'service_continuity_rate': (
+                1.0 - env_stats.get('forced_disconnects', 0) / max(continuity_events, 1)
             ),
             'total_tasks': env_stats.get('total_tasks', 0),
             'completed_tasks': env_stats.get('completed_tasks', 0),
             'deadline_violations': env_stats.get('deadline_violations', 0),
+            'resolved_tasks': resolved_tasks,
+            'pending_tasks': pending_tasks,
             'task_completion_rate': (
-                env_stats['completed_tasks'] / max(env_stats['total_tasks'], 1)
+                env_stats['completed_tasks'] / max(resolved_tasks, 1)
+            ),
+            'task_resolution_rate': (
+                resolved_tasks / max(env_stats['total_tasks'], 1)
+            ),
+            'pending_task_rate': (
+                pending_tasks / max(env_stats['total_tasks'], 1)
             ),
             'avg_delay': (
-                env_stats['total_delay'] / max(env_stats['total_tasks'], 1)
+                env_stats['total_delay'] / max(resolved_tasks, 1)
             ),
             'total_energy': env_stats.get('total_energy', 0.0),
             'avg_load_balance_score': (
@@ -785,11 +805,17 @@ class HANMAPPOTrainer:
                 'total_handovers': rollout_stats.get('total_handovers', 0),
                 'successful_handovers': rollout_stats.get('successful_handovers', 0),
                 'failed_handovers': rollout_stats.get('failed_handovers', 0),
+                'forced_disconnects': rollout_stats.get('forced_disconnects', 0),
                 'handover_success_rate': rollout_stats.get('handover_success_rate', 0),
+                'service_continuity_rate': rollout_stats.get('service_continuity_rate', 0),
                 'total_tasks': rollout_stats.get('total_tasks', 0),
                 'completed_tasks': rollout_stats.get('completed_tasks', 0),
                 'deadline_violations': rollout_stats.get('deadline_violations', 0),
+                'resolved_tasks': rollout_stats.get('resolved_tasks', 0),
+                'pending_tasks': rollout_stats.get('pending_tasks', 0),
                 'task_completion_rate': rollout_stats.get('task_completion_rate', 0),
+                'task_resolution_rate': rollout_stats.get('task_resolution_rate', 0),
+                'pending_task_rate': rollout_stats.get('pending_task_rate', 0),
                 'avg_delay': rollout_stats.get('avg_delay', 0),
                 'total_energy': rollout_stats.get('total_energy', 0),
                 'avg_load_balance_score': rollout_stats.get('avg_load_balance_score', 0),
@@ -872,7 +898,9 @@ class HANMAPPOTrainer:
         self.logger.info(
             "  Env | "
             f"HO: {rollout_stats.get('handover_success_rate', 0):.2%} | "
+            f"Cont: {rollout_stats.get('service_continuity_rate', 0):.2%} | "
             f"Task: {rollout_stats.get('task_completion_rate', 0):.2%} | "
+            f"Resolved: {rollout_stats.get('task_resolution_rate', 0):.2%} | "
             f"Delay: {rollout_stats.get('avg_delay', 0):.3f}s | "
             f"Energy: {rollout_stats.get('total_energy', 0):.2f}J | "
             f"LB: {rollout_stats.get('avg_load_balance_score', 0):.3f}"
@@ -936,6 +964,13 @@ class HANMAPPOTrainer:
         mean_reward = np.mean(eval_rewards)
         std_reward = np.std(eval_rewards)
         mean_length = np.mean(eval_lengths)
+        resolved_tasks = (
+            eval_env_stats.get('completed_tasks', 0) + eval_env_stats.get('deadline_violations', 0)
+        )
+        pending_tasks = max(eval_env_stats.get('total_tasks', 0) - resolved_tasks, 0)
+        continuity_events = (
+            eval_env_stats.get('total_handovers', 0) + eval_env_stats.get('forced_disconnects', 0)
+        )
         
         # 记录评估结果到 eval_history
         eval_record = {
@@ -945,14 +980,26 @@ class HANMAPPOTrainer:
             'eval_std_reward': float(std_reward),
             'eval_mean_length': float(mean_length),
             'eval_rewards': [float(r) for r in eval_rewards],
+            'forced_disconnects': eval_env_stats.get('forced_disconnects', 0),
             'handover_success_rate': (
                 eval_env_stats['successful_handovers'] / max(eval_env_stats['total_handovers'], 1)
             ),
+            'service_continuity_rate': (
+                1.0 - eval_env_stats.get('forced_disconnects', 0) / max(continuity_events, 1)
+            ),
+            'resolved_tasks': resolved_tasks,
+            'pending_tasks': pending_tasks,
             'task_completion_rate': (
-                eval_env_stats['completed_tasks'] / max(eval_env_stats['total_tasks'], 1)
+                eval_env_stats['completed_tasks'] / max(resolved_tasks, 1)
+            ),
+            'task_resolution_rate': (
+                resolved_tasks / max(eval_env_stats['total_tasks'], 1)
+            ),
+            'pending_task_rate': (
+                pending_tasks / max(eval_env_stats['total_tasks'], 1)
             ),
             'avg_delay': (
-                eval_env_stats['total_delay'] / max(eval_env_stats['total_tasks'], 1)
+                eval_env_stats['total_delay'] / max(resolved_tasks, 1)
             ),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'avg_load_balance_score': (
@@ -1084,15 +1131,15 @@ def parse_args():
                         help='用户数量')
     parser.add_argument('--max_steps', type=int, default=1000,
                         help='每episode最大步数')
-    parser.add_argument('--reward_delay_weight', type=float, default=1.0,
+    parser.add_argument('--reward_delay_weight', type=float, default=1.4,
                         help='时延奖励权重')
-    parser.add_argument('--reward_energy_weight', type=float, default=0.8,
+    parser.add_argument('--reward_energy_weight', type=float, default=0.4,
                         help='能耗奖励权重')
-    parser.add_argument('--reward_handover_weight', type=float, default=0.5,
+    parser.add_argument('--reward_handover_weight', type=float, default=0.3,
                         help='切换奖励权重')
-    parser.add_argument('--reward_load_balance_weight', type=float, default=0.2,
+    parser.add_argument('--reward_load_balance_weight', type=float, default=0.1,
                         help='负载均衡奖励权重')
-    parser.add_argument('--reward_qos_weight', type=float, default=0.3,
+    parser.add_argument('--reward_qos_weight', type=float, default=0.4,
                         help='QoS奖励权重')
     
     # 训练参数
