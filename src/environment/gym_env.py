@@ -148,6 +148,7 @@ class LEOSatelliteEnv(gym.Env):
         
         # 统计信息
         self.stats = self._build_stats()
+        self._last_load_balance_score = 1.0
     
     def _init_constellation(self):
         """初始化星座"""
@@ -443,6 +444,7 @@ class LEOSatelliteEnv(gym.Env):
         self._prev_elevations = {}  # 重置RVT仰角历史
         self._invalidate_visibility_cache()
         self.stats = self._build_stats()
+        self._last_load_balance_score = 1.0
         
         # 初始连接：为每个用户选择最佳卫星
         self._initial_connection()
@@ -471,7 +473,13 @@ class LEOSatelliteEnv(gym.Env):
             else:
                 user.state = UserState.BLOCKED
     
-    def step(self, actions: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+    def step(
+        self,
+        actions: np.ndarray,
+        *,
+        return_observation: bool = True,
+        return_info: bool = True
+    ) -> Tuple[Optional[np.ndarray], float, bool, bool, Dict]:
         """
         执行一步
         
@@ -516,6 +524,7 @@ class LEOSatelliteEnv(gym.Env):
         total_reward = np.mean(user_rewards)
         self.episode_rewards.append(total_reward)
         load_balance_score = self._compute_load_balance_score()
+        self._last_load_balance_score = load_balance_score
         self.stats['load_balance_sum'] += load_balance_score
         self.stats['load_balance_samples'] += 1
         
@@ -525,8 +534,8 @@ class LEOSatelliteEnv(gym.Env):
         truncated = self.current_step >= self.config.max_steps
         
         # 6. 获取新观测
-        observation = self._get_observation()
-        info = self._get_info()
+        observation = self._get_observation() if return_observation else None
+        info = self._get_info() if return_info else {}
         
         return observation, total_reward, terminated, truncated, info
     
@@ -1175,13 +1184,18 @@ class LEOSatelliteEnv(gym.Env):
     
     def _get_info(self) -> Dict:
         """获取环境信息"""
+        stats_summary = self.get_stats_summary()
         return {
             'step': self.current_step,
             'time': self.current_time,
-            'stats': self._summarize_stats(self.stats.copy()),
-            'load_balance_score': self._compute_load_balance_score(),
+            'stats': stats_summary,
+            'load_balance_score': self._last_load_balance_score,
             'mean_reward': np.mean(self.episode_rewards) if self.episode_rewards else 0.0,
         }
+
+    def get_stats_summary(self) -> Dict[str, float]:
+        """Return a snapshot of derived environment statistics."""
+        return self._summarize_stats(self.stats.copy())
     
     def render(self):
         """渲染环境"""

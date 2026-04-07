@@ -145,6 +145,10 @@ class FeatureExtractor:
         self.max_data_size = 50e6          # 最大数据量(bits)
         self.max_computation = 10e9        # 最大计算量(cycles)
         self.max_delay = 10.0              # 最大时延要求(s)
+        self._isl_topology_cache: Dict[
+            Tuple[int, int],
+            Tuple[np.ndarray, np.ndarray, np.ndarray, List[Tuple[int, int]]]
+        ] = {}
     
     # ================================================================
     #                       节点特征提取
@@ -253,7 +257,7 @@ class FeatureExtractor:
             idx = 0
             
             # ------ 1. 位置特征 (3维) ------
-            pos_ecef = user.get_ecef_position()
+            pos_ecef = env._user_pos_ecef[user_id]
             norm_factor = 7000.0
             features[user_id, idx:idx+3] = pos_ecef / norm_factor
             idx += 3
@@ -461,6 +465,18 @@ class FeatureExtractor:
         num_planes = env.constellation.num_planes
         sats_per_plane = env.constellation.sats_per_plane
         all_pos = env.constellation._all_pos_ecef  # (N, 3)
+        topology_key = (num_planes, sats_per_plane)
+        cached_topology = self._isl_topology_cache.get(topology_key)
+        if cached_topology is not None:
+            src_arr, dst_arr, link_type_arr, edges = cached_topology
+            diffs = all_pos[src_arr] - all_pos[dst_arr]  # (E, 3)
+            distances = np.linalg.norm(diffs, axis=1)     # (E,)
+            features = np.column_stack([
+                distances / 5000.0,
+                distances / 300.0 / 20.0,
+                link_type_arr
+            ]).astype(np.float32)
+            return edges, features
         
         # 预计算所有ISL边索引（拓扑固定，只需算一次距离）
         src_list = []
@@ -495,13 +511,20 @@ class FeatureExtractor:
         diffs = all_pos[src_arr] - all_pos[dst_arr]  # (E, 3)
         distances = np.linalg.norm(diffs, axis=1)     # (E,)
         
+        link_type_arr = np.asarray(link_types, dtype=np.float32)
         features = np.column_stack([
             distances / 5000.0,
             distances / 300.0 / 20.0,
-            np.array(link_types)
+            link_type_arr
         ]).astype(np.float32)
         
         edges = list(zip(src_list, dst_list))
+        self._isl_topology_cache[topology_key] = (
+            np.asarray(src_arr, dtype=np.int32),
+            np.asarray(dst_arr, dtype=np.int32),
+            link_type_arr,
+            edges
+        )
         return edges, features
     
     # ================================================================

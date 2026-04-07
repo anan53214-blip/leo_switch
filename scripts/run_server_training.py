@@ -102,6 +102,19 @@ STANDARD_CONFIG = {
     'log_path':         'results/logs',
 }
 
+# 方案 A-fast: 在保持任务定义不变的前提下优先吞吐
+FAST_STANDARD_CONFIG = {
+    **STANDARD_CONFIG,
+    'exp_name':         'han_mappo_delay_focus_fast',
+    'graph_update_interval': 100,        # 减少HAN重编码频率
+    'eval_interval':    100_000,         # 降低长评估频率
+    'eval_episodes':    3,               # 评估集缩小
+    'save_interval':    200_000,         # 减少磁盘写入
+    'n_epochs':         4,               # PPO更新更快
+    'batch_size':       256,             # 更贴近3090吞吐
+    'early_stop_patience': 30,
+}
+
 # 方案 B: 大规模用户训练（~4-6小时）
 LARGE_SCALE_CONFIG = {
     **STANDARD_CONFIG,
@@ -172,6 +185,8 @@ def run_training(config_dict: dict):
 
     # 创建训练器并开始训练
     trainer = HANMAPPOTrainer(config)
+    if getattr(config, 'load_path', None):
+        trainer.load_checkpoint(config.load_path)
     start = time.time()
     trainer.train()
     elapsed = time.time() - start
@@ -276,7 +291,7 @@ if __name__ == '__main__':
         """)
 
     parser.add_argument('--plan', type=str, default='standard',
-                        choices=['standard', 'large', 'quick', 'multi_seed'],
+                        choices=['standard', 'standard_fast', 'large', 'quick', 'multi_seed'],
                         help='训练方案 (默认: standard)')
     parser.add_argument('--users', type=int, default=None,
                         help='覆盖用户数')
@@ -286,6 +301,8 @@ if __name__ == '__main__':
                         help='覆盖随机种子')
     parser.add_argument('--device', type=str, default='cuda',
                         help='设备 (cuda/cpu)')
+    parser.add_argument('--load_path', type=str, default=None,
+                        help='从检查点恢复训练')
     parser.add_argument('--window', type=int, default=10,
                         help='绘图滑动窗口大小')
     parser.add_argument('--no_plot', action='store_true',
@@ -303,6 +320,7 @@ if __name__ == '__main__':
     # ---------- 选择配置 ----------
     configs = {
         'standard':   STANDARD_CONFIG,
+        'standard_fast': FAST_STANDARD_CONFIG,
         'large':      LARGE_SCALE_CONFIG,
         'quick':      QUICK_TEST_CONFIG,
     }
@@ -314,6 +332,8 @@ if __name__ == '__main__':
         if args.steps:
             base['total_timesteps'] = args.steps
         base['device'] = args.device
+        if args.load_path:
+            base['load_path'] = args.load_path
 
         paths = run_multi_seed(base, MULTI_SEED_SEEDS)
 
@@ -333,6 +353,8 @@ if __name__ == '__main__':
         if args.seed:
             cfg['seed'] = args.seed
         cfg['device'] = args.device
+        if args.load_path:
+            cfg['load_path'] = args.load_path
 
         save_path = run_training(cfg)
 

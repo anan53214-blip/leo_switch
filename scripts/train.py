@@ -611,7 +611,11 @@ class HANMAPPOTrainer:
             
             # 执行动作
             env_actions = self._process_actions(actions)
-            next_obs, rewards, terminated, truncated, info = self.env.step(env_actions)
+            _, rewards, terminated, truncated, _ = self.env.step(
+                env_actions,
+                return_observation=False,
+                return_info=False
+            )
             
             done = terminated or truncated
             
@@ -651,7 +655,7 @@ class HANMAPPOTrainer:
             
             # 处理episode结束
             if done:
-                self._accumulate_env_stats(rollout_env_stats, info.get('stats', {}))
+                self._accumulate_env_stats(rollout_env_stats, self.env.get_stats_summary())
                 episode_rewards.append(current_reward)
                 episode_lengths.append(current_length)
                 self.recent_rewards.append(current_reward)
@@ -662,9 +666,7 @@ class HANMAPPOTrainer:
                 current_length = 0
                 self.episodes += 1
                 
-                obs, info = self.env.reset()
-            else:
-                obs = next_obs
+                self.env.reset()
             
             # 更新观测
             observations, satellite_embeddings, available_actions = self._encode_graph_state()
@@ -943,7 +945,11 @@ class HANMAPPOTrainer:
                     )
                 
                 env_actions = self._process_actions(actions)
-                obs, rewards, terminated, truncated, info = self.env.step(env_actions)
+                _, rewards, terminated, truncated, _ = self.env.step(
+                    env_actions,
+                    return_observation=False,
+                    return_info=False
+                )
                 
                 done = terminated or truncated
                 
@@ -959,7 +965,7 @@ class HANMAPPOTrainer:
             
             eval_rewards.append(episode_reward)
             eval_lengths.append(episode_length)
-            self._accumulate_env_stats(eval_env_stats, info.get('stats', {}))
+            self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
         
         mean_reward = np.mean(eval_rewards)
         std_reward = np.std(eval_rewards)
@@ -1151,6 +1157,8 @@ def parse_args():
                         help='学习率')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='批大小')
+    parser.add_argument('--n_epochs', type=int, default=10,
+                        help='每次更新的PPO epoch数')
     
     # HAN参数
     parser.add_argument('--han_hidden_dim', type=int, default=64,
@@ -1165,6 +1173,10 @@ def parse_args():
                         help='模型保存路径')
     parser.add_argument('--load_path', type=str, default=None,
                         help='加载检查点路径')
+    parser.add_argument('--save_interval', type=int, default=50000,
+                        help='检查点保存间隔（步）')
+    parser.add_argument('--log_interval', type=int, default=1,
+                        help='训练日志打印间隔（update）')
     
     # 评估
     parser.add_argument('--eval_interval', type=int, default=10000,
@@ -1173,6 +1185,8 @@ def parse_args():
                         help='每次评估的episode数')
     parser.add_argument('--graph_update_interval', type=int, default=20,
                         help='图重建间隔（步），增大可提速')
+    parser.add_argument('--early_stop_patience', type=int, default=30,
+                        help='连续多少次更新无改善后早停，0表示禁用')
     parser.add_argument('--value_loss_type', type=str, default='huber', choices=['mse', 'huber'],
                         help='Critic损失类型')
     parser.add_argument('--disable_return_norm', action='store_true',
@@ -1210,14 +1224,18 @@ def main():
     config.n_steps = args.n_steps
     config.learning_rate = args.learning_rate
     config.batch_size = args.batch_size
+    config.n_epochs = args.n_epochs
     config.han_hidden_dim = args.han_hidden_dim
     config.han_num_heads = args.han_num_heads
     config.han_num_layers = args.han_num_layers
     config.save_path = args.save_path
     config.load_path = args.load_path
+    config.save_interval = args.save_interval
+    config.log_interval = args.log_interval
     config.eval_interval = args.eval_interval
     config.eval_episodes = args.eval_episodes
     config.graph_update_interval = args.graph_update_interval
+    config.early_stop_patience = args.early_stop_patience
     config.value_loss_type = args.value_loss_type
     config.normalize_returns = not args.disable_return_norm
     
