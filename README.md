@@ -9,7 +9,7 @@
 ```
 LEO_switch/
 ├── config/
-│   └── constellation.yaml          # Walker 星座配置
+│   └── （当前无运行时 YAML 配置）
 ├── docs/
 │   ├── SYSTEM_ARCHITECTURE.md      # 完整技术文档（与代码逐行校对）
 │   ├── TRAINING_GUIDE.md           # 训练使用方法

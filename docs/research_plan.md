@@ -603,7 +603,7 @@ results/
 ````markdown
 LEO_switch/
 ├── config/                          # 配置文件
-│   └── constellation.yaml           # 星座参数配置
+│   └── （当前无运行时 YAML 星座配置文件）
 │
 ├── docs/                            # 文档
 │   └── research_plan.md             # 研究计划文档（本文件）

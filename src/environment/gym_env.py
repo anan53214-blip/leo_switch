@@ -18,8 +18,6 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-import yaml
-
 from .constellation import WalkerConstellation
 from .visibility import VisibilityCalculator, VisibilityInfo
 from .user import User, UserPosition, UserState, UserGenerator, UserManager
