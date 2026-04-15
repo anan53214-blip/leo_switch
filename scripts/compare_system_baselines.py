@@ -40,9 +40,32 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
 from src.environment.user import UserState
-from scripts.train import HANMAPPOTrainer, TrainConfig
-from scripts.train_delay_only import DelayOnlyEnv, DelayOnlyTrainer
-from scripts.train_energy_only import EnergyOnlyEnv, EnergyOnlyTrainer
+
+try:
+    from scripts.train import HANMAPPOTrainer, TrainConfig
+except ModuleNotFoundError:
+    # Compatible with direct execution: python scripts/compare_system_baselines.py
+    from train import HANMAPPOTrainer, TrainConfig
+
+DelayOnlyEnv = None
+DelayOnlyTrainer = None
+try:
+    from scripts.train_delay_only import DelayOnlyEnv, DelayOnlyTrainer
+except ModuleNotFoundError:
+    try:
+        from train_delay_only import DelayOnlyEnv, DelayOnlyTrainer
+    except ModuleNotFoundError:
+        pass
+
+EnergyOnlyEnv = None
+EnergyOnlyTrainer = None
+try:
+    from scripts.train_energy_only import EnergyOnlyEnv, EnergyOnlyTrainer
+except ModuleNotFoundError:
+    try:
+        from train_energy_only import EnergyOnlyEnv, EnergyOnlyTrainer
+    except ModuleNotFoundError:
+        pass
 
 
 DEFAULT_BASELINES = [
@@ -121,6 +144,8 @@ def build_env_for_objective(
 ) -> LEOSatelliteEnv:
     env_config = build_env_config_from_train_config(config, seed=seed, max_steps=max_steps)
     if objective == "delay_only":
+        if DelayOnlyEnv is None:
+            raise ModuleNotFoundError("delay_only objective requires scripts/train_delay_only.py")
         env_config.reward_delay_weight = 1.0
         env_config.reward_energy_weight = 0.0
         env_config.reward_handover_weight = 0.0
@@ -132,6 +157,8 @@ def build_env_for_objective(
             failed_handover_penalty=float(config.get("failed_handover_penalty", 1.0)),
         )
     if objective == "energy_only":
+        if EnergyOnlyEnv is None:
+            raise ModuleNotFoundError("energy_only objective requires scripts/train_energy_only.py")
         env_config.reward_delay_weight = 0.0
         env_config.reward_energy_weight = 1.0
         env_config.reward_handover_weight = 0.0
@@ -731,8 +758,12 @@ def evaluate_simple_heuristic_with_offload_search(
 
 def trainer_class_for_objective(objective: str):
     if objective == "delay_only":
+        if DelayOnlyTrainer is None:
+            raise ModuleNotFoundError("delay_only objective requires scripts/train_delay_only.py")
         return DelayOnlyTrainer
     if objective == "energy_only":
+        if EnergyOnlyTrainer is None:
+            raise ModuleNotFoundError("energy_only objective requires scripts/train_energy_only.py")
         return EnergyOnlyTrainer
     return HANMAPPOTrainer
 
