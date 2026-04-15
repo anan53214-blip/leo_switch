@@ -56,7 +56,7 @@ import torch
 
 # 方案 A: 标准训练（推荐首次使用，~2小时）
 STANDARD_CONFIG = {
-    'exp_name':         'han_mappo_delay_focus',
+    'exp_name':         'han_mappo_delay_focus_fast',
     'seed':             42,
     'device':           'cuda',          # 3090 自动使用 CUDA
 
@@ -85,17 +85,18 @@ STANDARD_CONFIG = {
     'gae_lambda':       0.95,
     'clip_range':       0.2,
     'entropy_coef':     0.01,            # v4: 降低熵系数，Beta分布下0.05过大
-    'n_epochs':         10,              # v4: 增加epoch数，充分利用数据
-    'batch_size':       64,              # v4: 减小batch，增加mini-batch数量
+    'n_epochs':         4,               # PPO更新更快
+    'batch_size':       256,             # 更贴近3090吞吐
 
     # 训练
     'total_timesteps':  1_000_000,       # 100万步
     'n_steps':          2048,            # 每轮收集 2048 步
-    'eval_interval':    20_000,          # 每 2 万步评估一次
-    'eval_episodes':    5,               # 评估 5 个 episode
-    'save_interval':    100_000,         # 每 10 万步保存一次
+    'eval_interval':    100_000,         # 降低长评估频率
+    'eval_episodes':    3,               # 评估集缩小
+    'graph_update_interval': 100,        # 减少HAN重编码频率
+    'save_interval':    200_000,         # 减少磁盘写入
     'log_interval':     1,               # 每次更新都打印日志
-    'early_stop_patience': 50,           # v4: 放宽早停，给策略更多学习时间
+    'early_stop_patience': 30,
 
     # 路径
     'save_path':        'results/full_train_delay_focus',

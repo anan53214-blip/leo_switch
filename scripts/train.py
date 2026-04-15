@@ -74,7 +74,7 @@ class TrainConfig:
     整合环境、HAN、MAPPO、训练等所有参数
     """
     # ---------- 实验信息 ----------
-    exp_name: str = "han_mappo_leo"      # 实验名称
+    exp_name: str = "han_mappo_delay_focus_fast"  # 实验名称
     seed: int = 42                        # 随机种子
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     
@@ -83,8 +83,8 @@ class TrainConfig:
     sats_per_plane: int = 11              # 每轨道卫星数
     altitude_km: float = 550.0            # 轨道高度
     inclination_deg: float = 53.0         # 轨道倾角
-    num_users: int = 5                    # 用户数量
-    max_steps: int = 1000                 # 每episode最大步数
+    num_users: int = 10                   # 用户数量
+    max_steps: int = 2000                 # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
     reward_delay_weight: float = 1.4
     reward_energy_weight: float = 0.4
@@ -120,20 +120,20 @@ class TrainConfig:
     value_huber_beta: float = 10.0        # Huber损失beta（仅value_loss_type=huber时有效）
     entropy_coef: float = 0.01            # 熵系数（v4: 从0.05降至0.01）
     max_grad_norm: float = 0.5            # 梯度裁剪
-    n_epochs: int = 10                    # 更新轮数（v4: 从4增至10）
-    batch_size: int = 64                  # 批大小
+    n_epochs: int = 4                     # 更新轮数
+    batch_size: int = 256                 # 批大小
     
     # ---------- 训练参数 ----------
-    total_timesteps: int = 500_000        # 总训练步数
+    total_timesteps: int = 1_000_000      # 总训练步数
     n_steps: int = 2048                   # 每次更新收集步数
-    eval_interval: int = 10_000           # 评估间隔
-    eval_episodes: int = 5                # 评估episode数
-    graph_update_interval: int = 20       # 图重建间隔（步），增大可提速
-    save_interval: int = 50_000           # 保存间隔
+    eval_interval: int = 100_000          # 评估间隔
+    eval_episodes: int = 3                # 评估episode数
+    graph_update_interval: int = 100      # 图重建间隔（步），增大可提速
+    save_interval: int = 200_000          # 保存间隔
     log_interval: int = 1                 # 日志间隔
     
     # ---------- 路径参数 ----------
-    save_path: str = "results/models"     # 模型保存路径
+    save_path: str = "results/full_train_delay_focus"  # 模型保存路径
     log_path: str = "results/logs"        # 日志路径
     
     # ---------- 加载参数 ----------
@@ -1125,7 +1125,7 @@ def parse_args():
     )
     
     # 实验参数
-    parser.add_argument('--exp_name', type=str, default='han_mappo_leo',
+    parser.add_argument('--exp_name', type=str, default='han_mappo_delay_focus_fast',
                         help='实验名称')
     parser.add_argument('--seed', type=int, default=42,
                         help='随机种子')
@@ -1133,9 +1133,9 @@ def parse_args():
                         help='设备 (cuda/cpu/auto)')
     
     # 环境参数
-    parser.add_argument('--num_users', type=int, default=5,
+    parser.add_argument('--num_users', type=int, default=10,
                         help='用户数量')
-    parser.add_argument('--max_steps', type=int, default=1000,
+    parser.add_argument('--max_steps', type=int, default=2000,
                         help='每episode最大步数')
     parser.add_argument('--reward_delay_weight', type=float, default=1.4,
                         help='时延奖励权重')
@@ -1149,15 +1149,15 @@ def parse_args():
                         help='QoS奖励权重')
     
     # 训练参数
-    parser.add_argument('--total_timesteps', type=int, default=500000,
+    parser.add_argument('--total_timesteps', type=int, default=1000000,
                         help='总训练步数')
     parser.add_argument('--n_steps', type=int, default=2048,
                         help='每次更新收集步数')
     parser.add_argument('--learning_rate', type=float, default=3e-4,
                         help='学习率')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=256,
                         help='批大小')
-    parser.add_argument('--n_epochs', type=int, default=10,
+    parser.add_argument('--n_epochs', type=int, default=4,
                         help='每次更新的PPO epoch数')
     
     # HAN参数
@@ -1169,21 +1169,21 @@ def parse_args():
                         help='HAN层数')
     
     # 保存加载
-    parser.add_argument('--save_path', type=str, default='results/models',
+    parser.add_argument('--save_path', type=str, default='results/full_train_delay_focus',
                         help='模型保存路径')
     parser.add_argument('--load_path', type=str, default=None,
                         help='加载检查点路径')
-    parser.add_argument('--save_interval', type=int, default=50000,
+    parser.add_argument('--save_interval', type=int, default=200000,
                         help='检查点保存间隔（步）')
     parser.add_argument('--log_interval', type=int, default=1,
                         help='训练日志打印间隔（update）')
     
     # 评估
-    parser.add_argument('--eval_interval', type=int, default=10000,
+    parser.add_argument('--eval_interval', type=int, default=100000,
                         help='评估间隔')
-    parser.add_argument('--eval_episodes', type=int, default=5,
+    parser.add_argument('--eval_episodes', type=int, default=3,
                         help='每次评估的episode数')
-    parser.add_argument('--graph_update_interval', type=int, default=20,
+    parser.add_argument('--graph_update_interval', type=int, default=100,
                         help='图重建间隔（步），增大可提速')
     parser.add_argument('--early_stop_patience', type=int, default=30,
                         help='连续多少次更新无改善后早停，0表示禁用')
