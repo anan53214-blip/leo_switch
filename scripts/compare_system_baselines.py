@@ -224,13 +224,26 @@ def infer_system_artifacts(
     return run_dir, checkpoint, history_path
 
 
+def torch_load_trusted_checkpoint(path: Path, map_location):
+    """Load a trusted project checkpoint across PyTorch versions.
+
+    PyTorch 2.6 changed torch.load's default to weights_only=True. These
+    project checkpoints contain Python/numpy metadata in addition to tensors,
+    so trusted local checkpoints need weights_only=False.
+    """
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
+
+
 def load_run_config(checkpoint: Optional[Path], history_path: Optional[Path]) -> Dict:
-    if checkpoint and checkpoint.exists():
-        payload = torch.load(checkpoint, map_location="cpu")
-        return dict(payload.get("config", {}))
     if history_path and history_path.exists():
         with history_path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
+        return dict(payload.get("config", {}))
+    if checkpoint and checkpoint.exists():
+        payload = torch_load_trusted_checkpoint(checkpoint, map_location="cpu")
         return dict(payload.get("config", {}))
     raise FileNotFoundError("No checkpoint or training_history.json could be loaded.")
 
@@ -790,7 +803,14 @@ def evaluate_system_checkpoint(
     trainer_cls = trainer_class_for_objective(objective)
     config = train_config_from_dict(config_data, device=device, max_steps=max_steps, episodes=episodes)
     trainer = trainer_cls(config)
-    trainer.load_checkpoint(str(checkpoint))
+    checkpoint_payload = torch_load_trusted_checkpoint(checkpoint, map_location=trainer.device)
+    trainer.total_steps = checkpoint_payload.get("total_steps", trainer.total_steps)
+    trainer.episodes = checkpoint_payload.get("episodes", trainer.episodes)
+    trainer.best_reward = checkpoint_payload.get("best_reward", trainer.best_reward)
+    trainer.mappo.actor.load_state_dict(checkpoint_payload["actor_state_dict"])
+    trainer.mappo.critic.load_state_dict(checkpoint_payload["critic_state_dict"])
+    if "han_state_dict" in checkpoint_payload:
+        trainer.han_encoder.load_state_dict(checkpoint_payload["han_state_dict"])
 
     rewards: List[float] = []
     summaries: List[Dict] = []
