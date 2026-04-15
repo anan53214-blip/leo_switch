@@ -1,9 +1,9 @@
 # 星地融合网络切换与任务卸载联合优化研究计划
 
-> **项目名称**：基于异质图神经网络的LEO卫星网络切换与任务卸载联合优化方法  
-> **创建日期**：2026年1月15日  
-> **最后更新**：2026年1月16日  
-> **版本**：v2.1  
+> **项目名称**：基于异质图神经网络的LEO卫星网络切换与任务卸载联合优化方法
+> **创建日期**：2026年1月15日
+> **最后更新**：2026年4月15日
+> **版本**：v4.0
 > **作者**：[待填写]
 
 ---
@@ -332,8 +332,8 @@ udl_edge_features = [
 | 折扣因子 | $\gamma$ | 0.99 | 奖励折扣 |
 | GAE参数 | $\lambda$ | 0.95 | 广义优势估计 |
 | 裁剪范围 | $\epsilon$ | 0.2 | PPO裁剪 |
-| 训练轮数 | epochs | 10 | 每次更新的epoch数 |
-| 批大小 | batch_size | 64 | Mini-batch大小 |
+| 训练轮数 | epochs | 4 | 每次更新的epoch数 |
+| 批大小 | batch_size | 256 | Mini-batch大小 |
 | 缓冲区大小 | buffer_size | 2048 | 经验回放大小 |
 | 熵系数 | $c_H$ | 0.01 | 探索激励 |
 | 值函数系数 | $c_V$ | 0.5 | 值损失权重 |
@@ -343,10 +343,11 @@ udl_edge_features = [
 
 | 权重 | 符号 | 数值 | 说明 |
 |------|------|------|------|
-| 时延权重 | $w_1$ | 0.4 | 时延惩罚系数 |
-| 能耗权重 | $w_2$ | 0.3 | 能耗惩罚系数 |
-| 切换权重 | $w_3$ | 0.2 | 切换惩罚系数 |
-| QoS权重 | $w_4$ | 0.1 | QoS满足奖励系数 |
+| 时延权重 | $w_1$ | 1.4 | 时延优化权重 |
+| 能耗权重 | $w_2$ | 0.4 | 能耗优化权重 |
+| 切换权重 | $w_3$ | 0.3 | 切换质量/成本权重 |
+| 负载均衡权重 | $w_{lb}$ | 0.1 | 负载均衡权重 |
+| QoS权重 | $w_4$ | 0.4 | QoS满足奖励系数 |
 
 ---
 
@@ -435,7 +436,13 @@ mappo.save("checkpoint.pt")                                            # 保存�
 
 # 训练器（推荐使用）
 from scripts.train import HANMAPPOTrainer, TrainConfig
-config = TrainConfig(num_users=10, total_timesteps=500000)
+config = TrainConfig(
+    num_users=10,
+    max_steps=2000,
+    total_timesteps=1_000_000,
+    batch_size=256,
+    n_epochs=4,
+)
 trainer = HANMAPPOTrainer(config)
 trainer.train()                                                        # 开始训练
 ```
@@ -467,7 +474,7 @@ trainer.train()                                                        # 开始�
 #### 基本使用
 
 ```bash
-# 默认训练（500,000步）
+# 默认训练（full_train_delay_focus 参数）
 python scripts/train.py
 
 # 快速测试（短期训练）
@@ -481,20 +488,23 @@ python scripts/train.py --num_users 10 --max_steps 500 --device cpu
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--exp_name` | `han_mappo_leo` | 实验名称 |
+| `--exp_name` | `han_mappo_delay_focus_fast` | 实验名称 |
 | `--seed` | `42` | 随机种子 |
 | `--device` | `auto` | 设备（cuda/cpu/auto） |
-| `--num_users` | `5` | 用户数量 |
-| `--max_steps` | `1000` | 每episode最大步数 |
-| `--total_timesteps` | `500000` | 总训练步数 |
+| `--num_users` | `10` | 用户数量 |
+| `--max_steps` | `2000` | 每episode最大步数 |
+| `--total_timesteps` | `1000000` | 总训练步数 |
 | `--n_steps` | `2048` | 每次更新收集步数 |
 | `--learning_rate` | `3e-4` | 学习率 |
-| `--batch_size` | `64` | 批大小 |
+| `--batch_size` | `256` | 批大小 |
+| `--n_epochs` | `4` | PPO更新轮数 |
 | `--han_hidden_dim` | `64` | HAN隐藏维度 |
 | `--han_num_heads` | `4` | 注意力头数 |
 | `--han_num_layers` | `2` | HAN层数 |
-| `--eval_interval` | `10000` | 评估间隔 |
-| `--save_path` | `results/models` | 模型保存路径 |
+| `--eval_interval` | `100000` | 评估间隔 |
+| `--eval_episodes` | `3` | 每次评估episode数 |
+| `--graph_update_interval` | `100` | 图重建/重编码间隔 |
+| `--save_path` | `results/full_train_delay_focus` | 模型保存路径 |
 | `--load_path` | `None` | 加载检查点路径 |
 | `--eval_only` | `False` | 仅评估模式 |
 
@@ -504,19 +514,22 @@ python scripts/train.py --num_users 10 --max_steps 500 --device cpu
 # 完整训练（推荐配置）
 python scripts/train.py \
     --num_users 10 \
+    --max_steps 2000 \
     --total_timesteps 1000000 \
     --n_steps 2048 \
-    --eval_interval 50000 \
+    --batch_size 256 \
+    --n_epochs 4 \
+    --eval_interval 100000 \
     --device cpu
 
 # 从检查点恢复训练
 python scripts/train.py \
-    --load_path results/models/checkpoint_100000.pt \
-    --total_timesteps 500000
+    --load_path results/full_train_delay_focus/checkpoint_200704.pt \
+    --total_timesteps 1000000
 
 # 仅评估已保存模型
 python scripts/train.py \
-    --load_path results/models/best_model.pt \
+    --load_path results/full_train_delay_focus/best_model.pt \
     --eval_only
 ```
 
@@ -526,12 +539,12 @@ python scripts/train.py \
 
 ```
 results/
-├── models/
+├── full_train_delay_focus/
 │   ├── best_model.pt          # 最佳奖励模型
 │   ├── final_model.pt         # 最终模型
 │   └── checkpoint_*.pt        # 定期检查点
 └── logs/
-    └── han_mappo_leo_*.log    # 训练日志
+    └── han_mappo_delay_focus_fast_*.log    # 训练日志
 ```
 
 ---
@@ -835,8 +848,8 @@ cd LEO_switch
 # 运行短期训练测试
 python scripts/train.py --total_timesteps 2000 --n_steps 200 --num_users 5 --device cpu
 
-# 运行完整训练
-python scripts/train.py --total_timesteps 500000 --num_users 10
+# 运行完整训练（当前默认实验参数）
+python scripts/train.py --total_timesteps 1000000 --num_users 10 --max_steps 2000
 ```
 
 ### 11.3 训练输出示例
@@ -872,7 +885,7 @@ python scripts/train.py --total_timesteps 500000 --num_users 10
 
 ```bash
 # 加载并评估已保存的模型
-python scripts/train.py --load_path results/models/best_model.pt --eval_only
+python scripts/train.py --load_path results/full_train_delay_focus/best_model.pt --eval_only
 ```
 
 ---

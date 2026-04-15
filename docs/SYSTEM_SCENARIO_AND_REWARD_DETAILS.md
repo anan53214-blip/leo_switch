@@ -95,10 +95,20 @@
 
 环境默认值和训练脚本默认值不是完全一致的。
 
-`scripts/train.py` 的 `TrainConfig` 默认会覆盖一部分环境参数，例如：
+`scripts/train.py` 的 `TrainConfig` 默认会覆盖一部分环境参数。当前默认配置已统一到 `results/full_train_delay_focus` 这次实验：
 
-- `num_users` 默认是 `5`
-- `max_steps` 默认是 `1000`
+- `exp_name = han_mappo_delay_focus_fast`
+- `num_users = 10`
+- `max_steps = 2000`
+- `total_timesteps = 1_000_000`
+- `n_steps = 2048`
+- `n_epochs = 4`
+- `batch_size = 256`
+- `eval_interval = 100_000`
+- `eval_episodes = 3`
+- `graph_update_interval = 100`
+- `save_interval = 200_000`
+- `save_path = results/full_train_delay_focus`
 - reward 权重默认是：
   - `delay = 1.4`
   - `energy = 0.4`

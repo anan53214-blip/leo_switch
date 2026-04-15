@@ -1,9 +1,9 @@
 # LEO 卫星网络 HAN+MAPPO 联合优化系统 — 完整技术文档
 
-> **文档版本**: v3.1  
-> **更新日期**: 2026-03-23  
-> **适用范围**: 系统架构、模块设计、数据流、参数规格  
-> **说明**: 本文档内容已与代码逐行校对，以代码为准
+> **文档版本**: v4.0
+> **更新日期**: 2026-04-15
+> **适用范围**: 系统架构、模块设计、数据流、参数规格
+> **说明**: 本文档以 `results/full_train_delay_focus/training_history.json` 与当前训练入口默认配置为准
 
 ---
 
@@ -25,10 +25,11 @@ $$
 
 | 目标 | 权重 | 代码配置 |
 |------|------|----------|
-| 最小化时延 $T_{delay}$ | $w_1=0.4$ | `reward_delay_weight` |
-| 最小化能耗 $E_{energy}$ | $w_2=0.3$ | `reward_energy_weight` |
-| 最小化切换开销 $C_{handover}$ | $w_3=0.2$ | `reward_handover_weight` |
-| 最大化 QoS 满足率 $R_{QoS}$ | $w_4=0.1$ | `reward_qos_weight` |
+| 优化任务时延 $T_{delay}$ | `1.4` | `reward_delay_weight` |
+| 优化能耗 $E_{energy}$ | `0.4` | `reward_energy_weight` |
+| 优化切换质量/切换成本 $C_{handover}$ | `0.3` | `reward_handover_weight` |
+| 优化负载均衡 | `0.1` | `reward_load_balance_weight` |
+| 优化 QoS 满足率 $R_{QoS}$ | `0.4` | `reward_qos_weight` |
 
 ### 1.3 解决方案
 
@@ -44,7 +45,7 @@ $$
 
 - 所有用户的 Actor **参数共享**（完全共享），通过各自不同的观测来区分
 - Critic 为**集中式**，训练时可访问全局信息（所有用户嵌入 + 所有卫星嵌入）
-- 每个智能体输出：**切换决策**（离散，Categorical 分布）+ **卸载比例**（连续，Normal 分布）
+- 每个智能体输出：**切换决策**（离散，Categorical 分布）+ **卸载比例**（连续，Beta 分布）
 
 ### 1.5 创新点对比
 
@@ -273,12 +274,12 @@ SNR = 接收功率 - 噪声功率
 
 网络: shared_net MLP (69 → 256 → 128) → 双头输出
   ├── 离散头: Linear(128→64→K+1) → Categorical  → 切换动作 (0=不切换, 1~K=候选卫星)
-  └── 连续头: Linear(128→64→1) → Sigmoid(均值) + 可学习 log_std → Normal → 卸载比例 λ ∈ [0, 1]
+  └── 连续头: alpha_head / beta_head → Softplus + 1 → Beta(α, β) → 卸载比例 λ ∈ (0, 1)
 
-参数量: 68,157
+参数量: 76,589
 ```
 
-> **注意**: 卸载比例使用 `Normal` 分布（均值经 Sigmoid 映射到 [0,1]，标准差为可学习参数），采样后 clamp 到 [0,1]。
+> **注意**: 卸载比例使用 `Beta` 分布，原生支持 `[0,1]` 区间，采样后仅做数值安全 clamp。
 
 #### Critic — 集中式训练 (`src/model/critic.py`)
 
@@ -301,34 +302,40 @@ SNR = 接收功率 - 噪声功率
 | `gamma` | 0.99 | 折扣因子 |
 | `gae_lambda` | 0.95 | GAE λ |
 | `clip_range` | 0.2 | PPO clip |
-| `n_epochs` | 10 | 每次更新迭代次数 |
-| `batch_size` | 64 | 小批量大小 |
+| `n_epochs` | 4 | 每次更新迭代次数 |
+| `batch_size` | 256 | 小批量大小 |
 | `entropy_coef` | 0.01 | 熵正则系数 |
+| `clip_range_vf` | 0.2 | 价值函数 clip |
+| `value_loss_type` | `huber` | Critic 损失 |
+| `normalize_returns` | `true` | value loss 前标准化 returns |
 | `max_grad_norm` | 0.5 | 梯度裁剪 |
 
 #### 训练与早停参数（`train.py` 默认）
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `num_users` | 5 | 默认用户数 |
-| `max_steps` | 1000 | 每个 episode 最大步数 |
-| `total_timesteps` | 500,000 | 总训练步数 |
+| `exp_name` | `han_mappo_delay_focus_fast` | 默认实验名 |
+| `num_users` | 10 | 默认用户数 |
+| `max_steps` | 2000 | 每个 episode 最大步数 |
+| `total_timesteps` | 1,000,000 | 总训练步数 |
 | `n_steps` | 2048 | 每次更新收集步数 |
-| `eval_interval` | 10,000 | 评估间隔 |
-| `eval_episodes` | 5 | 每次评估 episode 数 |
-| `save_interval` | 50,000 | 检查点保存间隔 |
-| `save_path` | `results/models` | 默认模型输出目录 |
+| `eval_interval` | 100,000 | 评估间隔 |
+| `eval_episodes` | 3 | 每次评估 episode 数 |
+| `graph_update_interval` | 100 | 图重建/重编码间隔 |
+| `save_interval` | 200,000 | 检查点保存间隔 |
+| `save_path` | `results/full_train_delay_focus` | 默认模型输出目录 |
 | `log_path` | `results/logs` | 默认日志目录 |
 | `early_stop_patience` | 30 | 连续 N 次更新无改善则提前停止（0=禁用） |
 
 #### 服务器训练方案参数（`run_server_training.py`）
 
-| 方案 | 用户数 | `max_steps` | `total_timesteps` | `n_steps` | `batch_size` | `early_stop_patience` | 输出目录 |
-|------|--------|-------------|-------------------|-----------|--------------|-----------------------|----------|
-| `quick` | 5 | 1000 | 100,000 | 1024 | 64 | 15 | `results/quick_test` |
-| `standard` | 10 | 2000 | 1,000,000 | 2048 | 64 | 50 | `results/full_train_v4` |
-| `large` | 20 | 3000 | 2,000,000 | 4096 | 256 | 50 | `results/large_train` |
-| `multi_seed` | 基于 standard | 同 standard | 同 standard（可被 `--steps` 覆盖） | 同 standard | 同 standard | 同 standard | `results/multi_seed/seed_*` |
+| 方案 | 用户数 | `max_steps` | `total_timesteps` | `n_steps` | `n_epochs` | `batch_size` | `eval_interval` | 输出目录 |
+|------|--------|-------------|-------------------|-----------|------------|--------------|-----------------|----------|
+| `standard` | 10 | 2000 | 1,000,000 | 2048 | 4 | 256 | 100,000 | `results/full_train_delay_focus` |
+| `standard_fast` | 同 standard | 同 standard | 同 standard | 同 standard | 同 standard | 同 standard | 同 standard | `results/full_train_delay_focus` |
+| `quick` | 5 | 1000 | 100,000 | 1024 | 4 | 256 | 10,000 | `results/quick_test_delay_focus` |
+| `large` | 20 | 3000 | 2,000,000 | 4096 | 4 | 256 | 50,000 | `results/large_train_delay_focus` |
+| `multi_seed` | 基于 standard | 同 standard | 同 standard（可被 `--steps` 覆盖） | 同 standard | 同 standard | 同 standard | 同 standard | `results/multi_seed/seed_*` |
 
 ---
 
@@ -423,10 +430,10 @@ SNR = 接收功率 - 噪声功率
 │ 组件               │ 参数量     │ 结构                         │
 ├────────────────────┼───────────┼──────────────────────────────┤
 │ HAN 编码器         │ 571,328   │ 2层×4头×3元路径, 64维输出     │
-│ Actor (HybridActor)│  68,157   │ MLP(69→256→128) + 双头       │
+│ Actor (Beta Hybrid)│  76,589   │ MLP(69→256→128) + 双头       │
 │ Critic (Centralized│ 183,169   │ 用户编码+卫星编码+MLP(256²→1)│
 ├────────────────────┼───────────┼──────────────────────────────┤
-│ 总计               │ ~822K     │ 3090 完全够用                │
+│ 总计               │ ~831K     │ 3090 完全够用                │
 └────────────────────┴───────────┴──────────────────────────────┘
 ```
 
