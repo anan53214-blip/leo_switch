@@ -351,6 +351,10 @@ results/baseline_compare/<timestamp>/
 
 - `comparison_summary.json`
 - `comparison_summary.csv`
+- `episode_metrics.csv`
 - `method_comparison.png`
+- `reward_episode_comparison.png`
+- `delay_episode_comparison.png`
+- `energy_episode_comparison.png`
+- `additional_metrics_episode_comparison.png`
 - `reward_curve_vs_baselines.png`
-

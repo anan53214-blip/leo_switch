@@ -78,8 +78,37 @@ DEFAULT_BASELINES = [
     "joint_greedy",
 ]
 
+DISPLAY_NAME_MAP = {
+    "random": "Random",
+    "stay": "Stay",
+    "max_elev": "Max-Elev",
+    "max_rvt": "Max-RVT",
+    "min_distance": "Min-Distance",
+    "threshold_rvt": "Threshold-RVT Adaptive",
+    "threshold_rvt_adaptive": "Threshold-RVT Adaptive",
+    "joint_greedy": "Joint Greedy",
+}
+
+SUMMARY_METRIC_KEYS = [
+    "avg_delay",
+    "total_energy",
+    "handover_success_rate",
+    "service_continuity_rate",
+    "task_completion_rate",
+    "task_resolution_rate",
+    "pending_task_rate",
+    "avg_load_balance_score",
+    "resolved_tasks",
+    "pending_tasks",
+    "total_tasks",
+    "completed_tasks",
+    "deadline_violations",
+    "deadline_violation_rate",
+]
+
 HIGHER_IS_BETTER = {
     "mean_reward": True,
+    "reward": True,
     "handover_success_rate": True,
     "service_continuity_rate": True,
     "task_completion_rate": True,
@@ -88,6 +117,7 @@ HIGHER_IS_BETTER = {
     "avg_delay": False,
     "total_energy": False,
     "pending_task_rate": False,
+    "deadline_violation_rate": False,
 }
 
 PLOT_METRICS = [
@@ -96,10 +126,46 @@ PLOT_METRICS = [
     ("total_energy", "Total Energy (J)"),
     ("handover_success_rate", "Handover Success Rate"),
     ("service_continuity_rate", "Service Continuity Rate"),
-    ("task_completion_rate", "Task Completion Rate"),
-    ("pending_task_rate", "Pending Task Rate"),
+    ("task_resolution_rate", "Task Resolution Rate"),
+    ("deadline_violation_rate", "Deadline Violation Rate"),
     ("avg_load_balance_score", "Load Balance Score"),
 ]
+
+CORE_EPISODE_PLOTS = [
+    ("reward", "Reward Comparison Across Evaluation Episodes", "Episode Reward", "reward_episode_comparison.png"),
+    ("avg_delay", "Delay Comparison Across Evaluation Episodes", "Average Delay (s)", "delay_episode_comparison.png"),
+    ("total_energy", "Energy Comparison Across Evaluation Episodes", "Total Energy (J)", "energy_episode_comparison.png"),
+]
+
+ADDITIONAL_EPISODE_METRICS = [
+    ("handover_success_rate", "Handover Success Rate"),
+    ("service_continuity_rate", "Service Continuity Rate"),
+    ("task_resolution_rate", "Task Resolution Rate"),
+    ("pending_task_rate", "Pending Task Rate"),
+    ("deadline_violation_rate", "Deadline Violation Rate"),
+    ("avg_load_balance_score", "Load Balance Score"),
+]
+
+SYSTEM_STYLE = {
+    "color": "#D55E00",
+    "linestyle": "-",
+    "marker": "*",
+    "linewidth": 2.6,
+    "markersize": 8,
+}
+
+BASELINE_COLORS = [
+    "#0072B2",
+    "#009E73",
+    "#CC79A7",
+    "#56B4E9",
+    "#E69F00",
+    "#000000",
+    "#7F7F7F",
+]
+
+BASELINE_MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
+BASELINE_LINESTYLES = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1)), (0, (1, 1))]
 
 
 def detect_objective(config: Dict) -> str:
@@ -248,6 +314,34 @@ def load_run_config(checkpoint: Optional[Path], history_path: Optional[Path]) ->
     raise FileNotFoundError("No checkpoint or training_history.json could be loaded.")
 
 
+def pretty_method_name(name: str, is_system: bool) -> str:
+    if is_system:
+        return "HAN+MAPPO"
+    base_name = name.split("(", 1)[0]
+    return DISPLAY_NAME_MAP.get(name, DISPLAY_NAME_MAP.get(base_name, name))
+
+
+def compute_deadline_violation_rate(summary: Dict) -> float:
+    resolved_tasks = float(summary.get("resolved_tasks", 0.0))
+    return float(summary.get("deadline_violations", 0.0)) / max(resolved_tasks, 1.0)
+
+
+def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -> List[Dict]:
+    episode_records: List[Dict] = []
+    for episode_index, (reward, summary) in enumerate(zip(rewards, summaries), start=1):
+        record = {
+            "episode": episode_index,
+            "reward": float(reward),
+        }
+        for key in SUMMARY_METRIC_KEYS:
+            if key == "deadline_violation_rate":
+                continue
+            record[key] = float(summary.get(key, 0.0))
+        record["deadline_violation_rate"] = compute_deadline_violation_rate(summary)
+        episode_records.append(record)
+    return episode_records
+
+
 def summarize_results(
     name: str,
     rewards: Sequence[float],
@@ -255,38 +349,43 @@ def summarize_results(
     extra: Optional[Dict] = None,
     is_system: bool = False,
 ) -> Dict:
+    episode_metrics = build_episode_records(rewards, summaries)
     result = {
         "method": name,
+        "display_name": pretty_method_name(name, is_system=is_system),
         "episodes": len(rewards),
         "is_system": bool(is_system),
         "mean_reward": float(np.mean(rewards)) if rewards else 0.0,
         "std_reward": float(np.std(rewards)) if rewards else 0.0,
+        "episode_metrics": episode_metrics,
     }
-    metric_keys = {
-        "avg_delay",
-        "total_energy",
-        "handover_success_rate",
-        "service_continuity_rate",
-        "task_completion_rate",
-        "task_resolution_rate",
-        "pending_task_rate",
-        "avg_load_balance_score",
-        "resolved_tasks",
-        "pending_tasks",
-        "total_tasks",
-        "completed_tasks",
-        "deadline_violations",
-    }
-    for key in metric_keys:
-        values = [float(summary.get(key, 0.0)) for summary in summaries]
+    for key in SUMMARY_METRIC_KEYS:
+        values = [float(record.get(key, 0.0)) for record in episode_metrics]
         result[key] = float(np.mean(values)) if values else 0.0
     if extra:
         result.update(extra)
     return result
 
 
-def style_for_method(method: Dict) -> str:
-    return "#D55E00" if method.get("is_system") else "#4C72B0"
+def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
+    styles: Dict[str, Dict] = {}
+    baseline_index = 0
+    for method in order_methods(methods):
+        method_key = str(method.get("method", ""))
+        if method.get("is_system"):
+            styles[method_key] = dict(SYSTEM_STYLE)
+            continue
+
+        style = {
+            "color": BASELINE_COLORS[baseline_index % len(BASELINE_COLORS)],
+            "linestyle": BASELINE_LINESTYLES[baseline_index % len(BASELINE_LINESTYLES)],
+            "marker": BASELINE_MARKERS[baseline_index % len(BASELINE_MARKERS)],
+            "linewidth": 1.8,
+            "markersize": 5.5,
+        }
+        styles[method_key] = style
+        baseline_index += 1
+    return styles
 
 
 def order_methods(methods: Sequence[Dict]) -> List[Dict]:
@@ -765,6 +864,7 @@ def evaluate_simple_heuristic_with_offload_search(
     )
     best = dict(candidates[best_index])
     best["method"] = strategy
+    best["display_name"] = pretty_method_name(strategy, is_system=False)
     best["method_variant"] = best["method"] + f"(best_offload={best.get('selected_offload', 0.0):.2f})"
     return best
 
@@ -861,6 +961,10 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
     best_record = max(evaluation_records, key=lambda record: record.get("eval_mean_reward", -float("inf")))
     result = {
         "method": str(config_data.get("exp_name", history_path.parent.name or "system")),
+        "display_name": pretty_method_name(
+            str(config_data.get("exp_name", history_path.parent.name or "system")),
+            is_system=True,
+        ),
         "episodes": int(config_data.get("eval_episodes", 0)),
         "is_system": True,
         "mean_reward": float(best_record.get("eval_mean_reward", 0.0)),
@@ -878,6 +982,10 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "total_tasks": float(best_record.get("total_tasks", 0.0)),
         "completed_tasks": float(best_record.get("completed_tasks", 0.0)),
         "deadline_violations": float(best_record.get("deadline_violations", 0.0)),
+        "deadline_violation_rate": (
+            float(best_record.get("deadline_violations", 0.0)) / max(float(best_record.get("resolved_tasks", 0.0)), 1.0)
+        ),
+        "episode_metrics": [],
         "source": "training_history_best_eval",
     }
     return config_data, result
@@ -894,6 +1002,7 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
     path = output_dir / "comparison_summary.csv"
     fieldnames = [
         "method",
+        "display_name",
         "is_system",
         "episodes",
         "mean_reward",
@@ -905,8 +1014,10 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "task_completion_rate",
         "task_resolution_rate",
         "pending_task_rate",
+        "deadline_violation_rate",
         "avg_load_balance_score",
         "selected_offload",
+        "method_variant",
         "source",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -915,6 +1026,43 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         for method in methods:
             row = {key: method.get(key, "") for key in fieldnames}
             writer.writerow(row)
+    return path
+
+
+def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optional[Path]:
+    rows = []
+    for method in order_methods(methods):
+        for record in method.get("episode_metrics", []):
+            row = {
+                "method": method.get("method", ""),
+                "display_name": method.get("display_name", method.get("method", "")),
+                "episode": int(record.get("episode", 0)),
+                "reward": float(record.get("reward", 0.0)),
+                "avg_delay": float(record.get("avg_delay", 0.0)),
+                "total_energy": float(record.get("total_energy", 0.0)),
+                "handover_success_rate": float(record.get("handover_success_rate", 0.0)),
+                "service_continuity_rate": float(record.get("service_continuity_rate", 0.0)),
+                "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
+                "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
+                "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
+                "avg_load_balance_score": float(record.get("avg_load_balance_score", 0.0)),
+                "deadline_violation_rate": float(record.get("deadline_violation_rate", 0.0)),
+                "resolved_tasks": float(record.get("resolved_tasks", 0.0)),
+                "completed_tasks": float(record.get("completed_tasks", 0.0)),
+                "deadline_violations": float(record.get("deadline_violations", 0.0)),
+                "selected_offload": method.get("selected_offload", ""),
+            }
+            rows.append(row)
+
+    if not rows:
+        return None
+
+    path = output_dir / "episode_metrics.csv"
+    fieldnames = list(rows[0].keys())
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
     return path
 
 
@@ -938,8 +1086,9 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
         return None
 
     ordered = order_methods(methods)
-    labels = [method["method"] for method in ordered]
-    colors = [style_for_method(method) for method in ordered]
+    styles = build_method_styles(ordered)
+    labels = [method.get("display_name", method["method"]) for method in ordered]
+    colors = [styles[str(method.get("method", ""))]["color"] for method in ordered]
 
     fig, axes = plt.subplots(2, 4, figsize=(18, 9), dpi=180)
     axes = axes.flatten()
@@ -959,6 +1108,101 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
 
     fig.tight_layout(pad=1.4)
     path = output_dir / "method_comparison.png"
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
+    return [method for method in order_methods(methods) if method.get("episode_metrics")]
+
+
+def plot_episode_metric_curve(
+    methods: Sequence[Dict],
+    metric_key: str,
+    title: str,
+    ylabel: str,
+    output_path: Path,
+) -> Optional[Path]:
+    plottable = methods_with_episode_metrics(methods)
+    if not plottable:
+        return None
+
+    styles = build_method_styles(plottable)
+    fig, ax = plt.subplots(figsize=(11, 6), dpi=180)
+
+    for method in plottable:
+        records = method.get("episode_metrics", [])
+        episodes = [int(record.get("episode", idx + 1)) for idx, record in enumerate(records)]
+        values = [float(record.get(metric_key, 0.0)) for record in records]
+        if metric_key.endswith("_rate"):
+            values = [100.0 * value for value in values]
+        style = styles[str(method.get("method", ""))]
+        ax.plot(
+            episodes,
+            values,
+            label=method.get("display_name", method.get("method", "")),
+            color=style["color"],
+            linestyle=style["linestyle"],
+            marker=style["marker"],
+            linewidth=style["linewidth"],
+            markersize=style["markersize"],
+            alpha=0.95,
+        )
+
+    direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
+    ax.set_xlabel("Evaluation Episode")
+    ax.set_ylabel(f"{ylabel}{' (%)' if metric_key.endswith('_rate') else ''}")
+    ax.set_title(f"{title} ({direction})")
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(loc="best", fontsize=9, ncol=2)
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
+def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    plottable = methods_with_episode_metrics(methods)
+    if not plottable:
+        return None
+
+    styles = build_method_styles(plottable)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), dpi=180)
+    axes = axes.flatten()
+
+    for axis, (metric_key, title) in zip(axes, ADDITIONAL_EPISODE_METRICS):
+        for method in plottable:
+            records = method.get("episode_metrics", [])
+            episodes = [int(record.get("episode", idx + 1)) for idx, record in enumerate(records)]
+            values = [float(record.get(metric_key, 0.0)) for record in records]
+            if metric_key.endswith("_rate"):
+                values = [100.0 * value for value in values]
+            style = styles[str(method.get("method", ""))]
+            axis.plot(
+                episodes,
+                values,
+                label=method.get("display_name", method.get("method", "")),
+                color=style["color"],
+                linestyle=style["linestyle"],
+                marker=style["marker"],
+                linewidth=style["linewidth"],
+                markersize=max(style["markersize"] - 0.5, 4.0),
+                alpha=0.95,
+            )
+
+        direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
+        axis.set_title(f"{title} ({direction})")
+        axis.set_xlabel("Evaluation Episode")
+        axis.set_ylabel("%" if metric_key.endswith("_rate") else "Score")
+        axis.grid(True, linestyle="--", alpha=0.3)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper center", ncol=min(len(labels), 4), bbox_to_anchor=(0.5, 1.02))
+
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    path = output_dir / "additional_metrics_episode_comparison.png"
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
     return path
@@ -1007,7 +1251,7 @@ def plot_training_curve_vs_baselines(
             linestyle="--",
             linewidth=1.2,
             alpha=0.8,
-            label=f"{method['method']} mean reward",
+            label=f"{method.get('display_name', method['method'])} mean reward",
         )
 
     ax.set_xlabel("Training Steps")
@@ -1137,14 +1381,33 @@ def main() -> None:
         },
     )
     csv_path = save_results_csv(output_dir, methods)
+    episode_csv_path = save_episode_metrics_csv(output_dir, methods)
     metrics_plot = plot_method_comparison(methods, output_dir)
+    episode_plots = {
+        metric_key: plot_episode_metric_curve(
+            methods,
+            metric_key=metric_key,
+            title=title,
+            ylabel=ylabel,
+            output_path=output_dir / filename,
+        )
+        for metric_key, title, ylabel, filename in CORE_EPISODE_PLOTS
+    }
+    additional_metrics_plot = plot_additional_metric_curves(methods, output_dir)
     reward_curve_plot = plot_training_curve_vs_baselines(history_path, methods, output_dir)
 
     print(json.dumps(methods, ensure_ascii=False, indent=2))
     print(f"Summary JSON saved to: {json_path}")
     print(f"Summary CSV saved to: {csv_path}")
+    if episode_csv_path is not None:
+        print(f"Episode metrics CSV saved to: {episode_csv_path}")
     if metrics_plot is not None:
         print(f"Metric comparison figure: {metrics_plot}")
+    for metric_key, plot_path in episode_plots.items():
+        if plot_path is not None:
+            print(f"{metric_key} episode comparison figure: {plot_path}")
+    if additional_metrics_plot is not None:
+        print(f"Additional metrics figure: {additional_metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
 
