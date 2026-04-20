@@ -1,13 +1,21 @@
 # 基线算法策略说明
 
-本文档说明 `scripts/compare_system_baselines.py` 中实现的基线算法，用于与当前系统方法 `HAN+MAPPO` 在 `results/full_train_delay_focus` 场景下进行对比。
+本文档说明 `scripts/compare_system_baselines.py` 中实现的基线算法，用于与当前系统方法 `HAN+MAPPO` 进行对比。该脚本现已升级为统一入口，默认会先训练系统方法，再生成与基线方法的论文风格对比图。
 
 ## 1. 对比对象
 
-当前系统方法为已经训练完成的 `full_train_delay_focus` 模型，默认读取：
+默认训练/输出目录为：
 
-- `results/full_train_delay_focus/best_model.pt`
-- `results/full_train_delay_focus/training_history.json`
+- `results/full_train_delay_focus_1200k/`
+
+默认总训练步数为：
+
+- `1,200,000` steps
+
+如果使用 `--run-mode compare_only`，则脚本会读取已有运行目录中的：
+
+- `best_model.pt` 或 `final_model.pt`
+- `training_history.json`
 
 基线方法均不训练神经网络，直接根据当前环境状态生成动作。每个用户在每个时间步输出联合动作：
 
@@ -323,22 +331,28 @@ joint_score = handover_value + task_score + enqueue_bonus
 
 ## 5. 推荐使用方式
 
-默认运行：
+默认运行（先训练系统方法，再进行基线对比）：
 
 ```powershell
 python scripts\compare_system_baselines.py
 ```
 
+仅对已有模型做对比：
+
+```powershell
+python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_delay_focus
+```
+
 快速测试：
 
 ```powershell
-python scripts\compare_system_baselines.py --episodes 1 --max-steps 50
+python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_delay_focus --episodes 1 --max-steps 50
 ```
 
 正式对比：
 
 ```powershell
-python scripts\compare_system_baselines.py --episodes 5
+python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_delay_focus --episodes 5
 ```
 
 输出目录默认为：
@@ -353,8 +367,14 @@ results/baseline_compare/<timestamp>/
 - `comparison_summary.csv`
 - `episode_metrics.csv`
 - `method_comparison.png`
+- `method_comparison.pdf`
 - `reward_episode_comparison.png`
 - `delay_episode_comparison.png`
 - `energy_episode_comparison.png`
 - `additional_metrics_episode_comparison.png`
 - `reward_curve_vs_baselines.png`
+- `reward_curve_vs_baselines.pdf`
+- `delay_energy_tradeoff.png`
+- `delay_energy_tradeoff.pdf`
+- `paper_baseline_dashboard.png`
+- `paper_baseline_dashboard.pdf`

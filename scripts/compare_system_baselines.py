@@ -29,6 +29,8 @@ try:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    from matplotlib.ticker import FuncFormatter
 except ImportError as exc:
     raise SystemExit("matplotlib is required: pip install matplotlib") from exc
 
@@ -78,6 +80,10 @@ DEFAULT_BASELINES = [
     "joint_greedy",
 ]
 
+DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_delay_focus_1200k"
+DEFAULT_TOTAL_TIMESTEPS = 1_200_000
+DEFAULT_PLOT_WINDOW = 10
+
 DISPLAY_NAME_MAP = {
     "random": "Random",
     "stay": "Stay",
@@ -120,15 +126,25 @@ HIGHER_IS_BETTER = {
     "deadline_violation_rate": False,
 }
 
-PLOT_METRICS = [
-    ("mean_reward", "Mean Reward"),
-    ("avg_delay", "Avg Delay (s)"),
-    ("total_energy", "Total Energy (J)"),
-    ("handover_success_rate", "Handover Success Rate"),
-    ("service_continuity_rate", "Service Continuity Rate"),
-    ("task_resolution_rate", "Task Resolution Rate"),
-    ("deadline_violation_rate", "Deadline Violation Rate"),
-    ("avg_load_balance_score", "Load Balance Score"),
+PAPER_METRIC_PLOTS = [
+    ("avg_delay", "Average Delay", "Avg Delay (s)"),
+    ("total_energy", "Energy Consumption", "Total Energy (J)"),
+    ("handover_success_rate", "Handover Success", "Rate (%)"),
+    ("service_continuity_rate", "Service Continuity", "Rate (%)"),
+    ("task_completion_rate", "Task Completion", "Rate (%)"),
+    ("avg_load_balance_score", "Load Balance", "Score"),
+]
+
+PAPER_DASHBOARD_LEFT_METRICS = [
+    ("handover_success_rate", "HO Success"),
+    ("service_continuity_rate", "Continuity"),
+    ("task_completion_rate", "Task Completion"),
+]
+
+PAPER_DASHBOARD_RIGHT_METRICS = [
+    ("avg_delay", "Delay"),
+    ("total_energy", "Energy"),
+    ("avg_load_balance_score", "Load Balance"),
 ]
 
 CORE_EPISODE_PLOTS = [
@@ -167,6 +183,17 @@ BASELINE_COLORS = [
 BASELINE_MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
 BASELINE_LINESTYLES = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1)), (0, (1, 1))]
 
+PAPER_COLORS = {
+    "primary": "#0F4C81",
+    "secondary": "#B03A2E",
+    "success": "#1E8449",
+    "warning": "#AF601A",
+    "info": "#2471A3",
+    "dark": "#283747",
+    "muted": "#7B7D7D",
+    "fill_alpha": 0.16,
+}
+
 
 def detect_objective(config: Dict) -> str:
     combined = " ".join(
@@ -180,6 +207,79 @@ def detect_objective(config: Dict) -> str:
     if "energy_only" in combined:
         return "energy_only"
     return "multi_objective"
+
+
+def setup_publication_style() -> None:
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.serif": ["Times New Roman", "DejaVu Serif"],
+            "font.size": 11,
+            "axes.titlesize": 13,
+            "axes.labelsize": 12,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+            "legend.fontsize": 9.5,
+            "lines.linewidth": 1.8,
+            "lines.markersize": 5,
+            "figure.dpi": 180,
+            "savefig.dpi": 300,
+            "savefig.bbox": "tight",
+            "savefig.pad_inches": 0.06,
+            "axes.grid": True,
+            "grid.alpha": 0.24,
+            "grid.linestyle": "--",
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "legend.framealpha": 0.92,
+            "legend.edgecolor": "#CCCCCC",
+        }
+    )
+
+
+def smooth(values: np.ndarray, window: int) -> np.ndarray:
+    if len(values) == 0 or window <= 1:
+        return values
+    if len(values) < window:
+        return values
+    kernel = np.ones(window, dtype=float) / float(window)
+    return np.convolve(values.astype(float), kernel, mode="same")
+
+
+def compute_confidence_band(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    mean = smooth(values, window)
+    if len(values) == 0:
+        return mean, mean, mean
+    std = np.zeros(len(values), dtype=float)
+    half_window = max(window // 2, 1)
+    for index in range(len(values)):
+        lo = max(index - half_window, 0)
+        hi = min(index + half_window + 1, len(values))
+        std[index] = float(np.std(values[lo:hi]))
+    return mean, mean - std, mean + std
+
+
+def format_steps(value, _position) -> str:
+    if abs(value) >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:.0f}K"
+    return f"{value:.0f}"
+
+
+def resolve_device(device: str) -> str:
+    if device == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda" and not torch.cuda.is_available():
+        return "cpu"
+    return device
+
+
+def save_figure(fig, output_path: Path) -> Path:
+    fig.savefig(output_path, bbox_inches="tight")
+    fig.savefig(output_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+    return output_path
 
 
 def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_steps: Optional[int]) -> EnvConfig:
@@ -244,6 +344,8 @@ def build_default_train_config(objective: str, seed: int, max_steps: int, num_us
     config["seed"] = seed
     config["max_steps"] = max_steps
     config["num_users"] = num_users
+    config["total_timesteps"] = DEFAULT_TOTAL_TIMESTEPS
+    config["save_path"] = str(DEFAULT_SYSTEM_RUN_DIR)
     if objective == "delay_only":
         config["exp_name"] = "han_mappo_delay_only"
         config["reward_delay_weight"] = 1.0
@@ -259,7 +361,7 @@ def build_default_train_config(objective: str, seed: int, max_steps: int, num_us
         config["reward_load_balance_weight"] = 0.0
         config["reward_qos_weight"] = 0.0
     else:
-        config["exp_name"] = "han_mappo_leo"
+        config["exp_name"] = "han_mappo_delay_focus_1200k"
     return config
 
 
@@ -881,15 +983,71 @@ def trainer_class_for_objective(objective: str):
     return HANMAPPOTrainer
 
 
-def train_config_from_dict(config_data: Dict, device: str, max_steps: Optional[int], episodes: int) -> TrainConfig:
+def train_config_from_dict(
+    config_data: Dict,
+    device: str,
+    max_steps: Optional[int],
+    episodes: int,
+    total_timesteps: Optional[int] = None,
+    save_path: Optional[Path] = None,
+    exp_name: Optional[str] = None,
+    load_path: Optional[Path] = None,
+) -> TrainConfig:
     config = TrainConfig()
     for key, value in config_data.items():
         setattr(config, key, value)
-    config.device = device
+    config.device = resolve_device(device)
     config.eval_episodes = episodes
     if max_steps is not None:
         config.max_steps = int(max_steps)
+    if total_timesteps is not None:
+        config.total_timesteps = int(total_timesteps)
+    if save_path is not None:
+        config.save_path = str(save_path)
+    if exp_name:
+        config.exp_name = exp_name
+    if load_path is not None:
+        config.load_path = str(load_path)
     return config
+
+
+def run_system_training(
+    config_data: Dict,
+    objective: str,
+    system_run_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    exp_name: Optional[str],
+    resume_checkpoint: Optional[Path],
+) -> tuple[Path, Optional[Path], Optional[Path], Dict]:
+    trainer_cls = trainer_class_for_objective(objective)
+    system_run_dir.mkdir(parents=True, exist_ok=True)
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        save_path=system_run_dir,
+        exp_name=exp_name,
+        load_path=resume_checkpoint,
+    )
+    trainer = trainer_cls(config)
+    if resume_checkpoint is not None:
+        trainer.load_checkpoint(str(resume_checkpoint))
+    trainer.train()
+    checkpoint = system_run_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = system_run_dir / "final_model.pt"
+    history_path = system_run_dir / "training_history.json"
+    return (
+        system_run_dir,
+        checkpoint if checkpoint.exists() else None,
+        history_path if history_path.exists() else None,
+        asdict(config),
+    )
 
 
 def evaluate_system_checkpoint(
@@ -1066,51 +1224,172 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
     return path
 
 
-def annotate_bars(ax, bars, values: Sequence[float], percent: bool = False) -> None:
-    for bar, value in zip(bars, values):
-        label = f"{100.0 * value:.1f}%" if percent else f"{value:.3f}"
-        if abs(value) >= 1000 and not percent:
-            label = f"{value:.1f}"
+def metric_scale(metric_key: str) -> float:
+    return 100.0 if metric_key.endswith("_rate") else 1.0
+
+
+def metric_display_value(value: float, metric_key: str) -> str:
+    if metric_key.endswith("_rate"):
+        return f"{value:.1f}%"
+    if abs(value) >= 1000:
+        return f"{value:.1f}"
+    if abs(value) >= 10:
+        return f"{value:.2f}"
+    return f"{value:.3f}"
+
+
+def metric_episode_samples(method: Dict, metric_key: str) -> np.ndarray:
+    records = method.get("episode_metrics", [])
+    if not records:
+        return np.array([], dtype=float)
+    scale = metric_scale(metric_key)
+    return np.array([float(record.get(metric_key, 0.0)) * scale for record in records], dtype=float)
+
+
+def add_panel_label(ax, label: str) -> None:
+    ax.text(
+        0.01,
+        0.99,
+        label,
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        fontsize=11,
+        fontweight="bold",
+        color=PAPER_COLORS["dark"],
+    )
+
+
+def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: str, xlabel: str, compact: bool = False) -> None:
+    ordered = order_methods(methods)
+    styles = build_method_styles(ordered)
+    labels = [method.get("display_name", method.get("method", "")) for method in ordered]
+    values = [float(method.get(metric_key, 0.0)) * metric_scale(metric_key) for method in ordered]
+    errors = []
+    for method in ordered:
+        samples = metric_episode_samples(method, metric_key)
+        errors.append(float(np.std(samples)) if len(samples) > 1 else 0.0)
+
+    positions = np.arange(len(ordered), dtype=float)
+    colors = [styles[str(method.get("method", ""))]["color"] for method in ordered]
+    bars = ax.barh(
+        positions,
+        values,
+        xerr=errors if any(error > 0 for error in errors) else None,
+        color=colors,
+        edgecolor="#1F1F1F",
+        linewidth=0.85,
+        alpha=0.92,
+        error_kw={"elinewidth": 1.1, "capsize": 2.8, "capthick": 1.1},
+    )
+
+    best_index = choose_best_index(values, HIGHER_IS_BETTER.get(metric_key, True))
+    for index, (bar, value, method) in enumerate(zip(bars, values, ordered)):
+        if method.get("is_system"):
+            bar.set_hatch("///")
+            bar.set_linewidth(1.2)
+        if index == best_index:
+            bar.set_edgecolor(PAPER_COLORS["dark"])
+            bar.set_linewidth(1.8)
         ax.text(
-            bar.get_x() + bar.get_width() / 2.0,
-            bar.get_height(),
-            label,
-            ha="center",
-            va="bottom",
-            fontsize=8,
+            value + max(max(values) * 0.015, 0.02),
+            bar.get_y() + bar.get_height() / 2.0,
+            metric_display_value(value, metric_key),
+            va="center",
+            ha="left",
+            fontsize=8.5 if compact else 9.0,
         )
+
+    ax.set_yticks(positions, labels=labels)
+    ax.invert_yaxis()
+    direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
+    ax.set_title(f"{title} ({direction})")
+    ax.set_xlabel(xlabel)
+    ax.grid(axis="x", linestyle="--", alpha=0.24)
+    if values:
+        ax.set_xlim(0.0, max(values) * 1.18 + 1e-9)
+    if compact:
+        ax.tick_params(axis="y", labelsize=9)
+
+
+def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[Dict], window: int, compact: bool = False) -> bool:
+    if history_path is None or not history_path.exists():
+        return False
+
+    with history_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    training = payload.get("training", [])
+    evaluation = payload.get("evaluation", [])
+    if not training:
+        return False
+
+    steps = np.array([record.get("total_steps", 0) for record in training], dtype=float)
+    rewards = np.array([record.get("recent_mean_reward", 0.0) for record in training], dtype=float)
+
+    mean_reward, lower_reward, upper_reward = compute_confidence_band(rewards, window=max(window, 3))
+    ax.plot(steps, rewards, color=PAPER_COLORS["primary"], alpha=0.16, linewidth=0.8)
+    ax.fill_between(steps, lower_reward, upper_reward, color=PAPER_COLORS["primary"], alpha=PAPER_COLORS["fill_alpha"])
+    ax.plot(steps, mean_reward, color=PAPER_COLORS["primary"], linewidth=2.4, label="HAN+MAPPO training")
+
+    if evaluation:
+        eval_steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
+        eval_rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
+        eval_stds = np.array([record.get("eval_std_reward", 0.0) for record in evaluation], dtype=float)
+        ax.fill_between(
+            eval_steps,
+            eval_rewards - eval_stds,
+            eval_rewards + eval_stds,
+            color=PAPER_COLORS["success"],
+            alpha=0.12,
+        )
+        ax.plot(
+            eval_steps,
+            eval_rewards,
+            color=PAPER_COLORS["success"],
+            marker="o",
+            markersize=4.0,
+            linewidth=1.9,
+            label="HAN+MAPPO eval",
+        )
+
+    baseline_methods = [method for method in order_methods(methods) if not method.get("is_system")]
+    baseline_styles = build_method_styles(baseline_methods)
+    for method in baseline_methods:
+        style = baseline_styles[str(method.get("method", ""))]
+        ax.axhline(
+            y=float(method.get("mean_reward", 0.0)),
+            color=style["color"],
+            linestyle=style["linestyle"],
+            linewidth=1.4,
+            alpha=0.92,
+            label=method.get("display_name", method.get("method", "")),
+        )
+
+    ax.set_xlabel("Training Steps")
+    ax.set_ylabel("Reward")
+    ax.set_title("Reward Convergence Against Baseline Levels")
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    ax.legend(
+        loc="lower right" if compact else "best",
+        fontsize=8.2 if compact else 9.2,
+        ncol=1 if compact else 2,
+    )
+    ax.grid(True, linestyle="--", alpha=0.24)
+    return True
 
 
 def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
     if not methods:
         return None
 
-    ordered = order_methods(methods)
-    styles = build_method_styles(ordered)
-    labels = [method.get("display_name", method["method"]) for method in ordered]
-    colors = [styles[str(method.get("method", ""))]["color"] for method in ordered]
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), dpi=220)
+    for axis, (metric_key, title, xlabel) in zip(axes.flatten(), PAPER_METRIC_PLOTS):
+        draw_metric_bar_panel(axis, methods, metric_key=metric_key, title=title, xlabel=xlabel)
 
-    fig, axes = plt.subplots(2, 4, figsize=(18, 9), dpi=180)
-    axes = axes.flatten()
-
-    for axis, (key, title) in zip(axes, PLOT_METRICS):
-        values = [float(method.get(key, 0.0)) for method in ordered]
-        bars = axis.bar(labels, values, color=colors, edgecolor="#222222", linewidth=0.6)
-        axis.set_title(title)
-        axis.grid(axis="y", linestyle="--", alpha=0.3)
-        axis.tick_params(axis="x", rotation=25)
-        annotate_bars(axis, bars, values, percent=key.endswith("_rate") or "score" in key)
-
-        if not HIGHER_IS_BETTER.get(key, True):
-            axis.set_ylabel("Lower is better")
-        else:
-            axis.set_ylabel("Higher is better")
-
-    fig.tight_layout(pad=1.4)
-    path = output_dir / "method_comparison.png"
-    fig.savefig(path, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    fig.suptitle("HAN+MAPPO vs Baseline Policies", fontsize=15, fontweight="bold", y=0.99)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    return save_figure(fig, output_dir / "method_comparison.png")
 
 
 def methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
@@ -1129,14 +1408,12 @@ def plot_episode_metric_curve(
         return None
 
     styles = build_method_styles(plottable)
-    fig, ax = plt.subplots(figsize=(11, 6), dpi=180)
+    fig, ax = plt.subplots(figsize=(11, 6), dpi=220)
 
     for method in plottable:
         records = method.get("episode_metrics", [])
         episodes = [int(record.get("episode", idx + 1)) for idx, record in enumerate(records)]
-        values = [float(record.get(metric_key, 0.0)) for record in records]
-        if metric_key.endswith("_rate"):
-            values = [100.0 * value for value in values]
+        values = [float(record.get(metric_key, 0.0)) * metric_scale(metric_key) for record in records]
         style = styles[str(method.get("method", ""))]
         ax.plot(
             episodes,
@@ -1152,14 +1429,12 @@ def plot_episode_metric_curve(
 
     direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
     ax.set_xlabel("Evaluation Episode")
-    ax.set_ylabel(f"{ylabel}{' (%)' if metric_key.endswith('_rate') else ''}")
+    ax.set_ylabel(ylabel)
     ax.set_title(f"{title} ({direction})")
-    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.grid(True, linestyle="--", alpha=0.24)
     ax.legend(loc="best", fontsize=9, ncol=2)
     fig.tight_layout()
-    fig.savefig(output_path, bbox_inches="tight")
-    plt.close(fig)
-    return output_path
+    return save_figure(fig, output_path)
 
 
 def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -1168,16 +1443,14 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
         return None
 
     styles = build_method_styles(plottable)
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10), dpi=180)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), dpi=220)
     axes = axes.flatten()
 
     for axis, (metric_key, title) in zip(axes, ADDITIONAL_EPISODE_METRICS):
         for method in plottable:
             records = method.get("episode_metrics", [])
             episodes = [int(record.get("episode", idx + 1)) for idx, record in enumerate(records)]
-            values = [float(record.get(metric_key, 0.0)) for record in records]
-            if metric_key.endswith("_rate"):
-                values = [100.0 * value for value in values]
+            values = [float(record.get(metric_key, 0.0)) * metric_scale(metric_key) for record in records]
             style = styles[str(method.get("method", ""))]
             axis.plot(
                 episodes,
@@ -1194,97 +1467,193 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
         direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
         axis.set_title(f"{title} ({direction})")
         axis.set_xlabel("Evaluation Episode")
-        axis.set_ylabel("%" if metric_key.endswith("_rate") else "Score")
-        axis.grid(True, linestyle="--", alpha=0.3)
+        axis.set_ylabel("Rate (%)" if metric_key.endswith("_rate") else "Score")
+        axis.grid(True, linestyle="--", alpha=0.24)
 
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
         fig.legend(handles, labels, loc="upper center", ncol=min(len(labels), 4), bbox_to_anchor=(0.5, 1.02))
 
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    path = output_dir / "additional_metrics_episode_comparison.png"
-    fig.savefig(path, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return save_figure(fig, output_dir / "additional_metrics_episode_comparison.png")
+
+
+def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    if not methods:
+        return None
+
+    ordered = order_methods(methods)
+    styles = build_method_styles(ordered)
+    fig, ax = plt.subplots(figsize=(9, 6.8), dpi=220)
+
+    for method in ordered:
+        style = styles[str(method.get("method", ""))]
+        delay_value = float(method.get("avg_delay", 0.0))
+        energy_value = float(method.get("total_energy", 0.0))
+        completion_rate = float(method.get("task_completion_rate", 0.0))
+        marker = "*" if method.get("is_system") else style["marker"]
+        size = 180 + 820 * max(completion_rate, 0.0)
+        ax.scatter(
+            delay_value,
+            energy_value,
+            s=size,
+            color=style["color"],
+            marker=marker,
+            alpha=0.88,
+            edgecolors=PAPER_COLORS["dark"],
+            linewidths=1.0,
+        )
+        ax.annotate(
+            method.get("display_name", method.get("method", "")),
+            (delay_value, energy_value),
+            xytext=(6, 6),
+            textcoords="offset points",
+            fontsize=9,
+        )
+
+    ax.set_xlabel("Average Delay (s)")
+    ax.set_ylabel("Total Energy (J)")
+    ax.set_title("Delay-Energy Trade-off (Bubble Size = Task Completion)")
+    ax.grid(True, linestyle="--", alpha=0.24)
+    ax.text(
+        0.99,
+        0.02,
+        "Better region: lower-left",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=9,
+        color=PAPER_COLORS["muted"],
+    )
+    fig.tight_layout()
+    return save_figure(fig, output_dir / "delay_energy_tradeoff.png")
+
+
+def plot_paper_dashboard(
+    history_path: Optional[Path],
+    methods: Sequence[Dict],
+    output_dir: Path,
+    window: int,
+) -> Optional[Path]:
+    if not methods:
+        return None
+
+    fig = plt.figure(figsize=(16, 10), dpi=220)
+    grid = gridspec.GridSpec(2, 2, figure=fig, wspace=0.28, hspace=0.30)
+
+    ax_reward = fig.add_subplot(grid[0, 0])
+    has_reward_curve = draw_reward_curve_panel(ax_reward, history_path, methods, window=window, compact=True)
+    if not has_reward_curve:
+        ax_reward.axis("off")
+        ax_reward.text(
+            0.5,
+            0.5,
+            "No training history available.",
+            transform=ax_reward.transAxes,
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
+    add_panel_label(ax_reward, "(a)")
+
+    ax_tradeoff = fig.add_subplot(grid[0, 1])
+    ordered = order_methods(methods)
+    styles = build_method_styles(ordered)
+    for method in ordered:
+        style = styles[str(method.get("method", ""))]
+        ax_tradeoff.scatter(
+            float(method.get("avg_delay", 0.0)),
+            float(method.get("total_energy", 0.0)),
+            s=160 + 760 * float(method.get("task_completion_rate", 0.0)),
+            color=style["color"],
+            marker="*" if method.get("is_system") else style["marker"],
+            edgecolors=PAPER_COLORS["dark"],
+            linewidths=1.0,
+            alpha=0.88,
+        )
+        ax_tradeoff.annotate(
+            method.get("display_name", method.get("method", "")),
+            (float(method.get("avg_delay", 0.0)), float(method.get("total_energy", 0.0))),
+            xytext=(6, 6),
+            textcoords="offset points",
+            fontsize=8.5,
+        )
+    ax_tradeoff.set_xlabel("Average Delay (s)")
+    ax_tradeoff.set_ylabel("Total Energy (J)")
+    ax_tradeoff.set_title("Delay-Energy Trade-off")
+    add_panel_label(ax_tradeoff, "(b)")
+
+    ax_rates = fig.add_subplot(grid[1, 0])
+    draw_metric_bar_panel(
+        ax_rates,
+        methods,
+        metric_key="task_completion_rate",
+        title="Task Completion",
+        xlabel="Rate (%)",
+        compact=True,
+    )
+    add_panel_label(ax_rates, "(c)")
+
+    ax_efficiency = fig.add_subplot(grid[1, 1])
+    draw_metric_bar_panel(
+        ax_efficiency,
+        methods,
+        metric_key="avg_delay",
+        title="Average Delay",
+        xlabel="Avg Delay (s)",
+        compact=True,
+    )
+    add_panel_label(ax_efficiency, "(d)")
+
+    fig.suptitle("Publication-Style Baseline Comparison for HAN+MAPPO", fontsize=15, fontweight="bold", y=0.985)
+    fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.30, hspace=0.32)
+    return save_figure(fig, output_dir / "paper_baseline_dashboard.png")
 
 
 def plot_training_curve_vs_baselines(
     history_path: Optional[Path],
     methods: Sequence[Dict],
     output_dir: Path,
+    window: int,
 ) -> Optional[Path]:
-    if history_path is None or not history_path.exists():
+    fig, ax = plt.subplots(figsize=(11, 6.4), dpi=220)
+    has_curve = draw_reward_curve_panel(ax, history_path, methods, window=window)
+    if not has_curve:
+        plt.close(fig)
         return None
-
-    with history_path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-
-    training = payload.get("training", [])
-    evaluation = payload.get("evaluation", [])
-    if not training:
-        return None
-
-    steps = np.array([record.get("total_steps", 0) for record in training], dtype=float)
-    rewards = np.array([record.get("recent_mean_reward", 0.0) for record in training], dtype=float)
-
-    fig, ax = plt.subplots(figsize=(11, 6), dpi=180)
-    ax.plot(steps, rewards, color="#D55E00", linewidth=2.0, label="System Training Reward")
-
-    if evaluation:
-        eval_steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
-        eval_rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
-        ax.plot(
-            eval_steps,
-            eval_rewards,
-            color="#CC79A7",
-            linewidth=1.8,
-            marker="o",
-            markersize=3.5,
-            label="System Eval Reward",
-        )
-
-    for method in methods:
-        if method.get("is_system"):
-            continue
-        ax.axhline(
-            y=float(method.get("mean_reward", 0.0)),
-            linestyle="--",
-            linewidth=1.2,
-            alpha=0.8,
-            label=f"{method.get('display_name', method['method'])} mean reward",
-        )
-
-    ax.set_xlabel("Training Steps")
-    ax.set_ylabel("Reward")
-    ax.set_title("System Reward Curve vs Baseline Reward Levels")
-    ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend(loc="best", fontsize=9)
-
     fig.tight_layout()
-    path = output_dir / "reward_curve_vs_baselines.png"
-    fig.savefig(path, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return save_figure(fig, output_dir / "reward_curve_vs_baselines.png")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compare the current system method against heuristic baselines.")
-    parser.add_argument("--system-run-dir", type=str, default=str(PROJECT_ROOT / "results" / "full_train_delay_focus"),
-                        help="Directory containing training_history.json and/or best_model.pt.")
+    parser = argparse.ArgumentParser(
+        description="Train HAN+MAPPO and compare it against the heuristic baselines in BASELINE_STRATEGIES."
+    )
+    parser.add_argument("--run-mode", type=str, default="train_compare",
+                        choices=["train_compare", "compare_only"],
+                        help="Whether to train the system first or only compare against an existing run.")
+    parser.add_argument("--system-run-dir", type=str, default=str(DEFAULT_SYSTEM_RUN_DIR),
+                        help="Directory used for training outputs and/or existing system artifacts.")
     parser.add_argument("--system-checkpoint", type=str, default=None,
                         help="Path to best_model.pt or final_model.pt.")
+    parser.add_argument("--resume-system", action="store_true",
+                        help="Resume training from an existing checkpoint in --system-run-dir or --system-checkpoint.")
+    parser.add_argument("--exp-name", type=str, default="han_mappo_delay_focus_1200k",
+                        help="Experiment name used when training from this unified entry script.")
     parser.add_argument("--episodes", type=int, default=5,
                         help="Number of evaluation episodes for each method.")
     parser.add_argument("--max-steps", type=int, default=None,
-                        help="Override episode length for system evaluation and baselines.")
+                        help="Override episode length for training/evaluation/baselines.")
+    parser.add_argument("--total-timesteps", type=int, default=DEFAULT_TOTAL_TIMESTEPS,
+                        help="Total system training steps. Default is 1,200,000 steps.")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for baseline evaluation.")
-    parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"],
-                        help="Device used when evaluating a trained checkpoint.")
+    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"],
+                        help="Device used for training/evaluating the system method.")
     parser.add_argument("--objective", type=str, default="multi_objective",
                         choices=["multi_objective", "delay_only", "energy_only"],
                         help="Objective used when no system run is provided.")
-    parser.add_argument("--num-users", type=int, default=5,
+    parser.add_argument("--num-users", type=int, default=10,
                         help="User count used when no system run is provided.")
     parser.add_argument("--baselines", type=str, nargs="+", default=["all"],
                         help="Baselines to evaluate. Use 'all' for the default suite.")
@@ -1294,6 +1663,8 @@ def parse_args() -> argparse.Namespace:
                         help="Offload grid used by the joint greedy baseline.")
     parser.add_argument("--skip-system-eval", action="store_true",
                         help="Skip checkpoint evaluation and only use history summary when available.")
+    parser.add_argument("--plot-window", type=int, default=DEFAULT_PLOT_WINDOW,
+                        help="Smoothing window used by the publication-style reward figure.")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Directory for JSON/CSV summaries and figures.")
     return parser.parse_args()
@@ -1301,6 +1672,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    setup_publication_style()
     baselines = DEFAULT_BASELINES if "all" in args.baselines else args.baselines
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "results" / "baseline_compare" / timestamp
@@ -1317,8 +1689,26 @@ def main() -> None:
         config_data = build_default_train_config(
             objective=objective,
             seed=args.seed,
-            max_steps=args.max_steps or 200,
+            max_steps=args.max_steps or TrainConfig().max_steps,
             num_users=args.num_users,
+        )
+
+    if args.run_mode == "train_compare":
+        resume_checkpoint = checkpoint if args.resume_system else None
+        run_dir, checkpoint, history_path, config_data = run_system_training(
+            config_data=config_data,
+            objective=objective,
+            system_run_dir=Path(args.system_run_dir).resolve(),
+            device=args.device,
+            episodes=args.episodes,
+            max_steps=args.max_steps,
+            total_timesteps=args.total_timesteps,
+            exp_name=args.exp_name,
+            resume_checkpoint=resume_checkpoint,
+        )
+    elif checkpoint is None and history_path is None:
+        raise FileNotFoundError(
+            "compare_only mode requires an existing --system-run-dir or --system-checkpoint with training artifacts."
         )
 
     if checkpoint and not args.skip_system_eval:
@@ -1327,7 +1717,7 @@ def main() -> None:
             config_data=config_data,
             objective=objective,
             episodes=args.episodes,
-            device=args.device,
+            device=resolve_device(args.device),
             max_steps=args.max_steps,
         )
         system_method["source"] = "checkpoint_eval"
@@ -1372,10 +1762,12 @@ def main() -> None:
         output_dir,
         {
             "generated_at": timestamp,
+            "run_mode": args.run_mode,
             "objective": objective,
             "system_run_dir": str(run_dir) if run_dir else None,
             "system_checkpoint": str(checkpoint) if checkpoint else None,
             "training_history": str(history_path) if history_path else None,
+            "total_timesteps": int(config_data.get("total_timesteps", args.total_timesteps)),
             "env_config": asdict(build_env_config_from_train_config(config_data, seed=args.seed, max_steps=args.max_steps)),
             "methods": methods,
         },
@@ -1394,7 +1786,14 @@ def main() -> None:
         for metric_key, title, ylabel, filename in CORE_EPISODE_PLOTS
     }
     additional_metrics_plot = plot_additional_metric_curves(methods, output_dir)
-    reward_curve_plot = plot_training_curve_vs_baselines(history_path, methods, output_dir)
+    reward_curve_plot = plot_training_curve_vs_baselines(
+        history_path,
+        methods,
+        output_dir,
+        window=args.plot_window,
+    )
+    tradeoff_plot = plot_delay_energy_tradeoff(methods, output_dir)
+    dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
 
     print(json.dumps(methods, ensure_ascii=False, indent=2))
     print(f"Summary JSON saved to: {json_path}")
@@ -1410,6 +1809,10 @@ def main() -> None:
         print(f"Additional metrics figure: {additional_metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
+    if tradeoff_plot is not None:
+        print(f"Delay-energy trade-off figure: {tradeoff_plot}")
+    if dashboard_plot is not None:
+        print(f"Paper dashboard figure: {dashboard_plot}")
 
 
 if __name__ == "__main__":
