@@ -44,10 +44,22 @@ from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
 from src.environment.user import UserState
 
 try:
-    from scripts.train import HANMAPPOTrainer, TrainConfig
+    from scripts.train import (
+        BEST_MODEL_METRIC_CHOICES,
+        HANMAPPOTrainer,
+        TrainConfig,
+        compute_model_selection_score,
+        energy_per_resolved_task,
+    )
 except ModuleNotFoundError:
     # Compatible with direct execution: python scripts/compare_system_baselines.py
-    from train import HANMAPPOTrainer, TrainConfig
+    from train import (
+        BEST_MODEL_METRIC_CHOICES,
+        HANMAPPOTrainer,
+        TrainConfig,
+        compute_model_selection_score,
+        energy_per_resolved_task,
+    )
 
 DelayOnlyEnv = None
 DelayOnlyTrainer = None
@@ -80,9 +92,18 @@ DEFAULT_BASELINES = [
     "joint_greedy",
 ]
 
-DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_delay_focus_1200k"
+DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority"
+DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
 DEFAULT_TOTAL_TIMESTEPS = 1_200_000
 DEFAULT_PLOT_WINDOW = 10
+DEFAULT_SELECTION_METRIC = "latency_priority_score"
+
+PRIMARY_COMPARE_METRICS = [
+    ("avg_delay", "Average Delay"),
+    ("service_continuity_rate", "Service Continuity"),
+    ("task_completion_rate", "Task Completion"),
+    ("avg_load_balance_score", "Load Balance"),
+]
 
 DISPLAY_NAME_MAP = {
     "random": "Random",
@@ -128,11 +149,11 @@ HIGHER_IS_BETTER = {
 
 PAPER_METRIC_PLOTS = [
     ("avg_delay", "Average Delay", "Avg Delay (s)"),
-    ("total_energy", "Energy Consumption", "Total Energy (J)"),
-    ("handover_success_rate", "Handover Success", "Rate (%)"),
     ("service_continuity_rate", "Service Continuity", "Rate (%)"),
     ("task_completion_rate", "Task Completion", "Rate (%)"),
     ("avg_load_balance_score", "Load Balance", "Score"),
+    ("total_energy", "Energy Consumption", "Total Energy (J)"),
+    ("handover_success_rate", "Handover Success", "Rate (%)"),
 ]
 
 PAPER_DASHBOARD_LEFT_METRICS = [
@@ -243,7 +264,10 @@ def smooth(values: np.ndarray, window: int) -> np.ndarray:
     if len(values) < window:
         return values
     kernel = np.ones(window, dtype=float) / float(window)
-    return np.convolve(values.astype(float), kernel, mode="same")
+    left = window // 2
+    right = window - 1 - left
+    padded = np.pad(values.astype(float), (left, right), mode="edge")
+    return np.convolve(padded, kernel, mode="valid")
 
 
 def compute_confidence_band(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -339,13 +363,20 @@ def build_env_for_objective(
     return LEOSatelliteEnv(env_config)
 
 
-def build_default_train_config(objective: str, seed: int, max_steps: int, num_users: int) -> Dict:
+def build_default_train_config(
+    objective: str,
+    seed: int,
+    max_steps: int,
+    num_users: int,
+    best_model_metric: str,
+) -> Dict:
     config = asdict(TrainConfig())
     config["seed"] = seed
     config["max_steps"] = max_steps
     config["num_users"] = num_users
     config["total_timesteps"] = DEFAULT_TOTAL_TIMESTEPS
     config["save_path"] = str(DEFAULT_SYSTEM_RUN_DIR)
+    config["best_model_metric"] = best_model_metric
     if objective == "delay_only":
         config["exp_name"] = "han_mappo_delay_only"
         config["reward_delay_weight"] = 1.0
@@ -361,7 +392,12 @@ def build_default_train_config(objective: str, seed: int, max_steps: int, num_us
         config["reward_load_balance_weight"] = 0.0
         config["reward_qos_weight"] = 0.0
     else:
-        config["exp_name"] = "han_mappo_delay_focus_1200k"
+        config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
+        config["reward_delay_weight"] = 1.8
+        config["reward_energy_weight"] = 0.15
+        config["reward_handover_weight"] = 0.45
+        config["reward_load_balance_weight"] = 0.25
+        config["reward_qos_weight"] = 0.60
     return config
 
 
@@ -469,6 +505,57 @@ def summarize_results(
     return result
 
 
+def selection_score(method: Dict, metric_name: str) -> float:
+    return float(compute_model_selection_score(method, metric_name))
+
+
+def annotate_priority_metrics(methods: Sequence[Dict], metric_name: str) -> List[Dict]:
+    annotated = [dict(method) for method in methods]
+    for method in annotated:
+        method["selection_metric"] = metric_name
+        method["selection_score"] = selection_score(method, metric_name)
+        method["energy_per_resolved_task"] = float(energy_per_resolved_task(method))
+        method["primary_metric_wins"] = []
+
+    for metric_key, metric_label in PRIMARY_COMPARE_METRICS:
+        values = [float(method.get(metric_key, 0.0)) for method in annotated]
+        if not values:
+            continue
+        best_value = (
+            max(values)
+            if HIGHER_IS_BETTER.get(metric_key, True)
+            else min(values)
+        )
+        for method, value in zip(annotated, values):
+            if np.isclose(value, best_value, rtol=1e-9, atol=1e-9):
+                method["primary_metric_wins"].append(metric_label)
+
+    for method in annotated:
+        method["primary_metric_win_count"] = len(method["primary_metric_wins"])
+        method["primary_metric_wins_text"] = " | ".join(method["primary_metric_wins"])
+
+    return annotated
+
+
+def primary_metric_leaders(methods: Sequence[Dict]) -> Dict[str, List[str]]:
+    leaders: Dict[str, List[str]] = {}
+    for metric_key, metric_label in PRIMARY_COMPARE_METRICS:
+        values = [float(method.get(metric_key, 0.0)) for method in methods]
+        if not values:
+            continue
+        best_value = (
+            max(values)
+            if HIGHER_IS_BETTER.get(metric_key, True)
+            else min(values)
+        )
+        leaders[metric_label] = [
+            method.get("display_name", method.get("method", ""))
+            for method, value in zip(methods, values)
+            if np.isclose(value, best_value, rtol=1e-9, atol=1e-9)
+        ]
+    return leaders
+
+
 def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
     styles: Dict[str, Dict] = {}
     baseline_index = 0
@@ -493,7 +580,10 @@ def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
 def order_methods(methods: Sequence[Dict]) -> List[Dict]:
     systems = [method for method in methods if method.get("is_system")]
     baselines = [method for method in methods if not method.get("is_system")]
-    baselines.sort(key=lambda item: item.get("mean_reward", 0.0), reverse=True)
+    baselines.sort(
+        key=lambda item: (item.get("selection_score", item.get("mean_reward", 0.0)), item.get("mean_reward", 0.0)),
+        reverse=True,
+    )
     return systems + baselines
 
 
@@ -946,6 +1036,7 @@ def evaluate_simple_heuristic_with_offload_search(
     seed: int,
     max_steps: Optional[int],
     offload_grid: Sequence[float],
+    selection_metric_name: str,
 ) -> Dict:
     candidates = []
     for offload_ratio in offload_grid:
@@ -961,7 +1052,7 @@ def evaluate_simple_heuristic_with_offload_search(
         candidates.append(result)
 
     best_index = choose_best_index(
-        [candidate["mean_reward"] for candidate in candidates],
+        [selection_score(candidate, selection_metric_name) for candidate in candidates],
         higher_is_better=True,
     )
     best = dict(candidates[best_index])
@@ -1065,6 +1156,8 @@ def evaluate_system_checkpoint(
     trainer.total_steps = checkpoint_payload.get("total_steps", trainer.total_steps)
     trainer.episodes = checkpoint_payload.get("episodes", trainer.episodes)
     trainer.best_reward = checkpoint_payload.get("best_reward", trainer.best_reward)
+    if "best_model_metric" in checkpoint_payload:
+        trainer.config.best_model_metric = checkpoint_payload["best_model_metric"]
     trainer.mappo.actor.load_state_dict(checkpoint_payload["actor_state_dict"])
     trainer.mappo.critic.load_state_dict(checkpoint_payload["critic_state_dict"])
     if "han_state_dict" in checkpoint_payload:
@@ -1116,7 +1209,11 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
     if not evaluation_records:
         return config_data, None
 
-    best_record = max(evaluation_records, key=lambda record: record.get("eval_mean_reward", -float("inf")))
+    selection_metric_name = str(config_data.get("best_model_metric", DEFAULT_SELECTION_METRIC))
+    best_record = max(
+        evaluation_records,
+        key=lambda record: compute_model_selection_score(record, selection_metric_name),
+    )
     result = {
         "method": str(config_data.get("exp_name", history_path.parent.name or "system")),
         "display_name": pretty_method_name(
@@ -1144,7 +1241,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
             float(best_record.get("deadline_violations", 0.0)) / max(float(best_record.get("resolved_tasks", 0.0)), 1.0)
         ),
         "episode_metrics": [],
-        "source": "training_history_best_eval",
+        "source": f"training_history_best_{selection_metric_name}",
     }
     return config_data, result
 
@@ -1174,6 +1271,11 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "pending_task_rate",
         "deadline_violation_rate",
         "avg_load_balance_score",
+        "energy_per_resolved_task",
+        "selection_metric",
+        "selection_score",
+        "primary_metric_win_count",
+        "primary_metric_wins_text",
         "selected_offload",
         "method_variant",
         "source",
@@ -1387,7 +1489,7 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
     for axis, (metric_key, title, xlabel) in zip(axes.flatten(), PAPER_METRIC_PLOTS):
         draw_metric_bar_panel(axis, methods, metric_key=metric_key, title=title, xlabel=xlabel)
 
-    fig.suptitle("HAN+MAPPO vs Baseline Policies", fontsize=15, fontweight="bold", y=0.99)
+    fig.suptitle("HAN+MAPPO vs Baselines (Latency-Priority Metrics)", fontsize=15, fontweight="bold", y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     return save_figure(fig, output_dir / "method_comparison.png")
 
@@ -1502,13 +1604,7 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
             alpha=0.88,
             edgecolors=PAPER_COLORS["dark"],
             linewidths=1.0,
-        )
-        ax.annotate(
-            method.get("display_name", method.get("method", "")),
-            (delay_value, energy_value),
-            xytext=(6, 6),
-            textcoords="offset points",
-            fontsize=9,
+            label=method.get("display_name", method.get("method", "")),
         )
 
     ax.set_xlabel("Average Delay (s)")
@@ -1525,6 +1621,7 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
         fontsize=9,
         color=PAPER_COLORS["muted"],
     )
+    ax.legend(loc="upper left", fontsize=8.8, frameon=True, ncol=1)
     fig.tight_layout()
     return save_figure(fig, output_dir / "delay_energy_tradeoff.png")
 
@@ -1539,9 +1636,9 @@ def plot_paper_dashboard(
         return None
 
     fig = plt.figure(figsize=(16, 10), dpi=220)
-    grid = gridspec.GridSpec(2, 2, figure=fig, wspace=0.28, hspace=0.30)
+    grid = gridspec.GridSpec(2, 3, figure=fig, hspace=0.30, wspace=0.26, height_ratios=[1.15, 0.95])
 
-    ax_reward = fig.add_subplot(grid[0, 0])
+    ax_reward = fig.add_subplot(grid[0, :])
     has_reward_curve = draw_reward_curve_panel(ax_reward, history_path, methods, window=window, compact=True)
     if not has_reward_curve:
         ax_reward.axis("off")
@@ -1556,57 +1653,41 @@ def plot_paper_dashboard(
         )
     add_panel_label(ax_reward, "(a)")
 
-    ax_tradeoff = fig.add_subplot(grid[0, 1])
-    ordered = order_methods(methods)
-    styles = build_method_styles(ordered)
-    for method in ordered:
-        style = styles[str(method.get("method", ""))]
-        ax_tradeoff.scatter(
-            float(method.get("avg_delay", 0.0)),
-            float(method.get("total_energy", 0.0)),
-            s=160 + 760 * float(method.get("task_completion_rate", 0.0)),
-            color=style["color"],
-            marker="*" if method.get("is_system") else style["marker"],
-            edgecolors=PAPER_COLORS["dark"],
-            linewidths=1.0,
-            alpha=0.88,
-        )
-        ax_tradeoff.annotate(
-            method.get("display_name", method.get("method", "")),
-            (float(method.get("avg_delay", 0.0)), float(method.get("total_energy", 0.0))),
-            xytext=(6, 6),
-            textcoords="offset points",
-            fontsize=8.5,
-        )
-    ax_tradeoff.set_xlabel("Average Delay (s)")
-    ax_tradeoff.set_ylabel("Total Energy (J)")
-    ax_tradeoff.set_title("Delay-Energy Trade-off")
-    add_panel_label(ax_tradeoff, "(b)")
-
-    ax_rates = fig.add_subplot(grid[1, 0])
+    ax_delay = fig.add_subplot(grid[1, 0])
     draw_metric_bar_panel(
-        ax_rates,
-        methods,
-        metric_key="task_completion_rate",
-        title="Task Completion",
-        xlabel="Rate (%)",
-        compact=True,
-    )
-    add_panel_label(ax_rates, "(c)")
-
-    ax_efficiency = fig.add_subplot(grid[1, 1])
-    draw_metric_bar_panel(
-        ax_efficiency,
+        ax_delay,
         methods,
         metric_key="avg_delay",
         title="Average Delay",
         xlabel="Avg Delay (s)",
         compact=True,
     )
-    add_panel_label(ax_efficiency, "(d)")
+    add_panel_label(ax_delay, "(b)")
 
-    fig.suptitle("Publication-Style Baseline Comparison for HAN+MAPPO", fontsize=15, fontweight="bold", y=0.985)
-    fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.30, hspace=0.32)
+    ax_task = fig.add_subplot(grid[1, 1])
+    draw_metric_bar_panel(
+        ax_task,
+        methods,
+        metric_key="service_continuity_rate",
+        title="Service Continuity",
+        xlabel="Rate (%)",
+        compact=True,
+    )
+    add_panel_label(ax_task, "(c)")
+
+    ax_energy = fig.add_subplot(grid[1, 2])
+    draw_metric_bar_panel(
+        ax_energy,
+        methods,
+        metric_key="avg_load_balance_score",
+        title="Load Balance",
+        xlabel="Score",
+        compact=True,
+    )
+    add_panel_label(ax_energy, "(d)")
+
+    fig.suptitle("Publication-Style Baseline Comparison (Latency-Priority View)", fontsize=15, fontweight="bold", y=0.985)
+    fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.26, hspace=0.32)
     return save_figure(fig, output_dir / "paper_baseline_dashboard.png")
 
 
@@ -1638,7 +1719,7 @@ def parse_args() -> argparse.Namespace:
                         help="Path to best_model.pt or final_model.pt.")
     parser.add_argument("--resume-system", action="store_true",
                         help="Resume training from an existing checkpoint in --system-run-dir or --system-checkpoint.")
-    parser.add_argument("--exp-name", type=str, default="han_mappo_delay_focus_1200k",
+    parser.add_argument("--exp-name", type=str, default=DEFAULT_SYSTEM_EXP_NAME,
                         help="Experiment name used when training from this unified entry script.")
     parser.add_argument("--episodes", type=int, default=5,
                         help="Number of evaluation episodes for each method.")
@@ -1650,6 +1731,12 @@ def parse_args() -> argparse.Namespace:
                         help="Random seed for baseline evaluation.")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"],
                         help="Device used for training/evaluating the system method.")
+    parser.add_argument("--best-model-metric", type=str, default=DEFAULT_SELECTION_METRIC,
+                        choices=list(BEST_MODEL_METRIC_CHOICES),
+                        help="Metric used to save best_model.pt during training and to read history best records.")
+    parser.add_argument("--compare-ranking-metric", type=str, default=DEFAULT_SELECTION_METRIC,
+                        choices=list(BEST_MODEL_METRIC_CHOICES),
+                        help="Metric used to pick heuristic offload variants and sort methods in the report.")
     parser.add_argument("--objective", type=str, default="multi_objective",
                         choices=["multi_objective", "delay_only", "energy_only"],
                         help="Objective used when no system run is provided.")
@@ -1691,7 +1778,10 @@ def main() -> None:
             seed=args.seed,
             max_steps=args.max_steps or TrainConfig().max_steps,
             num_users=args.num_users,
+            best_model_metric=args.best_model_metric,
         )
+
+    config_data["best_model_metric"] = args.best_model_metric
 
     if args.run_mode == "train_compare":
         resume_checkpoint = checkpoint if args.resume_system else None
@@ -1738,6 +1828,7 @@ def main() -> None:
                 seed=args.seed,
                 max_steps=args.max_steps,
                 offload_grid=args.fixed_offload_grid,
+                selection_metric_name=args.compare_ranking_metric,
             )
         else:
             policy = build_policy(
@@ -1757,13 +1848,19 @@ def main() -> None:
         result["source"] = "heuristic_eval"
         methods.append(result)
 
+    methods = annotate_priority_metrics(methods, metric_name=args.compare_ranking_metric)
     methods = order_methods(methods)
+    leaders = primary_metric_leaders(methods)
     json_path = save_results_json(
         output_dir,
         {
             "generated_at": timestamp,
             "run_mode": args.run_mode,
             "objective": objective,
+            "best_model_metric": args.best_model_metric,
+            "compare_ranking_metric": args.compare_ranking_metric,
+            "primary_compare_metrics": [label for _, label in PRIMARY_COMPARE_METRICS],
+            "primary_metric_leaders": leaders,
             "system_run_dir": str(run_dir) if run_dir else None,
             "system_checkpoint": str(checkpoint) if checkpoint else None,
             "training_history": str(history_path) if history_path else None,
@@ -1773,19 +1870,8 @@ def main() -> None:
         },
     )
     csv_path = save_results_csv(output_dir, methods)
-    episode_csv_path = save_episode_metrics_csv(output_dir, methods)
     metrics_plot = plot_method_comparison(methods, output_dir)
-    episode_plots = {
-        metric_key: plot_episode_metric_curve(
-            methods,
-            metric_key=metric_key,
-            title=title,
-            ylabel=ylabel,
-            output_path=output_dir / filename,
-        )
-        for metric_key, title, ylabel, filename in CORE_EPISODE_PLOTS
-    }
-    additional_metrics_plot = plot_additional_metric_curves(methods, output_dir)
+    episode_csv_path = save_episode_metrics_csv(output_dir, methods)
     reward_curve_plot = plot_training_curve_vs_baselines(
         history_path,
         methods,
@@ -1802,11 +1888,6 @@ def main() -> None:
         print(f"Episode metrics CSV saved to: {episode_csv_path}")
     if metrics_plot is not None:
         print(f"Metric comparison figure: {metrics_plot}")
-    for metric_key, plot_path in episode_plots.items():
-        if plot_path is not None:
-            print(f"{metric_key} episode comparison figure: {plot_path}")
-    if additional_metrics_plot is not None:
-        print(f"Additional metrics figure: {additional_metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
     if tradeoff_plot is not None:

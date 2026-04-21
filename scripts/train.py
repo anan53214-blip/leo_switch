@@ -62,6 +62,79 @@ from src.algorithm.buffer import MultiAgentRolloutBuffer
 from src.algorithm.runner import Runner, RunnerConfig
 
 
+BEST_MODEL_METRIC_CHOICES = (
+    "reward",
+    "avg_delay",
+    "total_energy",
+    "service_continuity_rate",
+    "avg_load_balance_score",
+    "task_completion_rate",
+    "latency_priority_score",
+)
+
+BEST_MODEL_METRIC_LABELS = {
+    "reward": "reward",
+    "avg_delay": "average delay",
+    "total_energy": "energy per resolved task",
+    "service_continuity_rate": "service continuity",
+    "avg_load_balance_score": "load balance",
+    "task_completion_rate": "task completion",
+    "latency_priority_score": "latency-priority score",
+}
+
+
+def best_model_metric_label(metric_name: str) -> str:
+    """Return a readable label for checkpoint-selection metrics."""
+    return BEST_MODEL_METRIC_LABELS.get(metric_name, metric_name)
+
+
+def energy_per_resolved_task(record: Dict[str, Any]) -> float:
+    total_energy = float(record.get("total_energy", 0.0))
+    resolved_tasks = max(float(record.get("resolved_tasks", 0.0)), 1.0)
+    return total_energy / resolved_tasks
+
+
+def _bounded_unit_score(value: Any) -> float:
+    return float(np.clip(float(value), 0.0, 1.0))
+
+
+def _inverse_positive_score(value: Any) -> float:
+    return 1.0 / (1.0 + max(float(value), 0.0))
+
+
+def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> float:
+    """Convert an evaluation record into a higher-is-better selection score."""
+    metric_name = metric_name or "reward"
+
+    if metric_name == "reward":
+        return float(record.get("eval_mean_reward", record.get("mean_reward", 0.0)))
+    if metric_name == "avg_delay":
+        return -float(record.get("avg_delay", float("inf")))
+    if metric_name == "total_energy":
+        return -energy_per_resolved_task(record)
+    if metric_name == "service_continuity_rate":
+        return _bounded_unit_score(record.get("service_continuity_rate", 0.0))
+    if metric_name == "avg_load_balance_score":
+        return _bounded_unit_score(record.get("avg_load_balance_score", 0.0))
+    if metric_name == "task_completion_rate":
+        return _bounded_unit_score(record.get("task_completion_rate", 0.0))
+    if metric_name == "latency_priority_score":
+        delay_score = _inverse_positive_score(record.get("avg_delay", 0.0))
+        continuity_score = _bounded_unit_score(record.get("service_continuity_rate", 0.0))
+        completion_score = _bounded_unit_score(record.get("task_completion_rate", 0.0))
+        load_balance_score = _bounded_unit_score(record.get("avg_load_balance_score", 0.0))
+        energy_score = _inverse_positive_score(energy_per_resolved_task(record))
+        return (
+            0.45 * delay_score
+            + 0.20 * continuity_score
+            + 0.15 * completion_score
+            + 0.15 * load_balance_score
+            + 0.05 * energy_score
+        )
+
+    raise ValueError(f"Unsupported best-model metric: {metric_name}")
+
+
 # ============================================================
 # 配置类
 # ============================================================
@@ -141,6 +214,7 @@ class TrainConfig:
     
     # ---------- Early Stopping ----------
     early_stop_patience: int = 30         # 连续N次更新无改善则停止（0=禁用）
+    best_model_metric: str = "reward"     # best_model.pt 的选优指标
 
 
 def get_default_config() -> TrainConfig:
@@ -220,6 +294,7 @@ class HANMAPPOTrainer:
         self.total_steps = 0
         self.episodes = 0
         self.best_reward = float('-inf')
+        self.best_model_score = float('-inf')
         self.training_start_time = None
         
         # Episode统计
@@ -867,6 +942,10 @@ class HANMAPPOTrainer:
         self.logger.info(f"  总步数: {self.total_steps:,}")
         self.logger.info(f"  总episode: {self.episodes}")
         self.logger.info(f"  最佳奖励: {self.best_reward:.2f}")
+        self.logger.info(
+            f"  最佳模型指标: {best_model_metric_label(self.config.best_model_metric)} = "
+            f"{self.best_model_score:.4f}"
+        )
         self.logger.info("=" * 60)
         
         # 保存最终模型
@@ -995,6 +1074,9 @@ class HANMAPPOTrainer:
             ),
             'resolved_tasks': resolved_tasks,
             'pending_tasks': pending_tasks,
+            'total_tasks': eval_env_stats.get('total_tasks', 0),
+            'completed_tasks': eval_env_stats.get('completed_tasks', 0),
+            'deadline_violations': eval_env_stats.get('deadline_violations', 0),
             'task_completion_rate': (
                 eval_env_stats['completed_tasks'] / max(resolved_tasks, 1)
             ),
@@ -1008,6 +1090,9 @@ class HANMAPPOTrainer:
                 eval_env_stats['total_delay'] / max(resolved_tasks, 1)
             ),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
+            'energy_per_resolved_task': (
+                eval_env_stats.get('total_energy', 0.0) / max(resolved_tasks, 1)
+            ),
             'avg_load_balance_score': (
                 eval_env_stats['load_balance_sum'] / max(eval_env_stats['load_balance_samples'], 1)
             ),
@@ -1024,6 +1109,11 @@ class HANMAPPOTrainer:
             'penalty_failed_handover': eval_env_stats.get('penalty_failed_handover', 0.0),
             'penalty_handover_cost': eval_env_stats.get('penalty_handover_cost', 0.0),
         }
+        selection_metric = getattr(self.config, 'best_model_metric', 'reward')
+        eval_record['best_model_metric'] = selection_metric
+        eval_record['best_model_score'] = float(
+            compute_model_selection_score(eval_record, selection_metric)
+        )
         self.eval_history.append(eval_record)
         
         self.logger.info(
@@ -1034,11 +1124,26 @@ class HANMAPPOTrainer:
             f"负载均衡 = {eval_record['avg_load_balance_score']:.3f}"
         )
         
-        # 更新最佳奖励
-        if mean_reward > self.best_reward:
+        reward_improved = mean_reward > self.best_reward
+        if reward_improved:
             self.best_reward = mean_reward
-            self.logger.info(f"新的最佳奖励: {self.best_reward:.2f}")
+
+        # 使用可配置的多指标口径选择 best_model.pt
+        if eval_record['best_model_score'] > self.best_model_score:
+            self.best_model_score = eval_record['best_model_score']
+            self.logger.info(
+                f"新的最佳模型 ({best_model_metric_label(selection_metric)}): "
+                f"score = {self.best_model_score:.4f}, "
+                f"delay = {eval_record['avg_delay']:.3f}s, "
+                f"completion = {eval_record['task_completion_rate']:.2%}, "
+                f"continuity = {eval_record['service_continuity_rate']:.2%}, "
+                f"load_balance = {eval_record['avg_load_balance_score']:.3f}"
+            )
             self._save_checkpoint(best=True)
+
+        # 继续记录最高 reward，便于和旧实验保持一致
+        if reward_improved:
+            self.logger.info(f"新的最佳奖励: {self.best_reward:.2f}")
         
         self.logger.info("-" * 40)
     
@@ -1055,6 +1160,8 @@ class HANMAPPOTrainer:
                 'total_steps': self.total_steps,
                 'total_episodes': self.episodes,
                 'best_reward': float(self.best_reward),
+                'best_model_metric': self.config.best_model_metric,
+                'best_model_score': float(self.best_model_score),
                 'training_time_sec': time.time() - self.training_start_time if self.training_start_time else 0,
             }
         }
@@ -1082,6 +1189,8 @@ class HANMAPPOTrainer:
             'total_steps': self.total_steps,
             'episodes': self.episodes,
             'best_reward': self.best_reward,
+            'best_model_metric': self.config.best_model_metric,
+            'best_model_score': self.best_model_score,
             'config': asdict(self.config),
             'actor_state_dict': self.mappo.actor.state_dict(),
             'critic_state_dict': self.mappo.critic.state_dict(),
@@ -1102,6 +1211,9 @@ class HANMAPPOTrainer:
         self.total_steps = checkpoint['total_steps']
         self.episodes = checkpoint['episodes']
         self.best_reward = checkpoint['best_reward']
+        self.best_model_score = checkpoint.get('best_model_score', self.best_model_score)
+        if 'best_model_metric' in checkpoint:
+            self.config.best_model_metric = checkpoint['best_model_metric']
         
         self.mappo.actor.load_state_dict(checkpoint['actor_state_dict'])
         self.mappo.critic.load_state_dict(checkpoint['critic_state_dict'])
@@ -1193,6 +1305,9 @@ def parse_args():
                         help='禁用returns标准化（默认开启）')
     parser.add_argument('--eval_only', action='store_true',
                         help='仅评估，不训练')
+    parser.add_argument('--best-model-metric', type=str, default='reward',
+                        choices=list(BEST_MODEL_METRIC_CHOICES),
+                        help='best_model.pt 的选优指标')
     
     return parser.parse_args()
 
@@ -1238,6 +1353,7 @@ def main():
     config.early_stop_patience = args.early_stop_patience
     config.value_loss_type = args.value_loss_type
     config.normalize_returns = not args.disable_return_norm
+    config.best_model_metric = args.best_model_metric
     
     # 创建训练器
     trainer = HANMAPPOTrainer(config)
