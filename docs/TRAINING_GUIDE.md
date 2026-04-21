@@ -1,9 +1,11 @@
 # LEO HAN+MAPPO 训练使用方法
 
-> **文档版本**: v4.0
-> **更新日期**: 2026-04-15
+> **文档版本**: v4.1
+> **更新日期**: 2026-04-21
 > **适用范围**: 环境安装、训练运行、参数调优、结果可视化、常见问题
 > **当前默认实验**: `results/full_train_delay_focus`
+
+> **说明**: 本文档描述的是 `scripts/train.py` 的默认训练入口。若使用 `scripts/compare_system_baselines.py --run-mode train_compare`，脚本会使用单独的偏时延优先默认实验目录 `results/full_train_latency_priority`。
 
 ---
 
@@ -148,7 +150,20 @@ python scripts/run_server_training.py --plan multi_seed
 | `--save_interval` | int | `200000` | 检查点保存间隔 |
 | `--save_path` | str | `results/full_train_delay_focus` | 模型保存路径 |
 | `--load_path` | str | `None` | 加载检查点路径 |
+| `--best-model-metric` | str | `reward` | `best_model.pt` 的选优指标 |
 | `--eval_only` | flag | - | 仅评估不训练 |
+
+`--best-model-metric` 当前支持：
+
+- `reward`
+- `avg_delay`
+- `total_energy`
+- `service_continuity_rate`
+- `avg_load_balance_score`
+- `task_completion_rate`
+- `latency_priority_score`
+
+默认仍是 `reward`，因此直接运行 `train.py` 时，`best_model.pt` 仍表示“评估奖励最高”的模型；如果你希望保存更偏时延/连续性/负载均衡的最佳模型，可以显式改成 `latency_priority_score`。
 
 #### 常用命令示例
 
@@ -178,6 +193,9 @@ python scripts/train.py --han_hidden_dim 128 --han_num_heads 8 --han_num_layers 
 
 # 从检查点恢复训练
 python scripts/train.py --load_path results/full_train_delay_focus/checkpoint_200704.pt
+
+# 用偏时延优先的综合指标选择 best_model.pt
+python scripts/train.py --best-model-metric latency_priority_score --save_path results/full_train_latency_priority
 
 # 仅评估已训练模型
 python scripts/train.py --load_path results/full_train_delay_focus/best_model.pt --eval_only
@@ -212,7 +230,7 @@ python scripts/run_server_training.py --plan standard
 ```
 results/
 ├── full_train_delay_focus/         # --plan standard 的输出
-│   ├── best_model.pt               # 评估奖励最高的模型
+│   ├── best_model.pt               # 按 --best-model-metric 选出的最佳模型（默认仍为评估奖励最高）
 │   ├── final_model.pt              # 训练结束时的模型
 │   ├── checkpoint_200704.pt        # 中间检查点
 │   ├── checkpoint_401408.pt
@@ -260,6 +278,11 @@ results/
       "total_steps": 20000,
       "eval_mean_reward": 85.2,
       "eval_std_reward": 4.3,
+      "avg_delay": 0.031,
+      "total_energy": 3.9,
+      "energy_per_resolved_task": 0.015,
+      "best_model_metric": "reward",
+      "best_model_score": 85.2,
       ...
     },
     ...
@@ -268,6 +291,8 @@ results/
     "total_steps": 1000000,
     "total_episodes": 976,
     "best_reward": 92.5,
+    "best_model_metric": "reward",
+    "best_model_score": 92.5,
     "training_time_sec": 7200
   }
 }
@@ -280,6 +305,8 @@ checkpoint = {
     'total_steps': int,
     'episodes': int,
     'best_reward': float,
+    'best_model_metric': str,
+    'best_model_score': float,
     'config': dict,
     'actor_state_dict': OrderedDict,
     'critic_state_dict': OrderedDict,

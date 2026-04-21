@@ -6,16 +6,40 @@
 
 默认训练/输出目录为：
 
-- `results/full_train_delay_focus_1200k/`
+- `results/full_train_latency_priority/`
+
+默认实验名为：
+
+- `han_mappo_latency_priority`
 
 默认总训练步数为：
 
 - `1,200,000` steps
 
+默认运行模式为：
+
+- `--run-mode train_compare`
+
+当脚本没有读到已有的 `--system-run-dir` / `--system-checkpoint` 时，会自动构造一组偏时延优先的多目标训练配置：
+
+- `reward_delay_weight = 1.8`
+- `reward_energy_weight = 0.15`
+- `reward_handover_weight = 0.45`
+- `reward_load_balance_weight = 0.25`
+- `reward_qos_weight = 0.60`
+
 如果使用 `--run-mode compare_only`，则脚本会读取已有运行目录中的：
 
 - `best_model.pt` 或 `final_model.pt`
 - `training_history.json`
+
+系统方法 checkpoint 的默认选优指标为：
+
+- `--best-model-metric latency_priority_score`
+
+基线方法固定卸载比例搜索、报表排序和主指标胜出统计的默认口径为：
+
+- `--compare-ranking-metric latency_priority_score`
 
 基线方法均不训练神经网络，直接根据当前环境状态生成动作。每个用户在每个时间步输出联合动作：
 
@@ -29,7 +53,7 @@ action_i = (handover_action_i, offload_ratio_i)
 - `handover_action = k` 表示切换到当前可见卫星列表中的第 `k` 个候选卫星。
 - `offload_ratio in [0, 1]` 表示任务卸载到卫星 MEC 的比例。
 
-评价指标包括：
+脚本会完整输出以下评价指标：
 
 - `mean_reward`
 - `avg_delay`
@@ -39,6 +63,22 @@ action_i = (handover_action_i, offload_ratio_i)
 - `task_completion_rate`
 - `pending_task_rate`
 - `avg_load_balance_score`
+
+其中默认重点展示和统计“主指标胜出”的指标为：
+
+- `avg_delay`
+- `service_continuity_rate`
+- `task_completion_rate`
+- `avg_load_balance_score`
+
+脚本还会在 JSON/CSV 中额外写出：
+
+- `selection_metric`
+- `selection_score`
+- `energy_per_resolved_task`
+- `primary_metric_wins`
+- `primary_metric_win_count`
+- `primary_metric_wins_text`
 
 ## 2. 简单启发式基线
 
@@ -337,22 +377,34 @@ joint_score = handover_value + task_score + enqueue_bonus
 python scripts\compare_system_baselines.py
 ```
 
+等价的显式写法：
+
+```powershell
+python scripts\compare_system_baselines.py --run-mode train_compare
+```
+
 仅对已有模型做对比：
 
 ```powershell
-python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_delay_focus
+python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_latency_priority
 ```
 
 快速测试：
 
 ```powershell
-python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_delay_focus --episodes 1 --max-steps 50
+python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_latency_priority --episodes 1 --max-steps 50
 ```
 
 正式对比：
 
 ```powershell
-python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_delay_focus --episodes 5
+python scripts\compare_system_baselines.py --run-mode compare_only --system-run-dir results\full_train_latency_priority --episodes 5
+```
+
+显式指定“偏时延优先”的模型选择和报表排序口径：
+
+```powershell
+python scripts\compare_system_baselines.py --run-mode train_compare --best-model-metric latency_priority_score --compare-ranking-metric latency_priority_score
 ```
 
 输出目录默认为：
@@ -374,3 +426,8 @@ results/baseline_compare/<timestamp>/
 - `delay_energy_tradeoff.pdf`
 - `paper_baseline_dashboard.png`
 - `paper_baseline_dashboard.pdf`
+
+其中：
+
+- `comparison_summary.json` 会包含 `primary_compare_metrics` 和 `primary_metric_leaders`
+- `comparison_summary.csv` 会包含 `selection_score`、`energy_per_resolved_task`、`primary_metric_win_count` 等扩展字段
