@@ -50,6 +50,30 @@ def test_stats_summary_uses_resolved_tasks_for_rates():
         env.close()
 
 
+def test_stats_summary_prefers_time_based_service_reliability_metrics():
+    env = _build_single_user_env()
+
+    try:
+        env.stats.update({
+            'total_user_seconds': 100.0,
+            'blocked_user_seconds': 8.0,
+            'handover_interruption_seconds': 5.0,
+            'service_interruption_seconds': 13.0,
+            'total_handovers': 4,
+            'successful_handovers': 4,
+            'total_tasks': 1,
+            'completed_tasks': 1,
+        })
+
+        stats = env._get_info()['stats']
+
+        assert math.isclose(stats['service_availability_rate'], 0.92)
+        assert math.isclose(stats['service_continuity_rate'], 0.87)
+        assert math.isclose(stats['forced_termination_rate'], 0.0)
+    finally:
+        env.close()
+
+
 def test_task_generation_skips_blocked_users():
     env = _build_single_user_env(task_arrival_prob=1.0)
 

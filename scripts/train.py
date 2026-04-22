@@ -51,7 +51,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'src'))
 
 # 导入项目模块
-from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
+from src.environment.gym_env import LEOSatelliteEnv, EnvConfig, summarize_env_stats
 from src.graph.builder import HeteroGraphBuilder
 from src.graph.features import FeatureExtractor
 from src.model.hetero_gnn import HANEncoder, HANConfig
@@ -67,6 +67,8 @@ BEST_MODEL_METRIC_CHOICES = (
     "avg_delay",
     "total_energy",
     "service_continuity_rate",
+    "service_availability_rate",
+    "handover_failure_rate",
     "avg_load_balance_score",
     "task_completion_rate",
     "latency_priority_score",
@@ -77,6 +79,8 @@ BEST_MODEL_METRIC_LABELS = {
     "avg_delay": "average delay",
     "total_energy": "energy per resolved task",
     "service_continuity_rate": "service continuity",
+    "service_availability_rate": "service availability",
+    "handover_failure_rate": "handover failure rate",
     "avg_load_balance_score": "load balance",
     "task_completion_rate": "task completion",
     "latency_priority_score": "latency-priority score",
@@ -114,6 +118,10 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
         return -energy_per_resolved_task(record)
     if metric_name == "service_continuity_rate":
         return _bounded_unit_score(record.get("service_continuity_rate", 0.0))
+    if metric_name == "service_availability_rate":
+        return _bounded_unit_score(record.get("service_availability_rate", 0.0))
+    if metric_name == "handover_failure_rate":
+        return -_bounded_unit_score(record.get("handover_failure_rate", 0.0))
     if metric_name == "avg_load_balance_score":
         return _bounded_unit_score(record.get("avg_load_balance_score", 0.0))
     if metric_name == "task_completion_rate":
@@ -470,7 +478,7 @@ class HANMAPPOTrainer:
         # 关联buffer到MAPPO
         self.mappo.set_buffer(self.buffer)
     
-    def _get_observations(self, env_obs: np.ndarray) -> tuple:
+    def _get_observations_legacy_unused(self, env_obs: np.ndarray) -> tuple:
         """
         从环境观测构建MAPPO输入
         
@@ -595,6 +603,30 @@ class HANMAPPOTrainer:
 
         user_embeddings = np.concatenate([self._cached_han_user_embed, rvt_warning, task_features], axis=1)
         return user_embeddings, self._cached_sat_embed, available_actions
+
+    def _get_observations(self, env_obs: np.ndarray) -> tuple:
+        """
+        Compatibility wrapper that returns the HAN-encoded policy inputs.
+
+        Keeping a second observation-construction path here caused the test
+        harness to drift away from the actual training and evaluation stack.
+        We now route every caller through ``_encode_graph_state`` so action
+        masks and user embeddings stay consistent across the codebase.
+        """
+        del env_obs
+
+        observations, _, available_actions = (
+            self._encode_graph_state()
+        )
+        global_state = observations.reshape(-1).astype(np.float32, copy=False)
+
+        if global_state.size != self.global_state_dim:
+            padded_state = np.zeros(self.global_state_dim, dtype=np.float32)
+            copy_len = min(global_state.size, self.global_state_dim)
+            padded_state[:copy_len] = global_state[:copy_len]
+            global_state = padded_state
+
+        return observations, global_state, available_actions
     
     def _process_actions(self, actions: Dict) -> np.ndarray:
         """
@@ -623,6 +655,10 @@ class HANMAPPOTrainer:
             'successful_handovers': 0,
             'failed_handovers': 0,
             'forced_disconnects': 0,
+            'total_user_seconds': 0.0,
+            'blocked_user_seconds': 0.0,
+            'handover_interruption_seconds': 0.0,
+            'service_interruption_seconds': 0.0,
             'total_tasks': 0,
             'completed_tasks': 0,
             'deadline_violations': 0,
@@ -763,13 +799,7 @@ class HANMAPPOTrainer:
         
         # 获取环境统计（切换成功率、任务完成率、延迟、能耗等）
         env_stats = rollout_env_stats
-        resolved_tasks = (
-            env_stats.get('completed_tasks', 0) + env_stats.get('deadline_violations', 0)
-        )
-        pending_tasks = max(env_stats.get('total_tasks', 0) - resolved_tasks, 0)
-        continuity_events = (
-            env_stats.get('total_handovers', 0) + env_stats.get('forced_disconnects', 0)
-        )
+        summary_env_stats = summarize_env_stats(env_stats)
         
         stats = {
             'episodes': len(episode_rewards),
@@ -784,33 +814,26 @@ class HANMAPPOTrainer:
             'successful_handovers': env_stats.get('successful_handovers', 0),
             'failed_handovers': env_stats.get('failed_handovers', 0),
             'forced_disconnects': env_stats.get('forced_disconnects', 0),
-            'handover_success_rate': (
-                env_stats['successful_handovers'] / max(env_stats['total_handovers'], 1)
-            ),
-            'service_continuity_rate': (
-                1.0 - env_stats.get('forced_disconnects', 0) / max(continuity_events, 1)
-            ),
+            'total_user_seconds': env_stats.get('total_user_seconds', 0.0),
+            'blocked_user_seconds': env_stats.get('blocked_user_seconds', 0.0),
+            'handover_interruption_seconds': env_stats.get('handover_interruption_seconds', 0.0),
+            'service_interruption_seconds': env_stats.get('service_interruption_seconds', 0.0),
+            'handover_success_rate': summary_env_stats.get('handover_success_rate', 0.0),
+            'handover_failure_rate': summary_env_stats.get('handover_failure_rate', 0.0),
+            'forced_termination_rate': summary_env_stats.get('forced_termination_rate', 0.0),
+            'service_availability_rate': summary_env_stats.get('service_availability_rate', 0.0),
+            'service_continuity_rate': summary_env_stats.get('service_continuity_rate', 0.0),
             'total_tasks': env_stats.get('total_tasks', 0),
             'completed_tasks': env_stats.get('completed_tasks', 0),
             'deadline_violations': env_stats.get('deadline_violations', 0),
-            'resolved_tasks': resolved_tasks,
-            'pending_tasks': pending_tasks,
-            'task_completion_rate': (
-                env_stats['completed_tasks'] / max(resolved_tasks, 1)
-            ),
-            'task_resolution_rate': (
-                resolved_tasks / max(env_stats['total_tasks'], 1)
-            ),
-            'pending_task_rate': (
-                pending_tasks / max(env_stats['total_tasks'], 1)
-            ),
-            'avg_delay': (
-                env_stats['total_delay'] / max(resolved_tasks, 1)
-            ),
+            'resolved_tasks': summary_env_stats.get('resolved_tasks', 0),
+            'pending_tasks': summary_env_stats.get('pending_tasks', 0),
+            'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
+            'task_resolution_rate': summary_env_stats.get('task_resolution_rate', 0.0),
+            'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
+            'avg_delay': summary_env_stats.get('avg_delay', 0.0),
             'total_energy': env_stats.get('total_energy', 0.0),
-            'avg_load_balance_score': (
-                env_stats['load_balance_sum'] / max(env_stats['load_balance_samples'], 1)
-            ),
+            'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'reward_delay': env_stats.get('reward_delay', 0.0),
             'reward_energy': env_stats.get('reward_energy', 0.0),
             'reward_qos': env_stats.get('reward_qos', 0.0),
@@ -883,7 +906,14 @@ class HANMAPPOTrainer:
                 'successful_handovers': rollout_stats.get('successful_handovers', 0),
                 'failed_handovers': rollout_stats.get('failed_handovers', 0),
                 'forced_disconnects': rollout_stats.get('forced_disconnects', 0),
+                'total_user_seconds': rollout_stats.get('total_user_seconds', 0.0),
+                'blocked_user_seconds': rollout_stats.get('blocked_user_seconds', 0.0),
+                'handover_interruption_seconds': rollout_stats.get('handover_interruption_seconds', 0.0),
+                'service_interruption_seconds': rollout_stats.get('service_interruption_seconds', 0.0),
                 'handover_success_rate': rollout_stats.get('handover_success_rate', 0),
+                'handover_failure_rate': rollout_stats.get('handover_failure_rate', 0),
+                'forced_termination_rate': rollout_stats.get('forced_termination_rate', 0),
+                'service_availability_rate': rollout_stats.get('service_availability_rate', 0),
                 'service_continuity_rate': rollout_stats.get('service_continuity_rate', 0),
                 'total_tasks': rollout_stats.get('total_tasks', 0),
                 'completed_tasks': rollout_stats.get('completed_tasks', 0),
@@ -1049,13 +1079,7 @@ class HANMAPPOTrainer:
         mean_reward = np.mean(eval_rewards)
         std_reward = np.std(eval_rewards)
         mean_length = np.mean(eval_lengths)
-        resolved_tasks = (
-            eval_env_stats.get('completed_tasks', 0) + eval_env_stats.get('deadline_violations', 0)
-        )
-        pending_tasks = max(eval_env_stats.get('total_tasks', 0) - resolved_tasks, 0)
-        continuity_events = (
-            eval_env_stats.get('total_handovers', 0) + eval_env_stats.get('forced_disconnects', 0)
-        )
+        summary_env_stats = summarize_env_stats(eval_env_stats)
         
         # 记录评估结果到 eval_history
         eval_record = {
@@ -1065,37 +1089,33 @@ class HANMAPPOTrainer:
             'eval_std_reward': float(std_reward),
             'eval_mean_length': float(mean_length),
             'eval_rewards': [float(r) for r in eval_rewards],
+            'total_handovers': eval_env_stats.get('total_handovers', 0),
+            'successful_handovers': eval_env_stats.get('successful_handovers', 0),
+            'failed_handovers': eval_env_stats.get('failed_handovers', 0),
             'forced_disconnects': eval_env_stats.get('forced_disconnects', 0),
-            'handover_success_rate': (
-                eval_env_stats['successful_handovers'] / max(eval_env_stats['total_handovers'], 1)
-            ),
-            'service_continuity_rate': (
-                1.0 - eval_env_stats.get('forced_disconnects', 0) / max(continuity_events, 1)
-            ),
-            'resolved_tasks': resolved_tasks,
-            'pending_tasks': pending_tasks,
+            'total_user_seconds': eval_env_stats.get('total_user_seconds', 0.0),
+            'blocked_user_seconds': eval_env_stats.get('blocked_user_seconds', 0.0),
+            'handover_interruption_seconds': eval_env_stats.get('handover_interruption_seconds', 0.0),
+            'service_interruption_seconds': eval_env_stats.get('service_interruption_seconds', 0.0),
+            'handover_success_rate': summary_env_stats.get('handover_success_rate', 0.0),
+            'handover_failure_rate': summary_env_stats.get('handover_failure_rate', 0.0),
+            'forced_termination_rate': summary_env_stats.get('forced_termination_rate', 0.0),
+            'service_availability_rate': summary_env_stats.get('service_availability_rate', 0.0),
+            'service_continuity_rate': summary_env_stats.get('service_continuity_rate', 0.0),
+            'resolved_tasks': summary_env_stats.get('resolved_tasks', 0),
+            'pending_tasks': summary_env_stats.get('pending_tasks', 0),
             'total_tasks': eval_env_stats.get('total_tasks', 0),
             'completed_tasks': eval_env_stats.get('completed_tasks', 0),
             'deadline_violations': eval_env_stats.get('deadline_violations', 0),
-            'task_completion_rate': (
-                eval_env_stats['completed_tasks'] / max(resolved_tasks, 1)
-            ),
-            'task_resolution_rate': (
-                resolved_tasks / max(eval_env_stats['total_tasks'], 1)
-            ),
-            'pending_task_rate': (
-                pending_tasks / max(eval_env_stats['total_tasks'], 1)
-            ),
-            'avg_delay': (
-                eval_env_stats['total_delay'] / max(resolved_tasks, 1)
-            ),
+            'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
+            'task_resolution_rate': summary_env_stats.get('task_resolution_rate', 0.0),
+            'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
+            'avg_delay': summary_env_stats.get('avg_delay', 0.0),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
-                eval_env_stats.get('total_energy', 0.0) / max(resolved_tasks, 1)
+                eval_env_stats.get('total_energy', 0.0) / max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)
             ),
-            'avg_load_balance_score': (
-                eval_env_stats['load_balance_sum'] / max(eval_env_stats['load_balance_samples'], 1)
-            ),
+            'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'reward_delay': eval_env_stats.get('reward_delay', 0.0),
             'reward_energy': eval_env_stats.get('reward_energy', 0.0),
             'reward_qos': eval_env_stats.get('reward_qos', 0.0),

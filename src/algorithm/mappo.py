@@ -209,6 +209,44 @@ class MAPPO:
             - value: 全局状态价值（标量）
         """
         # observations 在 P0 阶段表示用户嵌入
+        observations = np.asarray(observations, dtype=np.float32)
+        expected_obs_shape = (self.config.num_agents, self.config.obs_dim)
+        if observations.shape != expected_obs_shape:
+            raise ValueError(
+                "observations must have shape "
+                f"{expected_obs_shape}, got {tuple(observations.shape)}"
+            )
+
+        if candidate_masks is not None:
+            candidate_masks = np.asarray(candidate_masks, dtype=np.float32)
+            expected_mask_shape = (
+                self.config.num_agents,
+                self.config.max_candidates + 1,
+            )
+            if candidate_masks.shape != expected_mask_shape:
+                raise ValueError(
+                    "candidate_masks must have shape "
+                    f"{expected_mask_shape}, got "
+                    f"{tuple(candidate_masks.shape)}"
+                )
+
+        if satellite_embeddings is not None:
+            satellite_embeddings = np.asarray(
+                satellite_embeddings,
+                dtype=np.float32,
+            )
+            if satellite_embeddings.ndim != 2:
+                raise ValueError(
+                    "satellite_embeddings must be a rank-2 array, got "
+                    f"{satellite_embeddings.ndim} dimensions"
+                )
+            if satellite_embeddings.shape[1] != self.config.sat_embed_dim:
+                raise ValueError(
+                    "satellite_embeddings second dimension must match "
+                    f"sat_embed_dim={self.config.sat_embed_dim}, got "
+                    f"{satellite_embeddings.shape[1]}"
+                )
+
         obs_tensor = torch.tensor(
             observations, dtype=torch.float32, device=self.device
         )

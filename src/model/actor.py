@@ -172,6 +172,17 @@ class HybridActor(nn.Module):
         
         # 应用候选掩码（无效候选的logit设为-inf）
         if candidate_mask is not None:
+            if candidate_mask.shape != handover_logits.shape:
+                raise ValueError(
+                    "candidate_mask shape must match handover logits: "
+                    f"got {tuple(candidate_mask.shape)} vs "
+                    f"{tuple(handover_logits.shape)}"
+                )
+            if not torch.any(candidate_mask > 0, dim=-1).all():
+                raise ValueError(
+                    "candidate_mask must keep at least one valid action per "
+                    "agent"
+                )
             handover_logits = handover_logits.masked_fill(
                 ~candidate_mask.bool(), float('-inf')
             )

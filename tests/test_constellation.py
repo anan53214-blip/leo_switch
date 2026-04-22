@@ -5,6 +5,7 @@
 
 import sys
 import numpy as np
+import pytest
 from datetime import datetime, timedelta
 
 # 添加项目路径
@@ -12,6 +13,16 @@ sys.path.insert(0, 'd:\\python_code\\LEO_switch')
 
 from src.environment.constellation import WalkerConstellation, EARTH_RADIUS_KM
 from src.environment.visibility import VisibilityCalculator
+
+
+@pytest.fixture
+def constellation():
+    return WalkerConstellation(
+        num_planes=6,
+        sats_per_plane=11,
+        altitude_km=550.0,
+        inclination_deg=53.0,
+    )
 
 
 def test_constellation_initialization():
@@ -44,7 +55,6 @@ def test_constellation_initialization():
         assert abs(alt - 550) < 10, f"轨道高度应约为550km, 实际为{alt:.1f}km"
     print(f"✓ 轨道高度验证通过")
     
-    return constellation
 
 
 def test_satellite_positions(constellation):
@@ -206,7 +216,13 @@ def main():
     print("=" * 60 + "\n")
     
     # 依次运行测试
-    constellation = test_constellation_initialization()
+    constellation = WalkerConstellation(
+        num_planes=6,
+        sats_per_plane=11,
+        altitude_km=550.0,
+        inclination_deg=53.0,
+    )
+    test_constellation_initialization()
     test_satellite_positions(constellation)
     test_orbit_propagation(constellation)
     test_visibility_calculation(constellation)

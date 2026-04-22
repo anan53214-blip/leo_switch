@@ -5,6 +5,7 @@ MEC模型测试
 
 import sys
 import numpy as np
+import pytest
 
 sys.path.insert(0, 'd:\\python_code\\LEO_switch')
 
@@ -13,6 +14,11 @@ from src.environment.mec import (
     OffloadingCalculator, ComputeResult,
     compute_task_delay, compute_task_energy
 )
+
+
+@pytest.fixture
+def calc():
+    return OffloadingCalculator()
 
 
 def test_mec_config():
@@ -34,7 +40,6 @@ def test_mec_config():
     print(f"  能耗系数κ: {config.kappa}")
     
     print("\n✓ 配置参数加载正确")
-    return config
 
 
 def test_mec_server():
@@ -76,7 +81,6 @@ def test_mec_server():
     print(f"\n状态向量: {state}")
     
     print("\n✓ MEC服务器测试通过")
-    return server
 
 
 def test_offloading_calculator():
@@ -126,7 +130,6 @@ def test_offloading_calculator():
     print("-" * 80)
     print("\n✓ 卸载计算测试通过")
     
-    return calc
 
 
 def test_optimal_offloading(calc):
@@ -283,9 +286,10 @@ def main():
     print("#              MEC模型测试")
     print("#" * 60)
     
-    config = test_mec_config()
-    server = test_mec_server()
-    calc = test_offloading_calculator()
+    test_mec_config()
+    test_mec_server()
+    calc = OffloadingCalculator()
+    test_offloading_calculator()
     test_optimal_offloading(calc)
     test_mec_manager()
     test_convenience_functions()

@@ -84,7 +84,6 @@ def test_user_generation():
     print("-" * 50)
     print("✓ 用户生成测试通过")
     
-    return users
 
 
 def test_user_manager(users):
@@ -122,7 +121,6 @@ def test_user_manager(users):
     
     print("\n✓ 用户管理器测试通过")
     
-    return manager
 
 
 def test_task_generation(users):
@@ -165,7 +163,6 @@ def test_task_generation(users):
     
     print("\n✓ 任务生成测试通过")
     
-    return tasks
 
 
 def test_task_manager(tasks):
@@ -276,9 +273,21 @@ def main():
     print("        用户和任务模型测试")
     print("=" * 60 + "\n")
     
-    users = test_user_generation()
+    generator = UserGenerator(seed=42)
+    users = generator.generate_users_in_circle(
+        center_lat=0.0,
+        center_lon=0.0,
+        radius_deg=2.0,
+        num_users=10,
+    )
+    test_user_generation()
     test_user_manager(users)
-    tasks = test_task_generation(users)
+    task_gen = TaskGenerator(seed=42)
+    tasks = task_gen.generate_tasks_for_users(
+        user_ids=[u.user_id for u in users],
+        current_time=0.0,
+    )
+    test_task_generation(users)
     test_task_manager(tasks)
     test_integrated_scenario()
     

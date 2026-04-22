@@ -52,7 +52,6 @@ def test_env_creation():
     print(f"动作空间: {env.action_space.shape}")
     
     print("\n✓ 环境创建成功")
-    return env
 
 
 def test_env_reset(env):
@@ -75,7 +74,6 @@ def test_env_reset(env):
     print(f"\n观测值范围: [{obs.min():.4f}, {obs.max():.4f}]")
     
     print("\n✓ 环境重置成功")
-    return obs
 
 
 def test_random_actions(env):
@@ -270,16 +268,21 @@ def main():
     print("#          Gymnasium环境测试")
     print("#" * 60)
     
-    env = test_env_creation()
-    test_env_reset(env)
-    test_random_actions(env)
-    test_specific_actions(env)
-    test_handover_actions(env)
-    test_episode_run(env)
-    test_graph_state(env)
-    test_render(env)
-    
-    env.close()
+    test_env_creation()
+
+    from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
+
+    env = LEOSatelliteEnv(EnvConfig(num_users=5, max_steps=100, seed=42))
+    try:
+        test_env_reset(env)
+        test_random_actions(env)
+        test_specific_actions(env)
+        test_handover_actions(env)
+        test_episode_run(env)
+        test_graph_state(env)
+        test_render(env)
+    finally:
+        env.close()
     
     print("\n" + "=" * 60)
     print("         所有测试通过! ✓")

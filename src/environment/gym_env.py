@@ -75,6 +75,84 @@ class EnvConfig:
     seed: Optional[int] = None
 
 
+def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
+    """Derive reliability and QoS metrics from raw environment counters."""
+    resolved_tasks = int(stats.get('completed_tasks', 0) + stats.get('deadline_violations', 0))
+    total_tasks = int(stats.get('total_tasks', 0))
+    pending_tasks = max(total_tasks - resolved_tasks, 0)
+
+    total_handovers = int(stats.get('total_handovers', 0))
+    successful_handovers = int(stats.get('successful_handovers', 0))
+    failed_handovers = int(stats.get('failed_handovers', 0))
+    forced_disconnects = int(stats.get('forced_disconnects', 0))
+    continuity_events = total_handovers + forced_disconnects
+
+    total_user_seconds = float(stats.get('total_user_seconds', 0.0))
+    blocked_user_seconds = float(stats.get('blocked_user_seconds', 0.0))
+    handover_interruption_seconds = float(stats.get('handover_interruption_seconds', 0.0))
+    service_interruption_seconds = float(
+        stats.get(
+            'service_interruption_seconds',
+            blocked_user_seconds + handover_interruption_seconds,
+        )
+    )
+    has_time_based_reliability = (
+        total_user_seconds > 0.0 and (
+            'blocked_user_seconds' in stats or
+            'handover_interruption_seconds' in stats or
+            'service_interruption_seconds' in stats
+        )
+    )
+    legacy_continuity_rate = (
+        1.0 - float(forced_disconnects) / max(continuity_events, 1)
+        if continuity_events > 0 else 1.0
+    )
+    service_availability_rate = (
+        max(0.0, 1.0 - blocked_user_seconds / total_user_seconds)
+        if has_time_based_reliability else legacy_continuity_rate
+    )
+    service_continuity_rate = (
+        max(0.0, 1.0 - service_interruption_seconds / total_user_seconds)
+        if has_time_based_reliability else legacy_continuity_rate
+    )
+
+    summary = stats.copy()
+    summary.update({
+        'resolved_tasks': resolved_tasks,
+        'pending_tasks': pending_tasks,
+        'handover_success_rate': (
+            float(successful_handovers) / max(total_handovers, 1)
+        ),
+        'handover_failure_rate': (
+            float(failed_handovers) / max(total_handovers, 1)
+        ),
+        'forced_termination_rate': (
+            float(forced_disconnects) / max(continuity_events, 1)
+        ),
+        'service_availability_rate': service_availability_rate,
+        # Continuity is modeled as uninterrupted service time ratio, which
+        # penalizes both handover-induced interruptions and blocked periods.
+        'service_continuity_rate': service_continuity_rate,
+        'task_completion_rate': (
+            float(stats.get('completed_tasks', 0)) / max(resolved_tasks, 1)
+        ),
+        'task_resolution_rate': (
+            float(resolved_tasks) / max(total_tasks, 1)
+        ),
+        'pending_task_rate': (
+            float(pending_tasks) / max(total_tasks, 1)
+        ),
+        'avg_delay': (
+            float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
+        ),
+        'avg_load_balance_score': (
+            float(stats.get('load_balance_sum', 0.0)) /
+            max(int(stats.get('load_balance_samples', 0)), 1)
+        ),
+    })
+    return summary
+
+
 class LEOSatelliteEnv(gym.Env):
     """
     LEO卫星网络切换与任务卸载联合优化环境
@@ -225,6 +303,10 @@ class LEOSatelliteEnv(gym.Env):
             'successful_handovers': 0,
             'failed_handovers': 0,
             'forced_disconnects': 0,
+            'total_user_seconds': 0.0,
+            'blocked_user_seconds': 0.0,
+            'handover_interruption_seconds': 0.0,
+            'service_interruption_seconds': 0.0,
             'total_tasks': 0,
             'completed_tasks': 0,
             'deadline_violations': 0,
@@ -254,42 +336,8 @@ class LEOSatelliteEnv(gym.Env):
 
     @staticmethod
     def _summarize_stats(stats: Dict[str, float]) -> Dict[str, float]:
-        """Add derived QoS and continuity metrics on top of raw counters."""
-        resolved_tasks = int(stats.get('completed_tasks', 0) + stats.get('deadline_violations', 0))
-        total_tasks = int(stats.get('total_tasks', 0))
-        pending_tasks = max(total_tasks - resolved_tasks, 0)
-        total_handovers = int(stats.get('total_handovers', 0))
-        forced_disconnects = int(stats.get('forced_disconnects', 0))
-        continuity_events = total_handovers + forced_disconnects
-
-        summary = stats.copy()
-        summary.update({
-            'resolved_tasks': resolved_tasks,
-            'pending_tasks': pending_tasks,
-            'handover_success_rate': (
-                float(stats.get('successful_handovers', 0)) / max(total_handovers, 1)
-            ),
-            'service_continuity_rate': (
-                1.0 - float(forced_disconnects) / max(continuity_events, 1)
-            ),
-            'task_completion_rate': (
-                float(stats.get('completed_tasks', 0)) / max(resolved_tasks, 1)
-            ),
-            'task_resolution_rate': (
-                float(resolved_tasks) / max(total_tasks, 1)
-            ),
-            'pending_task_rate': (
-                float(pending_tasks) / max(total_tasks, 1)
-            ),
-            'avg_delay': (
-                float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
-            ),
-            'avg_load_balance_score': (
-                float(stats.get('load_balance_sum', 0.0)) /
-                max(int(stats.get('load_balance_samples', 0)), 1)
-            ),
-        })
-        return summary
+        """Add derived QoS and reliability metrics on top of raw counters."""
+        return summarize_env_stats(stats)
 
     def _compute_visibility_batch(self, user_id: int) -> List[VisibilityInfo]:
         """向量化计算单个用户对所有卫星的可见性"""
@@ -494,6 +542,7 @@ class LEOSatelliteEnv(gym.Env):
         
         # 1. 生成新任务
         self._generate_tasks()
+        previous_total_handovers = int(self.stats.get('total_handovers', 0))
         
         # 2. 执行每个用户的动作
         user_rewards = []
@@ -525,6 +574,18 @@ class LEOSatelliteEnv(gym.Env):
         self._last_load_balance_score = load_balance_score
         self.stats['load_balance_sum'] += load_balance_score
         self.stats['load_balance_samples'] += 1
+
+        step_user_seconds = float(self.num_users) * float(self.config.time_step_sec)
+        blocked_users = sum(1 for user in self.user_manager.users if user.state == UserState.BLOCKED)
+        handovers_this_step = max(int(self.stats.get('total_handovers', 0)) - previous_total_handovers, 0)
+        blocked_seconds = float(blocked_users) * float(self.config.time_step_sec)
+        handover_seconds = float(handovers_this_step) * float(self.config.handover_delay_sec)
+        interruption_seconds = min(step_user_seconds, blocked_seconds + handover_seconds)
+
+        self.stats['total_user_seconds'] += step_user_seconds
+        self.stats['blocked_user_seconds'] += blocked_seconds
+        self.stats['handover_interruption_seconds'] += handover_seconds
+        self.stats['service_interruption_seconds'] += interruption_seconds
         
         # 5. 检查终止条件
         self.current_step += 1

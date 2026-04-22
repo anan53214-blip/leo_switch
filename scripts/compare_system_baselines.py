@@ -101,8 +101,8 @@ DEFAULT_SELECTION_METRIC = "latency_priority_score"
 PRIMARY_COMPARE_METRICS = [
     ("avg_delay", "Average Delay"),
     ("service_continuity_rate", "Service Continuity"),
+    ("service_availability_rate", "Service Availability"),
     ("task_completion_rate", "Task Completion"),
-    ("avg_load_balance_score", "Load Balance"),
 ]
 
 DISPLAY_NAME_MAP = {
@@ -120,7 +120,10 @@ SUMMARY_METRIC_KEYS = [
     "avg_delay",
     "total_energy",
     "handover_success_rate",
+    "handover_failure_rate",
+    "forced_termination_rate",
     "service_continuity_rate",
+    "service_availability_rate",
     "task_completion_rate",
     "task_resolution_rate",
     "pending_task_rate",
@@ -138,9 +141,12 @@ HIGHER_IS_BETTER = {
     "reward": True,
     "handover_success_rate": True,
     "service_continuity_rate": True,
+    "service_availability_rate": True,
     "task_completion_rate": True,
     "task_resolution_rate": True,
     "avg_load_balance_score": True,
+    "handover_failure_rate": False,
+    "forced_termination_rate": False,
     "avg_delay": False,
     "total_energy": False,
     "pending_task_rate": False,
@@ -150,10 +156,10 @@ HIGHER_IS_BETTER = {
 PAPER_METRIC_PLOTS = [
     ("avg_delay", "Average Delay", "Avg Delay (s)"),
     ("service_continuity_rate", "Service Continuity", "Rate (%)"),
+    ("service_availability_rate", "Service Availability", "Rate (%)"),
     ("task_completion_rate", "Task Completion", "Rate (%)"),
-    ("avg_load_balance_score", "Load Balance", "Score"),
     ("total_energy", "Energy Consumption", "Total Energy (J)"),
-    ("handover_success_rate", "Handover Success", "Rate (%)"),
+    ("handover_failure_rate", "Handover Failure", "Rate (%)"),
 ]
 
 PAPER_DASHBOARD_LEFT_METRICS = [
@@ -177,8 +183,9 @@ CORE_EPISODE_PLOTS = [
 ADDITIONAL_EPISODE_METRICS = [
     ("handover_success_rate", "Handover Success Rate"),
     ("service_continuity_rate", "Service Continuity Rate"),
-    ("task_resolution_rate", "Task Resolution Rate"),
-    ("pending_task_rate", "Pending Task Rate"),
+    ("service_availability_rate", "Service Availability Rate"),
+    ("handover_failure_rate", "Handover Failure Rate"),
+    ("forced_termination_rate", "Forced Termination Rate"),
     ("deadline_violation_rate", "Deadline Violation Rate"),
     ("avg_load_balance_score", "Load Balance Score"),
 ]
@@ -1150,7 +1157,14 @@ def evaluate_system_checkpoint(
     max_steps: Optional[int],
 ) -> Dict:
     trainer_cls = trainer_class_for_objective(objective)
-    config = train_config_from_dict(config_data, device=device, max_steps=max_steps, episodes=episodes)
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        save_path=checkpoint.parent,
+        load_path=checkpoint,
+    )
     trainer = trainer_cls(config)
     checkpoint_payload = torch_load_trusted_checkpoint(checkpoint, map_location=trainer.device)
     trainer.total_steps = checkpoint_payload.get("total_steps", trainer.total_steps)
@@ -1214,6 +1228,8 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         evaluation_records,
         key=lambda record: compute_model_selection_score(record, selection_metric_name),
     )
+    handover_success_rate = float(best_record.get("handover_success_rate", 0.0))
+    service_continuity_rate = float(best_record.get("service_continuity_rate", 0.0))
     result = {
         "method": str(config_data.get("exp_name", history_path.parent.name or "system")),
         "display_name": pretty_method_name(
@@ -1226,8 +1242,11 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "std_reward": float(best_record.get("eval_std_reward", 0.0)),
         "avg_delay": float(best_record.get("avg_delay", 0.0)),
         "total_energy": float(best_record.get("total_energy", 0.0)),
-        "handover_success_rate": float(best_record.get("handover_success_rate", 0.0)),
-        "service_continuity_rate": float(best_record.get("service_continuity_rate", 0.0)),
+        "handover_success_rate": handover_success_rate,
+        "handover_failure_rate": float(best_record.get("handover_failure_rate", max(0.0, 1.0 - handover_success_rate))),
+        "forced_termination_rate": float(best_record.get("forced_termination_rate", max(0.0, 1.0 - service_continuity_rate))),
+        "service_continuity_rate": service_continuity_rate,
+        "service_availability_rate": float(best_record.get("service_availability_rate", service_continuity_rate)),
         "task_completion_rate": float(best_record.get("task_completion_rate", 0.0)),
         "task_resolution_rate": float(best_record.get("task_resolution_rate", 0.0)),
         "pending_task_rate": float(best_record.get("pending_task_rate", 0.0)),
@@ -1265,7 +1284,10 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "avg_delay",
         "total_energy",
         "handover_success_rate",
+        "handover_failure_rate",
+        "forced_termination_rate",
         "service_continuity_rate",
+        "service_availability_rate",
         "task_completion_rate",
         "task_resolution_rate",
         "pending_task_rate",
@@ -1301,7 +1323,10 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "avg_delay": float(record.get("avg_delay", 0.0)),
                 "total_energy": float(record.get("total_energy", 0.0)),
                 "handover_success_rate": float(record.get("handover_success_rate", 0.0)),
+                "handover_failure_rate": float(record.get("handover_failure_rate", 0.0)),
+                "forced_termination_rate": float(record.get("forced_termination_rate", 0.0)),
                 "service_continuity_rate": float(record.get("service_continuity_rate", 0.0)),
+                "service_availability_rate": float(record.get("service_availability_rate", 0.0)),
                 "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
@@ -1459,8 +1484,18 @@ def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[
     baseline_styles = build_method_styles(baseline_methods)
     for method in baseline_methods:
         style = baseline_styles[str(method.get("method", ""))]
+        mean_value = float(method.get("mean_reward", 0.0))
+        std_value = float(method.get("std_reward", 0.0))
+        if std_value > 0.0:
+            ax.axhspan(
+                mean_value - std_value,
+                mean_value + std_value,
+                color=style["color"],
+                alpha=0.06,
+                linewidth=0,
+            )
         ax.axhline(
-            y=float(method.get("mean_reward", 0.0)),
+            y=mean_value,
             color=style["color"],
             linestyle=style["linestyle"],
             linewidth=1.4,
@@ -1587,17 +1622,35 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
     ordered = order_methods(methods)
     styles = build_method_styles(ordered)
     fig, ax = plt.subplots(figsize=(9, 6.8), dpi=220)
+    delay_values = [float(method.get("avg_delay", 0.0)) for method in ordered]
+    energy_values = [float(method.get("total_energy", 0.0)) for method in ordered]
+    delay_span = max(max(delay_values) - min(delay_values), 1e-6)
+    energy_span = max(max(energy_values) - min(energy_values), 1e-6)
+
+    overlap_groups: Dict[tuple[float, float], List[Dict]] = defaultdict(list)
+    for method in ordered:
+        overlap_key = (
+            round(float(method.get("avg_delay", 0.0)), 4),
+            round(float(method.get("total_energy", 0.0)), 2),
+        )
+        overlap_groups[overlap_key].append(method)
 
     for method in ordered:
         style = styles[str(method.get("method", ""))]
         delay_value = float(method.get("avg_delay", 0.0))
         energy_value = float(method.get("total_energy", 0.0))
         completion_rate = float(method.get("task_completion_rate", 0.0))
+        overlap_key = (round(delay_value, 4), round(energy_value, 2))
+        siblings = overlap_groups[overlap_key]
+        sibling_index = siblings.index(method)
+        sibling_offset = sibling_index - (len(siblings) - 1) / 2.0
+        plot_delay = delay_value + sibling_offset * delay_span * 0.012
+        plot_energy = energy_value + sibling_offset * energy_span * 0.018
         marker = "*" if method.get("is_system") else style["marker"]
         size = 180 + 820 * max(completion_rate, 0.0)
         ax.scatter(
-            delay_value,
-            energy_value,
+            plot_delay,
+            plot_energy,
             s=size,
             color=style["color"],
             marker=marker,
@@ -1605,6 +1658,20 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
             edgecolors=PAPER_COLORS["dark"],
             linewidths=1.0,
             label=method.get("display_name", method.get("method", "")),
+        )
+        ax.annotate(
+            method.get("display_name", method.get("method", "")),
+            xy=(plot_delay, plot_energy),
+            xytext=(7, 7 if sibling_offset >= 0 else -11),
+            textcoords="offset points",
+            fontsize=8.2,
+            color=PAPER_COLORS["dark"],
+            bbox={
+                "boxstyle": "round,pad=0.18",
+                "facecolor": "white",
+                "edgecolor": "#CCCCCC",
+                "alpha": 0.76,
+            },
         )
 
     ax.set_xlabel("Average Delay (s)")
@@ -1621,7 +1688,6 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
         fontsize=9,
         color=PAPER_COLORS["muted"],
     )
-    ax.legend(loc="upper left", fontsize=8.8, frameon=True, ncol=1)
     fig.tight_layout()
     return save_figure(fig, output_dir / "delay_energy_tradeoff.png")
 
@@ -1679,9 +1745,9 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="avg_load_balance_score",
-        title="Load Balance",
-        xlabel="Score",
+        metric_key="service_availability_rate",
+        title="Service Availability",
+        xlabel="Rate (%)",
         compact=True,
     )
     add_panel_label(ax_energy, "(d)")
@@ -1704,6 +1770,76 @@ def plot_training_curve_vs_baselines(
         return None
     fig.tight_layout()
     return save_figure(fig, output_dir / "reward_curve_vs_baselines.png")
+
+
+def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    plottable = methods_with_episode_metrics(methods)
+    if not plottable:
+        return None
+
+    ordered = order_methods(plottable)
+    styles = build_method_styles(ordered)
+    labels = [method.get("display_name", method.get("method", "")) for method in ordered]
+    samples = [
+        [float(record.get("reward", 0.0)) for record in method.get("episode_metrics", [])]
+        for method in ordered
+    ]
+    if not any(samples):
+        return None
+
+    fig, ax = plt.subplots(figsize=(11, 6.8), dpi=220)
+    box = ax.boxplot(
+        samples,
+        vert=False,
+        patch_artist=True,
+        tick_labels=labels,
+        showfliers=False,
+        medianprops={"color": PAPER_COLORS["dark"], "linewidth": 1.2},
+        whiskerprops={"color": PAPER_COLORS["dark"], "linewidth": 1.0},
+        capprops={"color": PAPER_COLORS["dark"], "linewidth": 1.0},
+    )
+
+    rng = np.random.default_rng(0)
+    for position, method, patch in zip(range(1, len(ordered) + 1), ordered, box["boxes"]):
+        style = styles[str(method.get("method", ""))]
+        color = style["color"]
+        patch.set_facecolor(color)
+        patch.set_alpha(0.24)
+        patch.set_edgecolor(PAPER_COLORS["dark"])
+        patch.set_linewidth(1.0)
+
+        values = np.array([float(record.get("reward", 0.0)) for record in method.get("episode_metrics", [])], dtype=float)
+        if len(values) == 0:
+            continue
+
+        jitter = rng.normal(0.0, 0.05, size=len(values))
+        ax.scatter(
+            values,
+            np.full(len(values), position, dtype=float) + jitter,
+            s=26,
+            color=color,
+            alpha=0.72,
+            edgecolors="white",
+            linewidths=0.4,
+            zorder=3,
+        )
+        ax.scatter(
+            float(np.mean(values)),
+            position,
+            s=76 if method.get("is_system") else 52,
+            marker="*" if method.get("is_system") else "D",
+            color=color,
+            edgecolors=PAPER_COLORS["dark"],
+            linewidths=0.8,
+            zorder=4,
+        )
+
+    ax.set_xlabel("Episode Reward")
+    ax.set_title("Reward Distribution Across Evaluation Episodes")
+    ax.grid(axis="x", linestyle="--", alpha=0.24)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return save_figure(fig, output_dir / "reward_distribution.png")
 
 
 def parse_args() -> argparse.Namespace:
@@ -1878,6 +2014,7 @@ def main() -> None:
         output_dir,
         window=args.plot_window,
     )
+    reward_distribution_plot = plot_reward_distribution(methods, output_dir)
     tradeoff_plot = plot_delay_energy_tradeoff(methods, output_dir)
     dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
 
@@ -1890,6 +2027,8 @@ def main() -> None:
         print(f"Metric comparison figure: {metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
+    if reward_distribution_plot is not None:
+        print(f"Reward distribution figure: {reward_distribution_plot}")
     if tradeoff_plot is not None:
         print(f"Delay-energy trade-off figure: {tradeoff_plot}")
     if dashboard_plot is not None:

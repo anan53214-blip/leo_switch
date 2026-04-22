@@ -46,7 +46,6 @@ def test_channel_basic():
     assert 170 < fspl_db < 180, f"FSPL计算异常: {fspl_db}"
     print("✓ FSPL计算正确")
     
-    return channel
 
 
 def test_snr_calculation(channel):
@@ -210,7 +209,8 @@ def main():
     print("#          卫星信道模型测试")
     print("#" * 60)
     
-    channel = test_channel_basic()
+    channel = SatelliteChannel()
+    test_channel_basic()
     test_snr_calculation(channel)
     test_channel_capacity(channel)
     test_transmission_delay(channel)
