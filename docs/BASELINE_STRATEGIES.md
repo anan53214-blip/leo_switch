@@ -419,13 +419,9 @@ results/baseline_compare/<timestamp>/
 - `comparison_summary.csv`
 - `episode_metrics.csv`
 - `method_comparison.png`
-- `method_comparison.pdf`
 - `reward_curve_vs_baselines.png`
-- `reward_curve_vs_baselines.pdf`
 - `delay_energy_tradeoff.png`
-- `delay_energy_tradeoff.pdf`
 - `paper_baseline_dashboard.png`
-- `paper_baseline_dashboard.pdf`
 
 其中：
 

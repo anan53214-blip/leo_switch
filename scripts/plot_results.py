@@ -236,9 +236,8 @@ def plot_reward_curve(records: List[Dict], window: int, save_dir: Path,
     
     fig.tight_layout()
     fig.savefig(save_dir / 'reward_curve.png')
-    fig.savefig(save_dir / 'reward_curve.pdf')
     plt.close(fig)
-    print("  saved reward_curve.png / .pdf")
+    print("  saved reward_curve.png")
 
 
 def plot_loss_curves(records: List[Dict], window: int, save_dir: Path):
@@ -276,9 +275,8 @@ def plot_loss_curves(records: List[Dict], window: int, save_dir: Path):
     ax1.set_title('Actor & Critic Loss')
     fig.tight_layout()
     fig.savefig(save_dir / 'loss_curves.png')
-    fig.savefig(save_dir / 'loss_curves.pdf')
     plt.close(fig)
-    print("  saved loss_curves.png / .pdf")
+    print("  saved loss_curves.png")
 
 
 def plot_entropy_kl(records: List[Dict], window: int, save_dir: Path):
@@ -312,9 +310,8 @@ def plot_entropy_kl(records: List[Dict], window: int, save_dir: Path):
     
     fig.tight_layout()
     fig.savefig(save_dir / 'entropy_kl.png')
-    fig.savefig(save_dir / 'entropy_kl.pdf')
     plt.close(fig)
-    print("  saved entropy_kl.png / .pdf")
+    print("  saved entropy_kl.png")
 
 
 def plot_handover_task(records: List[Dict], window: int, save_dir: Path):
@@ -360,9 +357,8 @@ def plot_handover_task(records: List[Dict], window: int, save_dir: Path):
     
     fig.tight_layout()
     fig.savefig(save_dir / 'handover_task_rate.png')
-    fig.savefig(save_dir / 'handover_task_rate.pdf')
     plt.close(fig)
-    print("  saved handover_task_rate.png / .pdf")
+    print("  saved handover_task_rate.png")
 
 
 def plot_delay_energy(records: List[Dict], window: int, save_dir: Path,
@@ -429,9 +425,8 @@ def plot_delay_energy(records: List[Dict], window: int, save_dir: Path,
     
     fig.tight_layout()
     fig.savefig(save_dir / 'delay_energy.png')
-    fig.savefig(save_dir / 'delay_energy.pdf')
     plt.close(fig)
-    print("  saved delay_energy.png / .pdf")
+    print("  saved delay_energy.png")
 
 
 def plot_eval_curve(eval_records: List[Dict], save_dir: Path):
@@ -462,9 +457,8 @@ def plot_eval_curve(eval_records: List[Dict], save_dir: Path):
     
     fig.tight_layout()
     fig.savefig(save_dir / 'eval_curve.png')
-    fig.savefig(save_dir / 'eval_curve.pdf')
     plt.close(fig)
-    print("  saved eval_curve.png / .pdf")
+    print("  saved eval_curve.png")
 
 
 def plot_clip_fraction(records: List[Dict], window: int, save_dir: Path):
@@ -486,9 +480,8 @@ def plot_clip_fraction(records: List[Dict], window: int, save_dir: Path):
     
     fig.tight_layout()
     fig.savefig(save_dir / 'clip_fraction.png')
-    fig.savefig(save_dir / 'clip_fraction.pdf')
     plt.close(fig)
-    print("  saved clip_fraction.png / .pdf")
+    print("  saved clip_fraction.png")
 
 
 # ============================================================
@@ -654,9 +647,8 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
 
     fig.suptitle(dashboard_title, fontsize=16, fontweight='bold', y=0.98)
     fig.savefig(save_dir / 'dashboard.png')
-    fig.savefig(save_dir / 'dashboard.pdf')
     plt.close(fig)
-    print("  saved dashboard.png / .pdf")
+    print("  saved dashboard.png")
 
 
 # ============================================================
@@ -695,9 +687,8 @@ def plot_comparison(history_paths: List[str], window: int, save_dir: Path):
     
     fig.tight_layout()
     fig.savefig(save_dir / 'comparison.png')
-    fig.savefig(save_dir / 'comparison.pdf')
     plt.close(fig)
-    print("  saved comparison.png / .pdf")
+    print("  saved comparison.png")
 
 
 def plot_comparison_metrics(history_paths: List[str], window: int, save_dir: Path):
@@ -737,9 +728,8 @@ def plot_comparison_metrics(history_paths: List[str], window: int, save_dir: Pat
     fig.suptitle('Multi-Experiment Metrics Comparison', fontsize=14, fontweight='bold')
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(save_dir / 'comparison_metrics.png')
-    fig.savefig(save_dir / 'comparison_metrics.pdf')
     plt.close(fig)
-    print("  saved comparison_metrics.png / .pdf")
+    print("  saved comparison_metrics.png")
 
 
 # ============================================================
@@ -1016,7 +1006,6 @@ def plot_dashboard_publication(records: List[Dict], eval_records: List[Dict],
     fig.suptitle(dashboard_title, fontsize=15, fontweight='bold', y=0.985)
     fig.subplots_adjust(left=0.06, right=0.96, bottom=0.07, top=0.91, wspace=0.32, hspace=0.38)
     fig.savefig(save_dir / 'dashboard_paper.png')
-    fig.savefig(save_dir / 'dashboard_paper.pdf')
     plt.close(fig)
     print("  paper dashboard exported")
 

@@ -120,7 +120,7 @@ python scripts/run_server_training.py --plan multi_seed
 #   results/multi_seed/seed_42/training_history.json
 #   results/multi_seed/seed_123/training_history.json
 #   ...
-#   results/multi_seed/figures/comparison.pdf      ← 对比图
+#   results/multi_seed/figures/comparison.png      ← 对比图
 ```
 
 ### 2.2 方式二：使用 train.py 直接训练

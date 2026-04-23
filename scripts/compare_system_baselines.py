@@ -167,6 +167,13 @@ PAPER_METRIC_PLOTS = [
     ("handover_failure_rate", "Handover Failure", "Rate (%)"),
 ]
 
+CORE_BAR_METRICS = [
+    ("avg_delay", "Average Delay", "Average Delay (ms)"),
+    ("task_completion_rate", "Task Completion Rate", "Task Completion Rate (%)"),
+    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
+    ("avg_load_balance_score", "Avg Load Balance Score", "Avg Load Balance Score"),
+]
+
 PAPER_DASHBOARD_LEFT_METRICS = [
     ("handover_success_rate", "HO Success"),
     ("service_continuity_rate", "Continuity"),
@@ -196,25 +203,39 @@ ADDITIONAL_EPISODE_METRICS = [
 ]
 
 SYSTEM_STYLE = {
-    "color": "#D55E00",
+    "color": "#B03A2E",
     "linestyle": "-",
     "marker": "*",
-    "linewidth": 2.6,
-    "markersize": 8,
+    "linewidth": 3.0,
+    "markersize": 11,
+    "hatch": "///",
+    "scatter_size": 280,
 }
 
 BASELINE_COLORS = [
-    "#0072B2",
-    "#009E73",
-    "#CC79A7",
-    "#56B4E9",
-    "#E69F00",
-    "#000000",
-    "#7F7F7F",
+    "#4E79A7",
+    "#59A14F",
+    "#9C755F",
+    "#76B7B2",
+    "#EDC948",
+    "#BAB0AC",
+    "#AF7AA1",
 ]
 
 BASELINE_MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
-BASELINE_LINESTYLES = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1)), (0, (1, 1))]
+BASELINE_LINESTYLES = ["--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1)), (0, (1, 1)), (0, (7, 2, 1, 2))]
+BAR_HATCH_PATTERNS = ["///", "\\\\\\", "xx", "--", "oo", "++", "..", "**"]
+
+SCATTER_LABEL_OFFSETS = {
+    "HAN+MAPPO": (12, -16),
+    "Random": (10, 8),
+    "Stay": (10, -10),
+    "Max-Elev": (10, 12),
+    "Max-RVT": (10, -14),
+    "Min-Distance": (10, 12),
+    "Threshold-RVT Adaptive": (10, 10),
+    "Joint Greedy": (10, -12),
+}
 
 PAPER_COLORS = {
     "primary": "#0F4C81",
@@ -247,23 +268,23 @@ def setup_publication_style() -> None:
         {
             "font.family": "serif",
             "font.serif": ["Times New Roman", "DejaVu Serif"],
-            "font.size": 11,
-            "axes.titlesize": 13,
-            "axes.labelsize": 12,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
-            "legend.fontsize": 9.5,
+            "font.size": 12,
+            "axes.titlesize": 14,
+            "axes.labelsize": 13,
+            "xtick.labelsize": 12,
+            "ytick.labelsize": 12,
+            "legend.fontsize": 12,
             "lines.linewidth": 1.8,
             "lines.markersize": 5,
-            "figure.dpi": 180,
+            "figure.dpi": 220,
             "savefig.dpi": 300,
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.06,
             "axes.grid": True,
-            "grid.alpha": 0.24,
+            "grid.alpha": 0.6,
             "grid.linestyle": "--",
-            "axes.spines.top": False,
-            "axes.spines.right": False,
+            "axes.spines.top": True,
+            "axes.spines.right": True,
             "legend.framealpha": 0.92,
             "legend.edgecolor": "#CCCCCC",
         }
@@ -313,7 +334,6 @@ def resolve_device(device: str) -> str:
 
 def save_figure(fig, output_path: Path) -> Path:
     fig.savefig(output_path, bbox_inches="tight")
-    fig.savefig(output_path.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     return output_path
 
@@ -619,12 +639,20 @@ def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
             styles[method_key] = dict(SYSTEM_STYLE)
             continue
 
+        method_name = str(method.get("method", ""))
+        display_name = str(method.get("display_name", method_name))
+        if method_name == "joint_greedy" or display_name == "Joint Greedy":
+            color = PAPER_COLORS["primary"]
+        else:
+            color = BASELINE_COLORS[baseline_index % len(BASELINE_COLORS)]
         style = {
-            "color": BASELINE_COLORS[baseline_index % len(BASELINE_COLORS)],
+            "color": color,
             "linestyle": BASELINE_LINESTYLES[baseline_index % len(BASELINE_LINESTYLES)],
             "marker": BASELINE_MARKERS[baseline_index % len(BASELINE_MARKERS)],
             "linewidth": 1.8,
             "markersize": 5.5,
+            "hatch": BAR_HATCH_PATTERNS[(baseline_index + 1) % len(BAR_HATCH_PATTERNS)],
+            "scatter_size": 150,
         }
         styles[method_key] = style
         baseline_index += 1
@@ -1420,6 +1448,61 @@ def metric_episode_samples(method: Dict, metric_key: str) -> np.ndarray:
     return np.array([float(record.get(metric_key, 0.0)) * scale for record in records], dtype=float)
 
 
+def paper_metric_scale(metric_key: str) -> float:
+    if metric_key == "avg_delay":
+        return 1000.0
+    return metric_scale(metric_key)
+
+
+def paper_metric_value(method: Dict, metric_key: str) -> float:
+    return float(method.get(metric_key, 0.0)) * paper_metric_scale(metric_key)
+
+
+def paper_metric_samples(method: Dict, metric_key: str) -> np.ndarray:
+    records = method.get("episode_metrics", [])
+    if not records:
+        return np.array([], dtype=float)
+    scale = paper_metric_scale(metric_key)
+    return np.array([float(record.get(metric_key, 0.0)) * scale for record in records], dtype=float)
+
+
+def method_tick_label(method: Dict) -> str:
+    label = str(method.get("display_name", method.get("method", "")))
+    replacements = {
+        "HAN+MAPPO": "HAN+\nMAPPO",
+        "Joint Greedy": "Joint\nGreedy",
+        "Min-Distance": "Min-\nDistance",
+        "Threshold-RVT Adaptive": "Threshold-RVT\nAdaptive",
+    }
+    return replacements.get(label, label)
+
+
+def style_axes_frame(ax) -> None:
+    ax.grid(True, linestyle="--", alpha=0.6, color="#BDBDBD")
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#444444")
+        spine.set_linewidth(0.9)
+
+
+def is_pareto_efficient(x_values: Sequence[float], y_values: Sequence[float]) -> np.ndarray:
+    xs = np.asarray(x_values, dtype=float)
+    ys = np.asarray(y_values, dtype=float)
+    efficient = np.ones(len(xs), dtype=bool)
+    for index in range(len(xs)):
+        if not efficient[index]:
+            continue
+        dominated = (
+            (xs <= xs[index]) &
+            (ys <= ys[index]) &
+            ((xs < xs[index]) | (ys < ys[index]))
+        )
+        dominated[index] = False
+        if np.any(dominated):
+            efficient[index] = False
+    return efficient
+
+
 def add_panel_label(ax, label: str) -> None:
     ax.text(
         0.01,
@@ -1434,56 +1517,58 @@ def add_panel_label(ax, label: str) -> None:
     )
 
 
-def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: str, xlabel: str, compact: bool = False) -> None:
+def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: str, ylabel: str, compact: bool = False) -> None:
     ordered = order_methods(methods)
     styles = build_method_styles(ordered)
-    labels = [method.get("display_name", method.get("method", "")) for method in ordered]
-    values = [float(method.get(metric_key, 0.0)) * metric_scale(metric_key) for method in ordered]
+    labels = [method_tick_label(method) for method in ordered]
+    values = [paper_metric_value(method, metric_key) for method in ordered]
     errors = []
     for method in ordered:
-        samples = metric_episode_samples(method, metric_key)
+        samples = paper_metric_samples(method, metric_key)
         errors.append(float(np.std(samples)) if len(samples) > 1 else 0.0)
 
     positions = np.arange(len(ordered), dtype=float)
-    colors = [styles[str(method.get("method", ""))]["color"] for method in ordered]
-    bars = ax.barh(
+    colors = [styles[str(method.get("method", ""))].get("color", PAPER_COLORS["muted"]) for method in ordered]
+    bars = ax.bar(
         positions,
         values,
-        xerr=errors if any(error > 0 for error in errors) else None,
+        yerr=errors if any(error > 0 for error in errors) else None,
+        width=0.72,
         color=colors,
-        edgecolor="#1F1F1F",
-        linewidth=0.85,
+        edgecolor=PAPER_COLORS["dark"],
+        linewidth=1.0,
         alpha=0.92,
         error_kw={"elinewidth": 1.1, "capsize": 2.8, "capthick": 1.1},
     )
 
     best_index = choose_best_index(values, HIGHER_IS_BETTER.get(metric_key, True))
     for index, (bar, value, method) in enumerate(zip(bars, values, ordered)):
-        if method.get("is_system"):
-            bar.set_hatch("///")
-            bar.set_linewidth(1.2)
+        style = styles[str(method.get("method", ""))]
+        bar.set_hatch(style.get("hatch", ""))
+        if method.get("is_system") or str(method.get("method", "")) == "joint_greedy":
+            bar.set_linewidth(1.35)
         if index == best_index:
             bar.set_edgecolor(PAPER_COLORS["dark"])
-            bar.set_linewidth(1.8)
+            bar.set_linewidth(2.1)
         ax.text(
-            value + max(max(values) * 0.015, 0.02),
-            bar.get_y() + bar.get_height() / 2.0,
+            bar.get_x() + bar.get_width() / 2.0,
+            value + max(max(values) * 0.02, 0.015),
             metric_display_value(value, metric_key),
-            va="center",
-            ha="left",
-            fontsize=8.5 if compact else 9.0,
+            va="bottom",
+            ha="center",
+            fontsize=10 if compact else 10.5,
+            rotation=90 if compact else 0,
         )
 
-    ax.set_yticks(positions, labels=labels)
-    ax.invert_yaxis()
+    ax.set_xticks(positions, labels=labels)
+    ax.tick_params(axis="x", rotation=25 if compact else 28)
     direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
     ax.set_title(f"{title} ({direction})")
-    ax.set_xlabel(xlabel)
-    ax.grid(axis="x", linestyle="--", alpha=0.24)
+    ax.set_ylabel(ylabel)
+    ax.grid(axis="y", linestyle="--", alpha=0.6, color="#BDBDBD")
     if values:
-        ax.set_xlim(0.0, max(values) * 1.18 + 1e-9)
-    if compact:
-        ax.tick_params(axis="y", labelsize=9)
+        ax.set_ylim(0.0, max(values) * 1.20 + 1e-9)
+    style_axes_frame(ax)
 
 
 def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[Dict], window: int, compact: bool = False) -> bool:
@@ -1502,29 +1587,29 @@ def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[
     rewards = np.array([record.get("recent_mean_reward", 0.0) for record in training], dtype=float)
 
     mean_reward, lower_reward, upper_reward = compute_confidence_band(rewards, window=max(window, 3))
-    ax.plot(steps, rewards, color=PAPER_COLORS["primary"], alpha=0.16, linewidth=0.8)
-    ax.fill_between(steps, lower_reward, upper_reward, color=PAPER_COLORS["primary"], alpha=PAPER_COLORS["fill_alpha"])
-    ax.plot(steps, mean_reward, color=PAPER_COLORS["primary"], linewidth=2.4, label="HAN+MAPPO training")
+    system_color = SYSTEM_STYLE["color"]
+    ax.plot(steps, rewards, color=system_color, alpha=0.16, linewidth=1.0)
+    ax.fill_between(
+        steps,
+        lower_reward,
+        upper_reward,
+        color=system_color,
+        alpha=0.18,
+        label="HAN+MAPPO variance",
+    )
+    ax.plot(steps, mean_reward, color=system_color, linewidth=3.0, label="HAN+MAPPO")
 
     if evaluation:
         eval_steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
         eval_rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
-        eval_stds = np.array([record.get("eval_std_reward", 0.0) for record in evaluation], dtype=float)
-        ax.fill_between(
-            eval_steps,
-            eval_rewards - eval_stds,
-            eval_rewards + eval_stds,
-            color=PAPER_COLORS["success"],
-            alpha=0.12,
-        )
-        ax.plot(
+        ax.scatter(
             eval_steps,
             eval_rewards,
-            color=PAPER_COLORS["success"],
-            marker="o",
-            markersize=4.0,
-            linewidth=1.9,
-            label="HAN+MAPPO eval",
+            s=30 if compact else 36,
+            facecolors="white",
+            edgecolors=system_color,
+            linewidths=1.0,
+            zorder=4,
         )
 
     baseline_methods = [method for method in order_methods(methods) if not method.get("is_system")]
@@ -1538,28 +1623,28 @@ def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[
                 mean_value - std_value,
                 mean_value + std_value,
                 color=style["color"],
-                alpha=0.06,
+                alpha=0.05,
                 linewidth=0,
             )
         ax.axhline(
             y=mean_value,
             color=style["color"],
             linestyle=style["linestyle"],
-            linewidth=1.4,
-            alpha=0.92,
+            linewidth=1.8,
+            alpha=0.95,
             label=method.get("display_name", method.get("method", "")),
         )
 
     ax.set_xlabel("Training Steps")
-    ax.set_ylabel("Reward")
-    ax.set_title("Reward Convergence Against Baseline Levels")
+    ax.set_ylabel("Mean Reward")
+    ax.set_title("Reward Convergence vs. Heuristic Baseline Levels")
     ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
     ax.legend(
         loc="lower right" if compact else "best",
-        fontsize=8.2 if compact else 9.2,
+        fontsize=10.5 if compact else 11.5,
         ncol=1 if compact else 2,
     )
-    ax.grid(True, linestyle="--", alpha=0.24)
+    style_axes_frame(ax)
     return True
 
 
@@ -1567,17 +1652,25 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
     if not methods:
         return None
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10), dpi=220)
-    for axis, (metric_key, title, xlabel) in zip(axes.flatten(), PAPER_METRIC_PLOTS):
-        draw_metric_bar_panel(axis, methods, metric_key=metric_key, title=title, xlabel=xlabel)
+    fig, axes = plt.subplots(2, 2, figsize=(16, 11), dpi=220)
+    for axis, (metric_key, title, ylabel) in zip(axes.flatten(), CORE_BAR_METRICS):
+        draw_metric_bar_panel(axis, methods, metric_key=metric_key, title=title, ylabel=ylabel)
 
-    fig.suptitle("HAN+MAPPO vs Baselines (Latency-Priority Metrics)", fontsize=15, fontweight="bold", y=0.99)
+    fig.suptitle("HAN+MAPPO vs. Heuristic Baselines: Core Metrics", fontsize=16, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return save_figure(fig, output_dir / "method_comparison.png")
+    return save_figure(fig, output_dir / "method_comparison.pdf")
 
 
 def methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
     return [method for method in order_methods(methods) if method.get("episode_metrics")]
+
+
+def baseline_methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
+    return [
+        method
+        for method in methods_with_episode_metrics(methods)
+        if not method.get("is_system")
+    ]
 
 
 def plot_episode_metric_curve(
@@ -1615,10 +1708,23 @@ def plot_episode_metric_curve(
     ax.set_xlabel("Evaluation Episode")
     ax.set_ylabel(ylabel)
     ax.set_title(f"{title} ({direction})")
-    ax.grid(True, linestyle="--", alpha=0.24)
+    style_axes_frame(ax)
     ax.legend(loc="best", fontsize=9, ncol=2)
     fig.tight_layout()
     return save_figure(fig, output_path)
+
+
+def plot_baseline_reward_episode_curve(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    baseline_methods = baseline_methods_with_episode_metrics(methods)
+    if not baseline_methods:
+        return None
+    return plot_episode_metric_curve(
+        baseline_methods,
+        metric_key="reward",
+        title="Baseline Reward Comparison Across Evaluation Episodes",
+        ylabel="Episode Reward",
+        output_path=output_dir / "baseline_reward_episode_comparison.pdf",
+    )
 
 
 def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -1652,91 +1758,104 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
         axis.set_title(f"{title} ({direction})")
         axis.set_xlabel("Evaluation Episode")
         axis.set_ylabel("Rate (%)" if metric_key.endswith("_rate") else "Score")
-        axis.grid(True, linestyle="--", alpha=0.24)
+        style_axes_frame(axis)
 
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
         fig.legend(handles, labels, loc="upper center", ncol=min(len(labels), 4), bbox_to_anchor=(0.5, 1.02))
 
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return save_figure(fig, output_dir / "additional_metrics_episode_comparison.png")
+    return save_figure(fig, output_dir / "additional_metrics_episode_comparison.pdf")
 
 
 def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
-    if not methods:
+    ordered = order_methods(methods)
+    if not ordered:
         return None
 
-    ordered = order_methods(methods)
     styles = build_method_styles(ordered)
-    fig, ax = plt.subplots(figsize=(9, 6.8), dpi=220)
-    delay_values = [float(method.get("avg_delay", 0.0)) for method in ordered]
-    energy_values = [float(method.get("total_energy", 0.0)) for method in ordered]
-    delay_span = max(max(delay_values) - min(delay_values), 1e-6)
-    energy_span = max(max(energy_values) - min(energy_values), 1e-6)
+    x_values = np.array([paper_metric_value(method, "avg_delay") for method in ordered], dtype=float)
+    y_values = np.array([float(method.get("energy_per_resolved_task", 0.0)) for method in ordered], dtype=float)
+    if len(x_values) == 0 or len(y_values) == 0:
+        return None
 
-    overlap_groups: Dict[tuple[float, float], List[Dict]] = defaultdict(list)
-    for method in ordered:
-        overlap_key = (
-            round(float(method.get("avg_delay", 0.0)), 4),
-            round(float(method.get("total_energy", 0.0)), 2),
+    fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=220)
+    pareto_mask = is_pareto_efficient(x_values, y_values)
+    pareto_points = sorted(
+        [(x, y) for x, y, keep in zip(x_values, y_values, pareto_mask) if keep],
+        key=lambda item: item[0],
+    )
+    if len(pareto_points) >= 2:
+        ax.plot(
+            [point[0] for point in pareto_points],
+            [point[1] for point in pareto_points],
+            color=PAPER_COLORS["muted"],
+            linestyle="--",
+            linewidth=1.4,
+            alpha=0.9,
+            label="Pareto frontier",
         )
-        overlap_groups[overlap_key].append(method)
 
-    for method in ordered:
+    for method, x_value, y_value, is_pareto in zip(ordered, x_values, y_values, pareto_mask):
         style = styles[str(method.get("method", ""))]
-        delay_value = float(method.get("avg_delay", 0.0))
-        energy_value = float(method.get("total_energy", 0.0))
-        completion_rate = float(method.get("task_completion_rate", 0.0))
-        overlap_key = (round(delay_value, 4), round(energy_value, 2))
-        siblings = overlap_groups[overlap_key]
-        sibling_index = siblings.index(method)
-        sibling_offset = sibling_index - (len(siblings) - 1) / 2.0
-        plot_delay = delay_value + sibling_offset * delay_span * 0.012
-        plot_energy = energy_value + sibling_offset * energy_span * 0.018
-        marker = "*" if method.get("is_system") else style["marker"]
-        size = 180 + 820 * max(completion_rate, 0.0)
+        display_name = str(method.get("display_name", method.get("method", "")))
+        scatter_size = float(style.get("scatter_size", 160))
+        if method.get("is_system"):
+            scatter_size = max(scatter_size, 280.0)
         ax.scatter(
-            plot_delay,
-            plot_energy,
-            s=size,
-            color=style["color"],
-            marker=marker,
-            alpha=0.88,
+            x_value,
+            y_value,
+            s=scatter_size,
+            marker=style.get("marker", "o"),
+            color=style.get("color", PAPER_COLORS["muted"]),
             edgecolors=PAPER_COLORS["dark"],
-            linewidths=1.0,
-            label=method.get("display_name", method.get("method", "")),
+            linewidths=1.1 if is_pareto else 0.9,
+            alpha=0.96,
+            zorder=4 if method.get("is_system") else 3,
         )
+        dx, dy = SCATTER_LABEL_OFFSETS.get(display_name, (9, 9))
+        label = display_name
+        if method.get("is_system") and is_pareto:
+            label = f"{display_name} (Pareto)"
         ax.annotate(
-            method.get("display_name", method.get("method", "")),
-            xy=(plot_delay, plot_energy),
-            xytext=(7, 7 if sibling_offset >= 0 else -11),
+            label,
+            xy=(x_value, y_value),
+            xytext=(dx, dy),
             textcoords="offset points",
-            fontsize=8.2,
+            fontsize=11,
             color=PAPER_COLORS["dark"],
             bbox={
-                "boxstyle": "round,pad=0.18",
+                "boxstyle": "round,pad=0.20",
                 "facecolor": "white",
-                "edgecolor": "#CCCCCC",
-                "alpha": 0.76,
+                "edgecolor": "#D0D0D0",
+                "alpha": 0.88,
             },
         )
 
-    ax.set_xlabel("Average Delay (s)")
-    ax.set_ylabel("Total Energy (J)")
-    ax.set_title("Delay-Energy Trade-off (Bubble Size = Task Completion)")
-    ax.grid(True, linestyle="--", alpha=0.24)
-    ax.text(
-        0.99,
-        0.02,
-        "Better region: lower-left",
-        transform=ax.transAxes,
-        ha="right",
-        va="bottom",
-        fontsize=9,
-        color=PAPER_COLORS["muted"],
+    ax.scatter(
+        np.min(x_values),
+        np.min(y_values),
+        s=0,
+        alpha=0.0,
     )
+    ax.annotate(
+        "Ideal region\n(lower delay, lower energy)",
+        xy=(np.min(x_values), np.min(y_values)),
+        xytext=(18, -4),
+        textcoords="offset points",
+        fontsize=11,
+        color=PAPER_COLORS["secondary"],
+        ha="left",
+        va="top",
+        arrowprops={"arrowstyle": "->", "color": PAPER_COLORS["secondary"], "lw": 1.1},
+    )
+
+    ax.set_xlabel("Average Delay (ms)")
+    ax.set_ylabel("Energy per Resolved Task")
+    ax.set_title("Delay-Energy Trade-off Across System and Heuristic Methods")
+    style_axes_frame(ax)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "delay_energy_tradeoff.png")
+    return save_figure(fig, output_dir / "delay_energy_tradeoff.pdf")
 
 
 def plot_paper_dashboard(
@@ -1772,7 +1891,7 @@ def plot_paper_dashboard(
         methods,
         metric_key="avg_delay",
         title="Average Delay",
-        xlabel="Avg Delay (s)",
+        ylabel="Average Delay (ms)",
         compact=True,
     )
     add_panel_label(ax_delay, "(b)")
@@ -1781,9 +1900,9 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_task,
         methods,
-        metric_key="service_continuity_rate",
-        title="Service Continuity",
-        xlabel="Rate (%)",
+        metric_key="task_completion_rate",
+        title="Task Completion Rate",
+        ylabel="Task Completion Rate (%)",
         compact=True,
     )
     add_panel_label(ax_task, "(c)")
@@ -1792,16 +1911,16 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="service_availability_rate",
-        title="Service Availability",
-        xlabel="Rate (%)",
+        metric_key="avg_load_balance_score",
+        title="Avg Load Balance Score",
+        ylabel="Avg Load Balance Score",
         compact=True,
     )
     add_panel_label(ax_energy, "(d)")
 
-    fig.suptitle("Publication-Style Baseline Comparison (Latency-Priority View)", fontsize=15, fontweight="bold", y=0.985)
+    fig.suptitle("Publication-Style Baseline Comparison", fontsize=15, fontweight="bold", y=0.985)
     fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.26, hspace=0.32)
-    return save_figure(fig, output_dir / "paper_baseline_dashboard.png")
+    return save_figure(fig, output_dir / "paper_baseline_dashboard.pdf")
 
 
 def plot_training_curve_vs_baselines(
@@ -1816,7 +1935,7 @@ def plot_training_curve_vs_baselines(
         plt.close(fig)
         return None
     fig.tight_layout()
-    return save_figure(fig, output_dir / "reward_curve_vs_baselines.png")
+    return save_figure(fig, output_dir / "reward_curve_vs_baselines.pdf")
 
 
 def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -1883,10 +2002,10 @@ def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optio
 
     ax.set_xlabel("Episode Reward")
     ax.set_title("Reward Distribution Across Evaluation Episodes")
-    ax.grid(axis="x", linestyle="--", alpha=0.24)
+    style_axes_frame(ax)
     ax.invert_yaxis()
     fig.tight_layout()
-    return save_figure(fig, output_dir / "reward_distribution.png")
+    return save_figure(fig, output_dir / "reward_distribution.pdf")
 
 
 def parse_args() -> argparse.Namespace:
@@ -2074,8 +2193,9 @@ def main() -> None:
         output_dir,
         window=args.plot_window,
     )
-    reward_distribution_plot = plot_reward_distribution(methods, output_dir)
+    baseline_reward_episode_plot = plot_baseline_reward_episode_curve(methods, output_dir)
     tradeoff_plot = plot_delay_energy_tradeoff(methods, output_dir)
+    reward_distribution_plot = plot_reward_distribution(methods, output_dir)
     dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
 
     print(json.dumps(methods, ensure_ascii=False, indent=2))
@@ -2087,10 +2207,12 @@ def main() -> None:
         print(f"Metric comparison figure: {metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
-    if reward_distribution_plot is not None:
-        print(f"Reward distribution figure: {reward_distribution_plot}")
+    if baseline_reward_episode_plot is not None:
+        print(f"Baseline episode reward figure: {baseline_reward_episode_plot}")
     if tradeoff_plot is not None:
         print(f"Delay-energy trade-off figure: {tradeoff_plot}")
+    if reward_distribution_plot is not None:
+        print(f"Reward distribution figure: {reward_distribution_plot}")
     if dashboard_plot is not None:
         print(f"Paper dashboard figure: {dashboard_plot}")
 
