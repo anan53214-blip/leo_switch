@@ -2,9 +2,9 @@
 
 > 更新日期：2026-04-15
 > 权威来源：`results/full_train_delay_focus/training_history.json` 的 `config` 字段
-> 已同步入口：`scripts/train.py`、`scripts/run_server_training.py`
+> 已同步入口：`scripts/train.py`、`scripts/run_server_training.py`、`scripts/compare_system_baselines.py`
 
-本文档记录当前应作为论文实验、复现实验和基线对比统一使用的训练参数。旧版 `v1/v2/v3/v4` 过程性实验记录已从 `docs/` 移除，避免继续引用过时配置。
+本文档记录当前应作为论文实验、复现实验和基线对比统一使用的训练参数。当前多目标默认权重已在训练入口、服务器批量入口和统一对比入口之间保持一致。旧版 `v1/v2/v3/v4` 过程性实验记录已从 `docs/` 移除，避免继续引用过时配置。
 
 ## 1. 实验标识
 

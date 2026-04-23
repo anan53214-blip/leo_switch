@@ -58,11 +58,11 @@ class EnvConfig:
     task_arrival_prob: float = 0.45    # Avoid pathological queue saturation
     
     # 奖励权重（增大正向奖励系数，平衡奖惩信号）
-    reward_delay_weight: float = 1.0
-    reward_energy_weight: float = 0.8
-    reward_handover_weight: float = 0.5
-    reward_load_balance_weight: float = 0.2
-    reward_qos_weight: float = 0.3
+    reward_delay_weight: float = 1.4
+    reward_energy_weight: float = 0.4
+    reward_handover_weight: float = 0.3
+    reward_load_balance_weight: float = 0.1
+    reward_qos_weight: float = 0.4
     reward_enqueue_bonus: float = 0.02
     reward_invalid_action_penalty: float = 0.5
     reward_blocked_penalty: float = 1.0

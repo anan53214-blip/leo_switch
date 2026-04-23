@@ -97,6 +97,11 @@ DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
 DEFAULT_TOTAL_TIMESTEPS = 1_200_000
 DEFAULT_PLOT_WINDOW = 10
 DEFAULT_SELECTION_METRIC = "latency_priority_score"
+TRAIN_ARTIFACT_FILENAMES = (
+    "training_history.json",
+    "best_model.pt",
+    "final_model.pt",
+)
 
 PRIMARY_COMPARE_METRICS = [
     ("avg_delay", "Average Delay"),
@@ -400,11 +405,11 @@ def build_default_train_config(
         config["reward_qos_weight"] = 0.0
     else:
         config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
-        config["reward_delay_weight"] = 1.8
-        config["reward_energy_weight"] = 0.15
-        config["reward_handover_weight"] = 0.45
-        config["reward_load_balance_weight"] = 0.25
-        config["reward_qos_weight"] = 0.60
+        config["reward_delay_weight"] = 1.4
+        config["reward_energy_weight"] = 0.4
+        config["reward_handover_weight"] = 0.3
+        config["reward_load_balance_weight"] = 0.1
+        config["reward_qos_weight"] = 0.4
     return config
 
 
@@ -433,6 +438,48 @@ def infer_system_artifacts(
                 checkpoint = final_candidate
 
     return run_dir, checkpoint, history_path
+
+
+def list_training_artifacts(run_dir: Path) -> List[Path]:
+    if not run_dir.exists():
+        return []
+
+    artifacts: List[Path] = []
+    for filename in TRAIN_ARTIFACT_FILENAMES:
+        candidate = run_dir / filename
+        if candidate.exists():
+            artifacts.append(candidate)
+    artifacts.extend(sorted(run_dir.glob("checkpoint_*.pt")))
+    return artifacts
+
+
+def prepare_system_run_dir(
+    requested_run_dir: str,
+    timestamp: str,
+    resume_system: bool,
+    overwrite_system_run_dir: bool,
+) -> Path:
+    run_dir = Path(requested_run_dir).resolve()
+    if resume_system or overwrite_system_run_dir:
+        return run_dir
+
+    artifacts = list_training_artifacts(run_dir)
+    if not artifacts:
+        return run_dir
+
+    fresh_run_dir = run_dir.parent / f"{run_dir.name}_{timestamp}"
+    suffix = 1
+    while fresh_run_dir.exists():
+        fresh_run_dir = run_dir.parent / f"{run_dir.name}_{timestamp}_{suffix:02d}"
+        suffix += 1
+
+    print(
+        "Existing training artifacts detected in "
+        f"{run_dir}. Starting a fresh train_compare run in {fresh_run_dir} "
+        "instead. Use --resume-system to continue training there, or "
+        "--overwrite-system-run-dir to intentionally reuse the existing path."
+    )
+    return fresh_run_dir
 
 
 def torch_load_trusted_checkpoint(path: Path, map_location):
@@ -1850,11 +1897,18 @@ def parse_args() -> argparse.Namespace:
                         choices=["train_compare", "compare_only"],
                         help="Whether to train the system first or only compare against an existing run.")
     parser.add_argument("--system-run-dir", type=str, default=str(DEFAULT_SYSTEM_RUN_DIR),
-                        help="Directory used for training outputs and/or existing system artifacts.")
+                        help=(
+                            "Directory used for training outputs and/or existing system artifacts. "
+                            "Fresh train_compare runs now protect existing artifacts by switching to a "
+                            "timestamped sibling directory unless --resume-system or "
+                            "--overwrite-system-run-dir is used."
+                        ))
     parser.add_argument("--system-checkpoint", type=str, default=None,
                         help="Path to best_model.pt or final_model.pt.")
     parser.add_argument("--resume-system", action="store_true",
                         help="Resume training from an existing checkpoint in --system-run-dir or --system-checkpoint.")
+    parser.add_argument("--overwrite-system-run-dir", action="store_true",
+                        help="Allow a fresh train_compare run to write into an existing --system-run-dir that already contains training artifacts.")
     parser.add_argument("--exp-name", type=str, default=DEFAULT_SYSTEM_EXP_NAME,
                         help="Experiment name used when training from this unified entry script.")
     parser.add_argument("--episodes", type=int, default=5,
@@ -1921,10 +1975,16 @@ def main() -> None:
 
     if args.run_mode == "train_compare":
         resume_checkpoint = checkpoint if args.resume_system else None
+        training_run_dir = prepare_system_run_dir(
+            requested_run_dir=args.system_run_dir,
+            timestamp=timestamp,
+            resume_system=args.resume_system,
+            overwrite_system_run_dir=args.overwrite_system_run_dir,
+        )
         run_dir, checkpoint, history_path, config_data = run_system_training(
             config_data=config_data,
             objective=objective,
-            system_run_dir=Path(args.system_run_dir).resolve(),
+            system_run_dir=training_run_dir,
             device=args.device,
             episodes=args.episodes,
             max_steps=args.max_steps,

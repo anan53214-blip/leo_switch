@@ -20,13 +20,13 @@
 
 - `--run-mode train_compare`
 
-当脚本没有读到已有的 `--system-run-dir` / `--system-checkpoint` 时，会自动构造一组偏时延优先的多目标训练配置：
+当脚本没有读到已有的 `--system-run-dir` / `--system-checkpoint` 时，会自动构造一组与 `scripts/train.py` / `results/full_train_delay_focus` 保持一致的多目标训练配置：
 
-- `reward_delay_weight = 1.8`
-- `reward_energy_weight = 0.15`
-- `reward_handover_weight = 0.45`
-- `reward_load_balance_weight = 0.25`
-- `reward_qos_weight = 0.60`
+- `reward_delay_weight = 1.4`
+- `reward_energy_weight = 0.4`
+- `reward_handover_weight = 0.3`
+- `reward_load_balance_weight = 0.1`
+- `reward_qos_weight = 0.4`
 
 如果使用 `--run-mode compare_only`，则脚本会读取已有运行目录中的：
 

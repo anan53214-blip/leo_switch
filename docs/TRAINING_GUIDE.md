@@ -5,7 +5,7 @@
 > **适用范围**: 环境安装、训练运行、参数调优、结果可视化、常见问题
 > **当前默认实验**: `results/full_train_delay_focus`
 
-> **说明**: 本文档描述的是 `scripts/train.py` 的默认训练入口。若使用 `scripts/compare_system_baselines.py --run-mode train_compare`，脚本会使用单独的偏时延优先默认实验目录 `results/full_train_latency_priority`。
+> **说明**: 本文档描述的是 `scripts/train.py` 的默认训练入口。若使用 `scripts/compare_system_baselines.py --run-mode train_compare`，脚本会使用单独的默认实验目录 `results/full_train_latency_priority`；当前其多目标默认权重已与 `scripts/train.py` / `results/full_train_delay_focus` 保持一致。
 
 ---
 
