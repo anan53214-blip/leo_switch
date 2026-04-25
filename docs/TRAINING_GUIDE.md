@@ -1,159 +1,125 @@
-# LEO HAN+MAPPO 训练使用方法
+# LEO HAN+MAPPO 训练指南
 
-> **文档版本**: v4.1
-> **更新日期**: 2026-04-21
-> **适用范围**: 环境安装、训练运行、参数调优、结果可视化、常见问题
-> **当前默认实验**: `results/full_train_delay_focus`
+本文档说明当前仓库的训练入口、常用参数、输出结构、绘图方式和基线对比流程。
 
-> **说明**: 本文档描述的是 `scripts/train.py` 的默认训练入口。若使用 `scripts/compare_system_baselines.py --run-mode train_compare`，脚本会使用单独的默认实验目录 `results/full_train_latency_priority`；当前其多目标默认权重已与 `scripts/train.py` / `results/full_train_delay_focus` 保持一致。
+默认建议使用项目 Conda 环境中的 Python：
 
----
+```powershell
+C:\Users\19704\.conda\envs\satellite.env\python.exe
+```
 
-## 一、环境准备
+如无特殊说明，下面命令中的 `python` 可以替换为上述完整解释器路径。
 
-### 1.1 硬件要求
+## 1. 系统目标
 
-| 级别 | GPU | CPU | 内存 | 预计速度 |
-|------|-----|-----|------|----------|
-| **推荐** | RTX 3090 (24GB) | 8核+ | 32GB | ~400 步/秒 |
-| 可用 | RTX 2080Ti / A100 | 4核+ | 16GB | 200-600 步/秒 |
-| 最低 | 无 GPU (CPU only) | 4核 | 8GB | ~40 步/秒 |
+本项目研究 LEO 卫星网络中的联合优化问题：
 
-> **注意**: 模型仅 822K 参数，GPU 显存几乎不是瓶颈。训练速度主要受 **CPU 端环境仿真**限制。
+- 用户在可见卫星之间进行切换。
+- 用户任务可以在本地计算，也可以卸载到卫星 MEC。
+- 策略需要同时考虑时延、能耗、服务连续性、任务完成率、队列压力和负载均衡。
 
-### 1.2 软件安装
+主方法为 `HAN+MAPPO`：
+
+- HAN 编码用户、卫星、MEC 之间的异构图关系。
+- MAPPO 训练多用户联合策略。
+- 每个用户输出混合动作：
+
+```text
+action_i = (handover_action_i, offload_ratio_i)
+```
+
+## 2. 环境与安装
+
+推荐环境：
+
+| 项目 | 建议 |
+| --- | --- |
+| Python | 3.10 |
+| GPU | CUDA 可用 GPU，CPU 也可用于小规模 smoke |
+| 内存 | 16GB 以上 |
+| 主要依赖 | `torch`、`numpy`、`scipy`、`matplotlib`、`gymnasium`、`pyyaml`、`pytest` |
+
+示例安装：
 
 ```bash
-# 1. 创建 conda 环境
 conda create -n satellite python=3.10 -y
 conda activate satellite
-
-# 2. 安装 PyTorch（根据你的 CUDA 版本选择）
-# CUDA 11.8
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-# CUDA 12.1
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-
-# 3. 安装其他依赖
 pip install numpy scipy matplotlib gymnasium pyyaml pytest
-
-# 4. 验证安装
-python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-python -c "import torch; print(torch.cuda.get_device_name(0))" 2>/dev/null || echo "No GPU"
 ```
 
-### 1.3 验证项目完整性
+验证 PyTorch：
 
 ```bash
-cd LEO_switch
-
-# 运行单元测试
-python -m pytest tests/test_graph.py -v
-# 预期: 12 passed, 4 skipped
-
-# 快速端到端检查
-python -c "
-from scripts.train import TrainConfig, HANMAPPOTrainer
-c = TrainConfig()
-c.total_timesteps = 100
-c.n_steps = 100
-c.device = 'cuda'
-c.num_users = 3
-c.save_path = '/tmp/test_leo'
-t = HANMAPPOTrainer(c)
-t.train()
-print('端到端验证通过!')
-"
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
----
+## 3. 训练入口
 
-## 二、训练运行
+主要训练脚本：
 
-### 2.1 方式一：使用服务器训练脚本（推荐）
-
-`scripts/run_server_training.py` 预设了 4 种训练方案：
-
-| 方案 | 命令 | 用户数 | 总步数 | Early Stop | 预计耗时 |
-|------|------|--------|--------|------------|----------|
-| `quick` | `--plan quick` | 5 | 10 万 | 15 轮 | 15-30 分钟 |
-| `standard` | `--plan standard` | 10 | 100 万 | 30 轮 | 3-5 小时 |
-| `large` | `--plan large` | 20 | 200 万 | 50 轮 | 6-10 小时 |
-| `multi_seed` | `--plan multi_seed` | 10 | 5×100 万 | 30 轮 | 15-25 小时 |
-
-#### 推荐操作流程
-
-```bash
-# 第一步：快速验证（确保环境无误）
-python scripts/run_server_training.py --plan quick
-
-# 第二步：正式训练（后台运行）
-nohup python scripts/run_server_training.py --plan standard > train.log 2>&1 &
-
-# 监控进度
-tail -f train.log
-
-# 查看 GPU 使用情况
-watch -n 2 nvidia-smi
+```text
+scripts/train.py
 ```
 
-#### 自定义参数
+默认训练：
 
-```bash
-# 修改用户数和总步数
-python scripts/run_server_training.py --plan standard --users 8 --steps 2000000
-
-# 使用 CPU
-python scripts/run_server_training.py --plan quick --device cpu
-
-# 指定随机种子
-python scripts/run_server_training.py --plan standard --seed 123
+```powershell
+python scripts\train.py
 ```
 
-#### 多种子对比实验（用于论文）
+常用训练命令：
 
-```bash
-# 自动用 5 个种子 [42, 123, 456, 789, 2024] 训练
-python scripts/run_server_training.py --plan multi_seed
-
-# 输出:
-#   results/multi_seed/seed_42/training_history.json
-#   results/multi_seed/seed_123/training_history.json
-#   ...
-#   results/multi_seed/figures/comparison.png      ← 对比图
+```powershell
+python scripts\train.py `
+  --num_users 10 `
+  --max_steps 2000 `
+  --total_timesteps 1000000 `
+  --learning_rate 3e-4 `
+  --batch_size 256 `
+  --n_epochs 4 `
+  --save_path results\my_experiment
 ```
 
-### 2.2 方式二：使用 train.py 直接训练
+仅评估已有模型：
 
-`train.py` 支持通过命令行参数直接控制所有训练配置，语法为 `python scripts/train.py --参数名 值`。
+```powershell
+python scripts\train.py `
+  --load_path results\full_train_delay_focus\best_model.pt `
+  --eval_only
+```
 
-#### 完整参数列表
+CPU smoke：
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--exp_name` | str | `han_mappo_delay_focus_fast` | 实验名称 |
-| `--seed` | int | `42` | 随机种子 |
-| `--device` | str | `auto` | 设备（`cuda`/`cpu`/`auto`） |
-| `--num_users` | int | `10` | 用户数量（智能体数） |
-| `--max_steps` | int | `2000` | 每 episode 最大步数 |
-| `--total_timesteps` | int | `1000000` | 总训练步数 |
-| `--n_steps` | int | `2048` | 每次更新收集的步数 |
-| `--learning_rate` | float | `3e-4` | 学习率 |
-| `--batch_size` | int | `256` | 小批量大小 |
-| `--n_epochs` | int | `4` | 每次 PPO 更新 epoch 数 |
-| `--han_hidden_dim` | int | `64` | HAN 隐藏维度 |
-| `--han_num_heads` | int | `4` | 注意力头数 |
-| `--han_num_layers` | int | `2` | HAN 层数 |
-| `--eval_interval` | int | `100000` | 评估间隔（步数） |
-| `--eval_episodes` | int | `3` | 每次评估 episode 数 |
-| `--graph_update_interval` | int | `100` | 图重建/重编码间隔 |
-| `--save_interval` | int | `200000` | 检查点保存间隔 |
-| `--save_path` | str | `results/full_train_delay_focus` | 模型保存路径 |
-| `--load_path` | str | `None` | 加载检查点路径 |
-| `--best-model-metric` | str | `reward` | `best_model.pt` 的选优指标 |
-| `--eval_only` | flag | - | 仅评估不训练 |
+```powershell
+python scripts\train.py `
+  --device cpu `
+  --num_users 3 `
+  --total_timesteps 100000
+```
 
-`--best-model-metric` 当前支持：
+## 4. 关键训练参数
+
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `--num_users` | `10` | 用户数量 |
+| `--max_steps` | `2000` | 每个 episode 最大步数 |
+| `--total_timesteps` | `1000000` | 总训练步数 |
+| `--n_steps` | `2048` | 每次 MAPPO rollout 步数 |
+| `--learning_rate` | `3e-4` | 学习率 |
+| `--batch_size` | `256` | PPO mini-batch 大小 |
+| `--n_epochs` | `4` | 每轮 PPO 更新 epoch 数 |
+| `--han_hidden_dim` | `64` | HAN 隐藏维度 |
+| `--han_num_heads` | `4` | HAN 注意力头数 |
+| `--han_num_layers` | `2` | HAN 层数 |
+| `--eval_interval` | `100000` | 评估间隔 |
+| `--eval_episodes` | `3` | 每次评估 episode 数 |
+| `--save_interval` | `200000` | checkpoint 保存间隔 |
+| `--save_path` | `results/full_train_delay_focus` | 模型与日志保存目录 |
+| `--best-model-metric` | `reward` | `best_model.pt` 的选择指标 |
+| `--early_stop_patience` | `30` | 连续多少次无提升后 early stop |
+
+可用的 `--best-model-metric` 包括：
 
 - `reward`
 - `avg_delay`
@@ -163,429 +129,198 @@ python scripts/run_server_training.py --plan multi_seed
 - `task_completion_rate`
 - `latency_priority_score`
 
-默认仍是 `reward`，因此直接运行 `train.py` 时，`best_model.pt` 仍表示“评估奖励最高”的模型；如果你希望保存更偏时延/连续性/负载均衡的最佳模型，可以显式改成 `latency_priority_score`。
+## 5. 默认环境参数
 
-#### 常用命令示例
+| 参数 | 当前默认值 |
+| --- | --- |
+| `num_planes` | `6` |
+| `sats_per_plane` | `11` |
+| `altitude_km` | `550.0` |
+| `inclination_deg` | `53.0` |
+| `time_step_sec` | `1.0` |
+| `max_visible_sats` | `10` |
+| `task_arrival_prob` | `0.45` |
 
-```bash
-# 基本训练（使用默认参数）
-python scripts/train.py
+Reward 权重：
 
-# 显式指定当前默认实验参数
-python scripts/train.py --num_users 10 --max_steps 2000 --total_timesteps 1000000
+| 参数 | 默认值 |
+| --- | --- |
+| `reward_delay_weight` | `1.4` |
+| `reward_energy_weight` | `0.4` |
+| `reward_handover_weight` | `0.3` |
+| `reward_load_balance_weight` | `0.1` |
+| `reward_qos_weight` | `0.4` |
+| `reward_enqueue_bonus` | `0.02` |
+| `reward_queue_full_penalty` | `0.3` |
 
-# 完整自定义训练
-python scripts/train.py \
-  --num_users 10 \
-  --max_steps 2000 \
-  --total_timesteps 1000000 \
-  --n_steps 2048 \
-  --learning_rate 3e-4 \
-  --batch_size 256 \
-  --n_epochs 4 \
-  --eval_interval 100000 \
-  --eval_episodes 3 \
-  --graph_update_interval 100 \
-  --save_path results/my_experiment
+## 6. 输出结构
 
-# 调整 HAN 网络结构
-python scripts/train.py --han_hidden_dim 128 --han_num_heads 8 --han_num_layers 3
+典型训练目录：
 
-# 从检查点恢复训练
-python scripts/train.py --load_path results/full_train_delay_focus/checkpoint_200704.pt
-
-# 用偏时延优先的综合指标选择 best_model.pt
-python scripts/train.py --best-model-metric latency_priority_score --save_path results/full_train_latency_priority
-
-# 仅评估已训练模型
-python scripts/train.py --load_path results/full_train_delay_focus/best_model.pt --eval_only
-
-# 使用 CPU 训练
-python scripts/train.py --device cpu --num_users 3 --total_timesteps 100000
+```text
+results/full_train_delay_focus/
+  best_model.pt
+  final_model.pt
+  checkpoint_*.pt
+  training_history.json
+  figures/
+    reward_curve.png
+    reward_curve.pdf
+    loss_curves.png
+    entropy_kl.png
+    handover_task_rate.png
+    delay_energy.png
+    eval_curve.png
+    dashboard.png
 ```
 
-> **提示**: 参数可以任意组合。未指定的参数使用 `TrainConfig` 中的默认值。
+`training_history.json` 主要包含：
 
-### 2.3 使用 tmux/screen 保持会话
+- `config`：训练配置。
+- `training`：每次训练更新的指标记录。
+- `evaluation`：评估记录。
+- `summary`：总步数、总 episode、最佳分数、训练时间等摘要。
 
-```bash
-# 创建 tmux 会话
-tmux new -s leo_train
+常见训练指标：
 
-# 在会话中运行训练
-python scripts/run_server_training.py --plan standard
+- `mean_reward`
+- `recent_mean_reward`
+- `actor_loss`
+- `critic_loss`
+- `entropy`
+- `kl_divergence`
+- `handover_success_rate`
+- `task_completion_rate`
+- `avg_delay`
+- `total_energy`
+- `service_continuity_rate`
 
-# 分离会话: Ctrl+B, 然后按 D
-# 重新连接: tmux attach -t leo_train
+## 7. 绘图
+
+单次训练绘图：
+
+```powershell
+python scripts\plot_results.py `
+  --input results\full_train_delay_focus\training_history.json
 ```
 
----
+指定输出目录与平滑窗口：
 
-## 三、训练输出说明
-
-### 3.1 输出文件结构
-
-训练完成后 `results/` 目录结构如下：
-
-```
-results/
-├── full_train_delay_focus/         # --plan standard 的输出
-│   ├── best_model.pt               # 按 --best-model-metric 选出的最佳模型（默认仍为评估奖励最高）
-│   ├── final_model.pt              # 训练结束时的模型
-│   ├── checkpoint_200704.pt        # 中间检查点
-│   ├── checkpoint_401408.pt
-│   ├── training_history.json       # 完整训练历史（供可视化）
-│   └── figures/                    # 自动生成的图表
-│       ├── reward_curve.png/pdf
-│       ├── loss_curves.png/pdf
-│       ├── entropy_kl.png/pdf
-│       ├── handover_task_rate.png/pdf
-│       ├── delay_energy.png/pdf
-│       ├── eval_curve.png/pdf
-│       ├── clip_fraction.png/pdf
-│       ├── dashboard.png/pdf       # 综合仪表盘
-│       └── plot_info.json
-└── logs/                           # 文本日志
-```
-
-### 3.2 training_history.json 格式
-
-```json
-{
-  "config": { /* 完整训练配置 */ },
-  "training": [
-    {
-      "update": 1,
-      "total_steps": 2048,
-      "episodes": 2,
-      "mean_reward": 12.5,
-      "actor_loss": 0.31,
-      "critic_loss": 0.05,
-      "entropy": 1.82,
-      "kl_divergence": 0.003,
-      "clip_fraction": 0.08,
-      "handover_success_rate": 0.75,
-      "task_completion_rate": 0.60,
-      "avg_delay": 0.035,
-      "total_energy": 4.2,
-      "deadline_violations": 3,
-      "recent_mean_reward": 12.5
-    },
-    ...
-  ],
-  "evaluation": [
-    {
-      "total_steps": 20000,
-      "eval_mean_reward": 85.2,
-      "eval_std_reward": 4.3,
-      "avg_delay": 0.031,
-      "total_energy": 3.9,
-      "energy_per_resolved_task": 0.015,
-      "best_model_metric": "reward",
-      "best_model_score": 85.2,
-      ...
-    },
-    ...
-  ],
-  "summary": {
-    "total_steps": 1000000,
-    "total_episodes": 976,
-    "best_reward": 92.5,
-    "best_model_metric": "reward",
-    "best_model_score": 92.5,
-    "training_time_sec": 7200
-  }
-}
-```
-
-### 3.3 检查点文件内容 (.pt)
-
-```python
-checkpoint = {
-    'total_steps': int,
-    'episodes': int,
-    'best_reward': float,
-    'best_model_metric': str,
-    'best_model_score': float,
-    'config': dict,
-    'actor_state_dict': OrderedDict,
-    'critic_state_dict': OrderedDict,
-    'actor_optimizer_state_dict': OrderedDict,
-    'critic_optimizer_state_dict': OrderedDict,
-    'han_state_dict': OrderedDict,
-}
-```
-
----
-
-## 四、结果可视化
-
-### 4.1 自动生成（训练结束自动执行）
-
-使用 `run_server_training.py` 时，训练结束后图表自动生成在 `figures/` 子目录下。
-
-### 4.2 手动生成图表
-
-```bash
-# 基本使用
-python scripts/plot_results.py --input results/full_train_delay_focus/training_history.json
-
-# 自定义输出目录和滑动窗口
-python scripts/plot_results.py \
-  --input results/full_train_delay_focus/training_history.json \
-  --output results/my_figures \
+```powershell
+python scripts\plot_results.py `
+  --input results\full_train_delay_focus\training_history.json `
+  --output results\my_figures `
   --window 20
-
-# 仅重新绘图（不重新训练）
-python scripts/run_server_training.py --plot_only results/full_train_delay_focus --window 15
 ```
 
-### 4.3 多实验对比
+多实验对比：
 
-```bash
-python scripts/plot_results.py --compare \
-  results/multi_seed/seed_42/training_history.json \
-  results/multi_seed/seed_123/training_history.json \
-  results/multi_seed/seed_456/training_history.json
+```powershell
+python scripts\plot_results.py --compare `
+  results\multi_seed\seed_42\training_history.json `
+  results\multi_seed\seed_123\training_history.json `
+  results\multi_seed\seed_456\training_history.json
 ```
 
-### 4.4 图表说明
+当前 reward 图样式：
 
-| # | 文件名 | 内容 | 论文用途 |
-|---|--------|------|----------|
-| 1 | `reward_curve` | 奖励收敛曲线（原始 + 滑动平均 + 置信区间） | 主收敛图 |
-| 2 | `loss_curves` | Actor Loss & Critic Loss 双轴曲线 | 附录/训练稳定性分析 |
-| 3 | `entropy_kl` | 策略熵变化 & 近似 KL 散度 | 探索-利用分析 |
-| 4 | `handover_task_rate` | 切换成功率 & 任务完成率 & Deadline 违反数 | **核心性能指标** |
-| 5 | `delay_energy` | 平均时延 (ms) & 每轮能耗 (J) | **核心性能指标** |
-| 6 | `eval_curve` | 评估奖励（带误差棒） | 泛化性能 |
-| 7 | `clip_fraction` | PPO Clip Fraction | 超参数分析 |
-| 8 | `dashboard` | **6 合 1 综合仪表盘** | 一图总览 |
-| 9 | `comparison` | 多实验奖励对比（多种子模式） | 稳定性验证 |
-| 10 | `comparison_metrics` | 多实验指标对比（4 指标） | 消融实验 |
+- 原始 `mean_reward` 画为半透明阴影或波动背景。
+- 轻度平滑后的 reward 画为实线。
+- 当旧历史缺少 `mean_reward` 时，回退使用 `recent_mean_reward`。
+- 平滑窗口不会过大，曲线保留适当震荡。
+- 横纵轴沿用项目原有格式。
 
----
+## 8. 基线对比
 
-## 五、参数调优指南
+统一对比脚本：
 
-### 5.1 关键超参数
-
-| 参数 | 默认值 | 调优建议 |
-|------|--------|----------|
-| `learning_rate` | 3e-4 | 奖励震荡大 → 减小至 1e-4；收敛太慢可小幅增大 |
-| `n_steps` | 2048 | 增大可提高梯度估计质量，但增大内存和每轮时间 |
-| `batch_size` | 256 | 3090 当前默认；显存不足或更新过慢 → 减至 128/64 |
-| `entropy_coef` | 0.01 | 探索不足可增大；策略太随机则继续保持低值 |
-| `clip_range` | 0.2 | 一般不需要调；更新过激进 → 减小至 0.1 |
-| `n_epochs` | 4 | KL 散度过大 → 减少；学习不足 → 小幅增大 |
-| `gamma` | 0.99 | 任务时间尺度短 → 减小至 0.95 |
-| `num_users` | 10 | 简单场景 3-5，复杂场景 10-20 |
-| `total_timesteps` | 1M | 配合 early stopping 自动判断收敛 |
-| `early_stop_patience` | 30 | 连续 N 次更新无改善则停止；0=禁用 |
-
-### 5.2 调优流程
-
-```
-1. quick 方案跑通 (10万步)
-     ↓
-2. 观察 reward_curve 趋势
-   - 上升 → 继续 standard 方案
-   - 平坦/震荡 → 调整 lr, entropy_coef
-     ↓
-3. standard 方案跑完 (100万步)
-     ↓
-4. 观察关键指标:
-   - 切换成功率 < 70% → 增大 handover 奖励权重
-   - 任务完成率 < 50% → 检查 MEC 队列是否拥堵
-   - 时延过高 → 调整 reward_delay_weight
-     ↓
-5. 调参后重跑，用 multi_seed 验证稳定性
-     ↓
-6. 与基线对比 (baseline_eval.py)
+```text
+scripts/compare_system_baselines.py
 ```
 
-### 5.3 训练日志解读
+当前默认基线集合：
 
-训练过程中日志输出格式：
+- `random`
+- `min_distance`
+- `full_local`
+- `joint_greedy`
+- `dqn`
+- `mappo_no_han`
 
-```
-Update    1 | Steps:   2,048 | Episodes:     2 | EpReward:    12.50 | FPS:   400 | Actor Loss: 0.3148 | Critic Loss: 0.0521
-```
+旧基线 `stay`、`max_elev`、`max_rvt`、`threshold_rvt` 已移除。
 
-| 字段 | 含义 | 理想趋势 |
-|------|------|----------|
-| `EpReward` | Episode 平均奖励 | 持续上升 → 稳定 |
-| `FPS` | 每秒仿真步数 | 稳定在 200-500 |
-| `Actor Loss` | 策略损失 | 先升后降或波动 |
-| `Critic Loss` | 值函数损失 | 持续下降 |
+对比已有系统训练结果：
 
----
-
-## 六、进阶用法
-
-### 6.1 加载已训练模型进行评估
-
-```python
-from scripts.train import TrainConfig, HANMAPPOTrainer
-
-config = TrainConfig()
-config.device = 'cuda'
-config.num_users = 10
-trainer = HANMAPPOTrainer(config)
-trainer.load_checkpoint('results/full_train_delay_focus/best_model.pt')
-trainer._evaluate()  # 运行评估
+```powershell
+python scripts\compare_system_baselines.py `
+  --run-mode compare_only `
+  --system-run-dir results\full_train_latency_priority
 ```
 
-### 6.2 提取训练数据做自定义分析
+快速 smoke：
 
-```python
-import json
-import numpy as np
-
-with open('results/full_train_delay_focus/training_history.json') as f:
-    data = json.load(f)
-
-# 提取奖励曲线
-rewards = [r['recent_mean_reward'] for r in data['training']]
-steps = [r['total_steps'] for r in data['training']]
-
-# 提取切换成功率
-ho_rate = [r['handover_success_rate'] for r in data['training']]
-
-# 提取评估结果
-eval_rewards = [r['eval_mean_reward'] for r in data['evaluation']]
-
-print(f"最终奖励: {rewards[-1]:.2f}")
-print(f"最终切换成功率: {ho_rate[-1]*100:.1f}%")
-print(f"最佳评估奖励: {max(eval_rewards):.2f}")
+```powershell
+python scripts\compare_system_baselines.py `
+  --run-mode compare_only `
+  --system-run-dir results\full_train_latency_priority `
+  --device cpu `
+  --episodes 1 `
+  --max-steps 50 `
+  --dqn-timesteps 500 `
+  --no-han-total-timesteps 2048
 ```
 
-### 6.3 下载服务器结果到本地
+正式对比建议使用：
 
-```bash
-# 下载所有结果
-scp -r user@server:~/LEO_switch/results/ ./results_from_server/
-
-# 仅下载图表和历史
-scp -r user@server:~/LEO_switch/results/full_train_delay_focus/figures/ ./
-scp user@server:~/LEO_switch/results/full_train_delay_focus/training_history.json ./
-
-# 在本地重新生成图表（自定义样式）
-python scripts/plot_results.py --input training_history.json --output ./my_figures --window 30
+```powershell
+python scripts\compare_system_baselines.py `
+  --run-mode compare_only `
+  --system-run-dir results\full_train_latency_priority `
+  --episodes 5 `
+  --best-model-metric latency_priority_score `
+  --compare-ranking-metric latency_priority_score
 ```
 
----
+## 9. 调参建议
 
-## 七、常见问题
+Reward 大幅震荡或不收敛时：
 
-### Q1: CUDA 不兼容 / "no kernel image is available"
+- 降低 `learning_rate`，例如尝试 `1e-4` 或 `5e-5`。
+- 适当提高 `entropy_coef`，例如 `0.03` 到 `0.05`。
+- 先用 `num_users=3` 或 `num_users=5` 做小规模验证。
 
-**原因**: PyTorch 版本与 GPU 计算能力不匹配  
-**解决**: 安装匹配 CUDA 版本的 PyTorch
+任务完成率偏低时：
 
-```bash
-# RTX 3090 (sm_86) 需要 CUDA 11.1+
-pip install torch --index-url https://download.pytorch.org/whl/cu118
+- 检查 MEC 队列是否长期满载。
+- 适当降低 `task_arrival_prob` 或增大训练步数。
+- 观察 `pending_task_rate`、`task_resolution_rate` 和 `service_availability_rate`。
+
+切换成功率偏低时：
+
+- 检查候选卫星可见性、RVT 和距离分布。
+- 对比 `min_distance` 与 `joint_greedy`，确认规则基线是否也存在类似问题。
+
+## 10. 常见问题
+
+### Q1: CUDA 报 `no kernel image is available`
+
+通常是当前 PyTorch CUDA wheel 不支持显卡架构。可以改用 CPU 跑 smoke，或安装支持当前 GPU 的 PyTorch 版本。
+
+```powershell
+python scripts\compare_system_baselines.py --device cpu --episodes 1 --max-steps 50
 ```
 
-### Q2: 训练开始后 EpReward 一直为 0 或 "RollReward"
+### Q2: Reward 曲线过于平滑
 
-**原因**: `n_steps` < `max_steps` 时，一个 rollout 中没有完成任何 episode  
-**不影响训练**: rollout reward 仍在累积，当 episode 完成后会显示 EpReward  
-**解决**: 可减小 `max_steps`（如 500）使 episode 更短
+当前代码已经改为“原始 reward 阴影 + 轻度平滑实线”。如果仍然过平滑，优先调小绘图窗口 `--window`。
 
-### Q3: 内存不足 (OOM)
+### Q3: 想只跑部分基线
 
-**解决方案**:
-- 减小 `n_steps`（2048 → 1024）
-- 减小 `batch_size`（256 → 128 或 64）
-- 减少 `num_users`
+使用 `--baselines`：
 
-### Q4: 训练极慢
-
-**原因**: 环境仿真在 CPU 端，是主要瓶颈  
-**解决**:
-- 确保使用多核 CPU
-- 减少 `num_users`
-- 减少 `max_steps`
-
-### Q5: 奖励不收敛 / 持续震荡
-
-**可能原因与对策**:
-- 学习率太大 → 减至 `5e-5`
-- 探索不足 → 增大 `entropy_coef` 至 `0.05`
-- 环境太难 → 先用 3 用户、500 步 episode 验证
-- 训练步数不够 → 至少 50 万步
-
-### Q7: 训练过早收敛 / reward 很快不再上升
-
-**可能原因与对策**:
-- 环境太简单 → 增加 `num_users`（10-20），提高 `task_arrival_prob`（0.6+）
-- MEC 资源过剩 → 降低 `max_queue_size`、`satellite_cpu_freq_ghz`
-- 探索不足 → 增大 `entropy_coef` 至 0.03-0.05
-- Early stopping 会自动检测并停止浪费算力
-
-### Q6: 如何对比不同算法?
-
-```bash
-# 运行基线评估
-python scripts/baseline_eval.py
-
-# 生成基线报告
-python scripts/baseline_report.py
-```
-
----
-
-## 八、完整命令速查
-
-```bash
-# ==================== 安装 ====================
-conda create -n satellite python=3.10 -y
-conda activate satellite
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install numpy scipy matplotlib gymnasium pyyaml pytest
-
-# ==================== 验证 ====================
-python -m pytest tests/test_graph.py -v
-
-# ==================== 训练（方式一：run_server_training.py） ====================
-# 快速验证 (~15分钟)
-python scripts/run_server_training.py --plan quick
-
-# 标准训练 (~3-5小时，含 early stopping)
-nohup python scripts/run_server_training.py --plan standard > train.log 2>&1 &
-
-# 大规模训练 (~6-10小时)
-nohup python scripts/run_server_training.py --plan large > train_large.log 2>&1 &
-
-# 多种子对比 (~15-25小时)
-nohup python scripts/run_server_training.py --plan multi_seed > train_multi.log 2>&1 &
-
-# 自定义参数
-python scripts/run_server_training.py --plan standard --users 15 --steps 2000000
-
-# ==================== 训练（方式二：train.py 直接指定参数） ====================
-# 10用户 + 100万步（等价于当前默认配置）
-python scripts/train.py --num_users 10 --max_steps 2000 --total_timesteps 1000000
-
-# 完整自定义
-python scripts/train.py --num_users 10 --max_steps 2000 --total_timesteps 1000000 \
-  --learning_rate 3e-4 --batch_size 256 --n_epochs 4 --save_path results/custom
-
-# ==================== 可视化 ====================
-# 自动（训练结束后已生成）
-ls results/full_train_delay_focus/figures/
-
-# 手动重新生成
-python scripts/plot_results.py -i results/full_train_delay_focus/training_history.json -w 20
-
-# 多实验对比
-python scripts/plot_results.py --compare results/multi_seed/seed_*/training_history.json
-
-# ==================== 评估 ====================
-python scripts/train.py --load_path results/full_train_delay_focus/best_model.pt --eval_only
-
-# ==================== 下载结果 ====================
-scp -r user@server:~/LEO_switch/results/ ./
+```powershell
+python scripts\compare_system_baselines.py `
+  --run-mode compare_only `
+  --system-run-dir results\full_train_latency_priority `
+  --baselines full-local joint-greedy dqn mappo-no-han
 ```

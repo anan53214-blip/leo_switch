@@ -1,43 +1,67 @@
-# 当前默认训练配置
+# 当前训练配置摘要
 
-> 更新日期：2026-04-15
-> 权威来源：`results/full_train_delay_focus/training_history.json` 的 `config` 字段
-> 已同步入口：`scripts/train.py`、`scripts/run_server_training.py`、`scripts/compare_system_baselines.py`
+本文档记录当前代码中主要训练配置，便于复现实验和检查参数是否与论文描述一致。以源码为准，重点参考 `scripts/train.py`、`src/environment/gym_env.py`、`src/environment/mec.py` 和 `scripts/compare_system_baselines.py`。
 
-本文档记录当前应作为论文实验、复现实验和基线对比统一使用的训练参数。当前多目标默认权重已在训练入口、服务器批量入口和统一对比入口之间保持一致。旧版 `v1/v2/v3/v4` 过程性实验记录已从 `docs/` 移除，避免继续引用过时配置。
+## 1. 实验基础配置
 
-## 1. 实验标识
-
-| 参数 | 当前值 |
-|------|--------|
+| 参数 | 当前默认值 |
+| --- | --- |
 | `exp_name` | `han_mappo_delay_focus_fast` |
 | `seed` | `42` |
-| `device` | `cuda` |
+| `device` | `cuda` 可用时使用 CUDA，否则使用 CPU |
 | `save_path` | `results/full_train_delay_focus` |
 | `log_path` | `results/logs` |
+| `best_model_metric` | `reward` |
 
-## 2. 环境与奖励权重
+统一基线对比脚本的默认关注指标是：
 
-| 参数 | 当前值 |
-|------|--------|
+```text
+latency_priority_score
+```
+
+## 2. 星座与环境参数
+
+| 参数 | 当前默认值 |
+| --- | --- |
 | `num_planes` | `6` |
 | `sats_per_plane` | `11` |
+| 卫星总数 | `66` |
 | `altitude_km` | `550.0` |
 | `inclination_deg` | `53.0` |
 | `num_users` | `10` |
 | `max_steps` | `2000` |
 | `time_step_sec` | `1.0` |
 | `max_visible_sats` | `10` |
-| `reward_delay_weight` | `1.4` |
-| `reward_energy_weight` | `0.4` |
-| `reward_handover_weight` | `0.3` |
-| `reward_load_balance_weight` | `0.1` |
-| `reward_qos_weight` | `0.4` |
+| `task_arrival_prob` | `0.45` |
 
-## 3. 网络结构
+## 3. Reward 权重
 
-| 参数 | 当前值 |
-|------|--------|
+| 参数 | 当前默认值 | 含义 |
+| --- | --- | --- |
+| `reward_delay_weight` | `1.4` | 时延项权重 |
+| `reward_energy_weight` | `0.4` | 能耗项权重 |
+| `reward_handover_weight` | `0.3` | 切换收益与切换代价权重 |
+| `reward_load_balance_weight` | `0.1` | 负载均衡权重 |
+| `reward_qos_weight` | `0.4` | QoS 奖励权重 |
+| `reward_enqueue_bonus` | `0.02` | 成功入队奖励 |
+| `reward_queue_full_penalty` | `0.3` | 队列满惩罚 |
+
+## 4. MEC 参数
+
+| 参数 | 当前默认值 |
+| --- | --- |
+| `satellite_cpu_freq_ghz` | `5.0` |
+| `satellite_max_cpu_freq_ghz` | `8.0` |
+| `max_queue_size` | `20` |
+| `user_cpu_freq_ghz` | `0.5` |
+| `user_max_cpu_freq_ghz` | `1.0` |
+
+这些设置会让卫星 MEC 队列存在竞争，同时保留本地计算能力较弱的对比场景。
+
+## 5. HAN 与 MAPPO 参数
+
+| 参数 | 当前默认值 |
+| --- | --- |
 | `han_hidden_dim` | `64` |
 | `han_out_dim` | `64` |
 | `han_num_heads` | `4` |
@@ -45,31 +69,20 @@
 | `han_dropout` | `0.1` |
 | `actor_hidden_dims` | `[256, 128]` |
 | `critic_hidden_dims` | `[256, 256, 128]` |
-
-当前 Actor 的连续卸载比例头使用 `Beta(alpha, beta)` 分布，不再使用早期文档中的 `Normal + clamp` 方案。
-
-## 4. MAPPO 参数
-
-| 参数 | 当前值 |
-|------|--------|
 | `learning_rate` | `3e-4` |
 | `gamma` | `0.99` |
 | `gae_lambda` | `0.95` |
 | `clip_range` | `0.2` |
-| `clip_range_vf` | `0.2` |
 | `value_loss_coef` | `0.5` |
-| `value_loss_type` | `huber` |
-| `normalize_returns` | `true` |
-| `value_huber_beta` | `10.0` |
 | `entropy_coef` | `0.01` |
 | `max_grad_norm` | `0.5` |
 | `n_epochs` | `4` |
 | `batch_size` | `256` |
 
-## 5. 训练调度
+## 6. 训练长度与评估
 
-| 参数 | 当前值 |
-|------|--------|
+| 参数 | 当前默认值 |
+| --- | --- |
 | `total_timesteps` | `1_000_000` |
 | `n_steps` | `2048` |
 | `eval_interval` | `100_000` |
@@ -79,22 +92,63 @@
 | `log_interval` | `1` |
 | `early_stop_patience` | `30` |
 
-## 6. 推荐命令
+## 7. 当前基线对比配置
 
-```bash
-# 使用默认参数复现实验
-python scripts/train.py
+`--baselines all` 默认包含：
 
-# 服务器训练入口，standard 已等价于当前默认实验参数
-python scripts/run_server_training.py --plan standard
+- `random`
+- `min_distance`
+- `full_local`
+- `joint_greedy`
+- `dqn`
+- `mappo_no_han`
 
-# 仅重新生成图表
-python scripts/run_server_training.py --plot_only results/full_train_delay_focus
+已移除：
 
-# 评估已训练模型
-python scripts/train.py --load_path results/full_train_delay_focus/best_model.pt --eval_only
+- `stay`
+- `max_elev`
+- `max_rvt`
+- `threshold_rvt`
+
+DQN 相关参数：
+
+```powershell
+--dqn-offload-grid 0.0 0.5 1.0
+--dqn-timesteps <steps>
 ```
 
-## 7. 一致性说明
+MAPPO 无 HAN 消融相关参数：
 
-当前 `scripts/train.py` 的默认命令行参数、`TrainConfig` 默认值，以及 `scripts/run_server_training.py` 的 `STANDARD_CONFIG` 已与 `full_train_delay_focus` 历史配置逐字段校验一致。`actor_hidden_dims` 和 `critic_hidden_dims` 在 Python 内部是 tuple，写入 JSON 后显示为 list，这是序列化形式差异，不是参数差异。
+```powershell
+--no-han-total-timesteps <steps>
+```
+
+## 8. 推荐复现实验命令
+
+训练主方法：
+
+```powershell
+python scripts\train.py `
+  --num_users 10 `
+  --max_steps 2000 `
+  --total_timesteps 1000000 `
+  --save_path results\full_train_delay_focus
+```
+
+按时延优先指标保存最优模型：
+
+```powershell
+python scripts\train.py `
+  --best-model-metric latency_priority_score `
+  --save_path results\full_train_latency_priority
+```
+
+对比已有系统结果：
+
+```powershell
+python scripts\compare_system_baselines.py `
+  --run-mode compare_only `
+  --system-run-dir results\full_train_latency_priority `
+  --episodes 5 `
+  --compare-ranking-metric latency_priority_score
+```

@@ -14,8 +14,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,8 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 try:
     import matplotlib
@@ -84,12 +87,11 @@ except ModuleNotFoundError:
 
 DEFAULT_BASELINES = [
     "random",
-    "stay",
-    "max_elev",
-    "max_rvt",
     "min_distance",
-    "threshold_rvt",
+    "full_local",
     "joint_greedy",
+    "dqn",
+    "mappo_no_han",
 ]
 
 DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority"
@@ -112,13 +114,11 @@ PRIMARY_COMPARE_METRICS = [
 
 DISPLAY_NAME_MAP = {
     "random": "Random",
-    "stay": "Stay",
-    "max_elev": "Max-Elev",
-    "max_rvt": "Max-RVT",
     "min_distance": "Min-Distance",
-    "threshold_rvt": "Threshold-RVT Adaptive",
-    "threshold_rvt_adaptive": "Threshold-RVT Adaptive",
+    "full_local": "Full-Local",
     "joint_greedy": "Joint Greedy",
+    "dqn": "DQN",
+    "mappo_no_han": "MAPPO (no HAN)",
 }
 
 SUMMARY_METRIC_KEYS = [
@@ -229,12 +229,11 @@ BAR_HATCH_PATTERNS = ["///", "\\\\\\", "xx", "--", "oo", "++", "..", "**"]
 SCATTER_LABEL_OFFSETS = {
     "HAN+MAPPO": (12, -16),
     "Random": (10, 8),
-    "Stay": (10, -10),
-    "Max-Elev": (10, 12),
-    "Max-RVT": (10, -14),
     "Min-Distance": (10, 12),
-    "Threshold-RVT Adaptive": (10, 10),
+    "Full-Local": (10, -10),
     "Joint Greedy": (10, -12),
+    "DQN": (10, 10),
+    "MAPPO (no HAN)": (10, -14),
 }
 
 PAPER_COLORS = {
@@ -301,6 +300,58 @@ def smooth(values: np.ndarray, window: int) -> np.ndarray:
     right = window - 1 - left
     padded = np.pad(values.astype(float), (left, right), mode="edge")
     return np.convolve(padded, kernel, mode="valid")
+
+
+def reward_smooth(values: np.ndarray, window: int) -> tuple[np.ndarray, int]:
+    """Use a lighter reward smoothing window so reward curves retain natural fluctuation."""
+    if len(values) == 0:
+        return values, 0
+    if window <= 1 or len(values) < 3:
+        return values.astype(float), 1
+
+    effective_window = min(int(window), 7, len(values))
+    effective_window = max(effective_window, 3)
+    return smooth(values, effective_window), effective_window
+
+
+def draw_raw_reward_shadow(
+    ax,
+    steps: np.ndarray,
+    raw_rewards: np.ndarray,
+    smoothed_rewards: np.ndarray,
+    color: str,
+    alpha: float = 0.18,
+    label: Optional[str] = None,
+) -> None:
+    """Render raw reward values as a translucent fluctuation area."""
+    if len(raw_rewards) == 0:
+        return
+    fill_alpha = min(alpha * 0.55, 0.12)
+    line_alpha = min(alpha + 0.08, 0.30)
+    ax.fill_between(
+        steps,
+        raw_rewards,
+        smoothed_rewards,
+        color=color,
+        alpha=fill_alpha,
+        linewidth=0,
+        label=label,
+        zorder=1,
+    )
+    ax.plot(steps, raw_rewards, color=color, alpha=line_alpha, linewidth=0.55, zorder=2)
+
+
+def extract_training_reward_curve(training: Sequence[Dict]) -> tuple[np.ndarray, np.ndarray]:
+    """Extract the least-aggregated reward series available for plotting."""
+    steps = np.array([record.get("total_steps", 0) for record in training], dtype=float)
+    rewards = np.array(
+        [
+            record.get("mean_reward", record.get("recent_mean_reward", 0.0))
+            for record in training
+        ],
+        dtype=float,
+    )
+    return steps, rewards
 
 
 def compute_confidence_band(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -533,6 +584,10 @@ def pretty_method_name(name: str, is_system: bool) -> str:
     return DISPLAY_NAME_MAP.get(name, DISPLAY_NAME_MAP.get(base_name, name))
 
 
+def normalize_baseline_name(name: str) -> str:
+    return name.strip().lower().replace("-", "_")
+
+
 def compute_deadline_violation_rate(summary: Dict) -> float:
     resolved_tasks = float(summary.get("resolved_tasks", 0.0))
     return float(summary.get("deadline_violations", 0.0)) / max(resolved_tasks, 1.0)
@@ -716,13 +771,7 @@ class SimpleHeuristicPolicy(BasePolicy):
             return 0
         if self.strategy == "random":
             return int(env.rng.integers(0, len(visible_sats) + 1))
-        if self.strategy == "stay":
-            return 0
-        if self.strategy == "max_elev":
-            target_idx = int(np.argmax([sat.elevation_deg for sat in visible_sats]))
-        elif self.strategy == "max_rvt":
-            target_idx = int(np.argmax([sat.rvt_seconds for sat in visible_sats]))
-        elif self.strategy == "min_distance":
+        if self.strategy == "min_distance":
             target_idx = int(np.argmin([sat.distance_km for sat in visible_sats]))
         else:
             raise ValueError(f"Unknown strategy: {self.strategy}")
@@ -740,89 +789,11 @@ class SimpleHeuristicPolicy(BasePolicy):
         return actions
 
 
-class ThresholdRVTPolicy(BasePolicy):
-    def __init__(
-        self,
-        objective: str,
-        rvt_threshold_sec: float = 60.0,
-        queue_threshold: float = 0.5,
-    ):
-        self.objective = objective
-        self.rvt_threshold_sec = float(rvt_threshold_sec)
-        self.queue_threshold = float(queue_threshold)
-        self.name = "threshold_rvt_adaptive"
-
-    def _objective_name(self) -> str:
-        if self.objective == "delay_only":
-            return "delay"
-        if self.objective == "energy_only":
-            return "energy"
-        return "weighted"
-
-    def _select_offload_ratio(self, env: LEOSatelliteEnv, task, server, vis_info: object) -> float:
-        if task is None or server is None or vis_info is None:
-            return 0.0
-        best_ratio, _ = env.offload_calc.find_optimal_offload_ratio(
-            data_size_bits=task.data_size,
-            computation_cycles=task.computation,
-            max_delay=task.max_delay,
-            distance_km=vis_info.distance_km,
-            elevation_deg=vis_info.elevation_deg,
-            satellite_freq_ghz=server.total_capacity_ghz,
-            objective=self._objective_name(),
-            num_samples=25,
-        )
-        queue_headroom = 1.0 - (
-            server.queue_length / max(server.config.max_queue_size, 1)
-        )
-        return float(np.clip(best_ratio * max(queue_headroom, 0.25), 0.0, 1.0))
+class FullLocalPolicy(BasePolicy):
+    name = "full_local"
 
     def select_actions(self, env: LEOSatelliteEnv) -> np.ndarray:
-        actions = np.zeros((env.num_users, 2), dtype=np.float32)
-        for user_id, user in enumerate(env.user_manager.users):
-            visible_sats = env._get_visible_satellites(user)
-            current_vis = current_visibility(env, user)
-            current_server = env.mec_manager.get_server(user.serving_satellite) if user.serving_satellite >= 0 else None
-
-            should_stay = False
-            if current_vis is not None and current_server is not None:
-                queue_ratio = current_server.queue_length / max(current_server.config.max_queue_size, 1)
-                should_stay = current_vis.rvt_seconds >= self.rvt_threshold_sec and queue_ratio <= self.queue_threshold
-
-            selected_index = 0
-            selected_vis = current_vis
-            if not should_stay and visible_sats:
-                scores = []
-                for sat in visible_sats:
-                    server = env.mec_manager.get_server(sat.sat_id)
-                    queue_headroom = 1.0
-                    if server is not None:
-                        queue_headroom = 1.0 - (
-                            server.queue_length / max(server.config.max_queue_size, 1)
-                        )
-                    snr_score = np.clip(
-                        (env.channel.compute_snr_db(sat.distance_km, sat.elevation_deg) + 5.0) / 30.0,
-                        0.0,
-                        1.0,
-                    )
-                    score = (
-                        0.45 * np.clip(sat.rvt_seconds / max(self.rvt_threshold_sec, 1.0), 0.0, 2.0)
-                        + 0.20 * np.clip(sat.elevation_deg / 90.0, 0.0, 1.0)
-                        + 0.20 * snr_score
-                        + 0.15 * queue_headroom
-                    )
-                    scores.append(score)
-                selected_index = int(np.argmax(scores)) + 1
-                selected_vis = visible_sats[selected_index - 1]
-                if selected_vis.sat_id == user.serving_satellite:
-                    selected_index = 0
-
-            actions[user_id, 0] = selected_index
-            target_sat_id = selected_vis.sat_id if selected_vis is not None else user.serving_satellite
-            target_server = env.mec_manager.get_server(target_sat_id) if target_sat_id >= 0 else None
-            task = env.user_tasks.get(user_id)
-            actions[user_id, 1] = self._select_offload_ratio(env, task, target_server, selected_vis)
-        return actions
+        return np.zeros((env.num_users, 2), dtype=np.float32)
 
 
 class JointGreedyPolicy(BasePolicy):
@@ -1063,11 +1034,218 @@ class JointGreedyPolicy(BasePolicy):
         return actions
 
 
+class DQNNetwork(nn.Module):
+    def __init__(self, obs_dim: int, action_dim: int, hidden_dims: Sequence[int] = (256, 128)):
+        super().__init__()
+        layers: List[nn.Module] = []
+        in_dim = int(obs_dim)
+        for hidden_dim in hidden_dims:
+            layers.extend([nn.Linear(in_dim, int(hidden_dim)), nn.ReLU()])
+            in_dim = int(hidden_dim)
+        layers.append(nn.Linear(in_dim, int(action_dim)))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.net(obs)
+
+
+def dqn_action_mask(env: LEOSatelliteEnv, offload_bins: Sequence[float]) -> np.ndarray:
+    action_dim = (env.max_visible_sats + 1) * len(offload_bins)
+    masks = np.zeros((env.num_users, action_dim), dtype=bool)
+    for user_id, user in enumerate(env.user_manager.users):
+        visible_sats = env._get_visible_satellites(user)
+        valid_handover_count = min(len(visible_sats), env.max_visible_sats)
+        for handover_action in range(valid_handover_count + 1):
+            start = handover_action * len(offload_bins)
+            masks[user_id, start:start + len(offload_bins)] = True
+    return masks
+
+
+def dqn_indices_to_env_actions(indices: np.ndarray, offload_bins: Sequence[float]) -> np.ndarray:
+    bins = np.asarray(offload_bins, dtype=np.float32)
+    num_bins = len(bins)
+    actions = np.zeros((len(indices), 2), dtype=np.float32)
+    actions[:, 0] = indices // num_bins
+    actions[:, 1] = bins[indices % num_bins]
+    return actions
+
+
+def select_dqn_indices(
+    q_net: DQNNetwork,
+    observations: np.ndarray,
+    masks: np.ndarray,
+    epsilon: float,
+    rng: np.random.Generator,
+    device: torch.device,
+) -> np.ndarray:
+    if rng.random() < epsilon:
+        sampled = []
+        for mask in masks:
+            valid = np.flatnonzero(mask)
+            sampled.append(int(rng.choice(valid)) if len(valid) else 0)
+        return np.asarray(sampled, dtype=np.int64)
+
+    with torch.no_grad():
+        obs_tensor = torch.tensor(observations, dtype=torch.float32, device=device)
+        q_values = q_net(obs_tensor).detach().cpu().numpy()
+    q_values = np.where(masks, q_values, -np.inf)
+    return np.argmax(q_values, axis=1).astype(np.int64)
+
+
+def evaluate_dqn_policy(
+    q_net: DQNNetwork,
+    objective: str,
+    config: Dict,
+    episodes: int,
+    seed: int,
+    max_steps: Optional[int],
+    offload_bins: Sequence[float],
+    device: torch.device,
+) -> Dict:
+    env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
+    rewards: List[float] = []
+    summaries: List[Dict] = []
+    rng = np.random.default_rng(seed)
+
+    q_net.eval()
+    for episode_idx in range(episodes):
+        observations, _ = env.reset(seed=seed + episode_idx)
+        done = False
+        episode_reward = 0.0
+        while not done:
+            masks = dqn_action_mask(env, offload_bins)
+            action_indices = select_dqn_indices(q_net, observations, masks, 0.0, rng, device)
+            env_actions = dqn_indices_to_env_actions(action_indices, offload_bins)
+            observations, reward, terminated, truncated, _ = env.step(env_actions)
+            episode_reward += float(reward)
+            done = terminated or truncated
+        rewards.append(episode_reward)
+        summaries.append(env.get_stats_summary())
+
+    return summarize_results("dqn", rewards, summaries, is_system=False)
+
+
+def train_and_evaluate_dqn_baseline(
+    config: Dict,
+    objective: str,
+    output_dir: Path,
+    episodes: int,
+    seed: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    offload_bins: Sequence[float],
+    device_name: str,
+) -> Dict:
+    device = torch.device(resolve_device(device_name))
+    env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
+    obs_dim = int(env.user_obs_dim)
+    clean_bins = [float(np.clip(value, 0.0, 1.0)) for value in offload_bins]
+    clean_bins = sorted(set(clean_bins))
+    if not clean_bins:
+        clean_bins = [0.0]
+    action_dim = (env.max_visible_sats + 1) * len(clean_bins)
+
+    q_net = DQNNetwork(obs_dim, action_dim).to(device)
+    target_net = DQNNetwork(obs_dim, action_dim).to(device)
+    target_net.load_state_dict(q_net.state_dict())
+    optimizer = torch.optim.Adam(q_net.parameters(), lr=1e-3)
+    replay = deque(maxlen=50_000)
+    rng = np.random.default_rng(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    batch_size = 128
+    gamma = 0.99
+    warmup = min(1_000, max(64, total_timesteps // 20))
+    target_update_interval = 500
+    epsilon_start = 1.0
+    epsilon_final = 0.05
+    epsilon_decay_steps = max(total_timesteps * 0.7, 1)
+
+    observations, _ = env.reset(seed=seed)
+    q_net.train()
+    for step_idx in range(max(int(total_timesteps), 0)):
+        progress = min(step_idx / epsilon_decay_steps, 1.0)
+        epsilon = epsilon_start + progress * (epsilon_final - epsilon_start)
+        masks = dqn_action_mask(env, clean_bins)
+        action_indices = select_dqn_indices(q_net, observations, masks, epsilon, rng, device)
+        env_actions = dqn_indices_to_env_actions(action_indices, clean_bins)
+        next_observations, reward, terminated, truncated, _ = env.step(env_actions)
+        done = bool(terminated or truncated)
+        next_masks = dqn_action_mask(env, clean_bins) if not done else np.zeros_like(masks)
+
+        for user_id in range(env.num_users):
+            replay.append(
+                (
+                    observations[user_id].astype(np.float32, copy=True),
+                    int(action_indices[user_id]),
+                    float(reward),
+                    next_observations[user_id].astype(np.float32, copy=True),
+                    bool(done),
+                    next_masks[user_id].astype(bool, copy=True),
+                )
+            )
+
+        observations = next_observations
+        if done:
+            observations, _ = env.reset(seed=seed + step_idx + 1)
+
+        if len(replay) >= max(batch_size, warmup):
+            batch = random.sample(replay, batch_size)
+            obs_b = torch.tensor(np.stack([item[0] for item in batch]), dtype=torch.float32, device=device)
+            action_b = torch.tensor([item[1] for item in batch], dtype=torch.long, device=device)
+            reward_b = torch.tensor([item[2] for item in batch], dtype=torch.float32, device=device)
+            next_obs_b = torch.tensor(np.stack([item[3] for item in batch]), dtype=torch.float32, device=device)
+            done_b = torch.tensor([item[4] for item in batch], dtype=torch.float32, device=device)
+            next_mask_b = torch.tensor(np.stack([item[5] for item in batch]), dtype=torch.bool, device=device)
+
+            q_selected = q_net(obs_b).gather(1, action_b.unsqueeze(1)).squeeze(1)
+            with torch.no_grad():
+                next_q = target_net(next_obs_b).masked_fill(~next_mask_b, -1e9).max(dim=1).values
+                target = reward_b + gamma * (1.0 - done_b) * next_q
+            loss = F.smooth_l1_loss(q_selected, target)
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(q_net.parameters(), 1.0)
+            optimizer.step()
+
+        if (step_idx + 1) % target_update_interval == 0:
+            target_net.load_state_dict(q_net.state_dict())
+
+    result = evaluate_dqn_policy(
+        q_net=q_net,
+        objective=objective,
+        config=config,
+        episodes=episodes,
+        seed=seed,
+        max_steps=max_steps,
+        offload_bins=clean_bins,
+        device=device,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["offload_grid"] = clean_bins
+    checkpoint_dir = output_dir / "learned_baselines" / "dqn"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / "dqn_model.pt"
+    torch.save(
+        {
+            "q_state_dict": q_net.state_dict(),
+            "obs_dim": obs_dim,
+            "action_dim": action_dim,
+            "offload_bins": clean_bins,
+            "trained_timesteps": int(total_timesteps),
+        },
+        checkpoint_path,
+    )
+    result["checkpoint"] = str(checkpoint_path)
+    return result
+
+
 def build_policy(name: str, objective: str, fixed_offload: float, joint_offload_grid: Sequence[float]) -> BasePolicy:
-    if name in {"random", "stay", "max_elev", "max_rvt", "min_distance"}:
+    if name in {"random", "min_distance"}:
         return SimpleHeuristicPolicy(name, fixed_offload)
-    if name == "threshold_rvt":
-        return ThresholdRVTPolicy(objective=objective)
+    if name == "full_local":
+        return FullLocalPolicy()
     if name == "joint_greedy":
         return JointGreedyPolicy(objective=objective, offload_grid=joint_offload_grid)
     raise ValueError(f"Unknown baseline: {name}")
@@ -1154,6 +1332,50 @@ def trainer_class_for_objective(objective: str):
             raise ModuleNotFoundError("energy_only objective requires scripts/train_energy_only.py")
         return EnergyOnlyTrainer
     return HANMAPPOTrainer
+
+
+class NoHANTrainerMixin:
+    """Mixin for MAPPO ablations that bypass the HAN graph encoder."""
+
+    def _init_environment(self):
+        super()._init_environment()
+        self.han_out_dim = self.raw_obs_dim
+        self.obs_dim = self.raw_obs_dim
+        self.global_state_dim = self.num_agents * self.obs_dim
+        self.logger.info("  - HAN ablation: using raw environment observations")
+        self.logger.info(f"  - No-HAN observation dim: {self.obs_dim}")
+
+    def _init_han_encoder(self):
+        self.han_encoder = nn.Identity().to(self.device)
+
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        observations = self.env._get_observation().astype(np.float32, copy=False)
+        available_actions = np.zeros((self.num_agents, self.max_candidates + 1), dtype=np.float32)
+        available_actions[:, 0] = 1.0
+        for uid, user in enumerate(self.env.user_manager.users):
+            visible_sats = self.env._get_visible_satellites(user)
+            valid_count = min(len(visible_sats), self.max_candidates)
+            if valid_count > 0:
+                available_actions[uid, 1:valid_count + 1] = 1.0
+
+        satellite_embeddings = np.zeros((self.env.num_satellites, self.han_out_dim), dtype=np.float32)
+        return observations, satellite_embeddings, available_actions
+
+
+class NoHANMAPPOTrainer(NoHANTrainerMixin, HANMAPPOTrainer):
+    """Default multi-objective MAPPO ablation without HAN embeddings."""
+
+
+def no_han_trainer_class_for_objective(objective: str):
+    base_cls = trainer_class_for_objective(objective)
+    if base_cls is HANMAPPOTrainer:
+        return NoHANMAPPOTrainer
+
+    class ObjectiveNoHANTrainer(NoHANTrainerMixin, base_cls):
+        """Objective-specific MAPPO ablation without HAN embeddings."""
+
+    ObjectiveNoHANTrainer.__name__ = f"NoHAN{base_cls.__name__}"
+    return ObjectiveNoHANTrainer
 
 
 def train_config_from_dict(
@@ -1287,6 +1509,113 @@ def evaluate_system_checkpoint(
 
     method_name = str(config_data.get("exp_name", checkpoint.parent.name or "system"))
     return summarize_results(method_name, rewards, summaries, is_system=True)
+
+
+def evaluate_mappo_checkpoint_with_trainer(
+    checkpoint: Path,
+    config_data: Dict,
+    episodes: int,
+    device: str,
+    max_steps: Optional[int],
+    trainer_cls,
+    method_name: str,
+    is_system: bool = False,
+) -> Dict:
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        save_path=checkpoint.parent,
+        load_path=checkpoint,
+    )
+    trainer = trainer_cls(config)
+    checkpoint_payload = torch_load_trusted_checkpoint(checkpoint, map_location=trainer.device)
+    trainer.total_steps = checkpoint_payload.get("total_steps", trainer.total_steps)
+    trainer.episodes = checkpoint_payload.get("episodes", trainer.episodes)
+    trainer.best_reward = checkpoint_payload.get("best_reward", trainer.best_reward)
+    if "best_model_metric" in checkpoint_payload:
+        trainer.config.best_model_metric = checkpoint_payload["best_model_metric"]
+    trainer.mappo.actor.load_state_dict(checkpoint_payload["actor_state_dict"])
+    trainer.mappo.critic.load_state_dict(checkpoint_payload["critic_state_dict"])
+    if "han_state_dict" in checkpoint_payload and hasattr(trainer.han_encoder, "load_state_dict"):
+        trainer.han_encoder.load_state_dict(checkpoint_payload["han_state_dict"], strict=False)
+
+    rewards: List[float] = []
+    summaries: List[Dict] = []
+
+    for episode_idx in range(episodes):
+        trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
+        observations, satellite_embeddings, available_actions = trainer._encode_graph_state()
+        done = False
+        episode_reward = 0.0
+
+        while not done:
+            with torch.no_grad():
+                actions, _, _ = trainer.mappo.act(
+                    observations,
+                    available_actions,
+                    satellite_embeddings=satellite_embeddings,
+                    deterministic=True,
+                )
+
+            env_actions = trainer._process_actions(actions)
+            _, reward, terminated, truncated, _ = trainer.env.step(
+                env_actions,
+                return_observation=False,
+                return_info=False,
+            )
+            episode_reward += float(reward)
+            done = terminated or truncated
+
+            if not done:
+                observations, satellite_embeddings, available_actions = trainer._encode_graph_state()
+
+        rewards.append(episode_reward)
+        summaries.append(trainer.env.get_stats_summary())
+
+    return summarize_results(method_name, rewards, summaries, is_system=is_system)
+
+
+def train_and_evaluate_no_han_mappo(
+    config_data: Dict,
+    objective: str,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+) -> Dict:
+    save_dir = output_dir / "learned_baselines" / "mappo_no_han"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    trainer_cls = no_han_trainer_class_for_objective(objective)
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        save_path=save_dir,
+        exp_name="mappo_no_han",
+    )
+    trainer = trainer_cls(config)
+    trainer.train()
+    checkpoint = save_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = save_dir / "final_model.pt"
+    result = evaluate_mappo_checkpoint_with_trainer(
+        checkpoint=checkpoint,
+        config_data=asdict(config),
+        episodes=episodes,
+        device=resolve_device(device),
+        max_steps=max_steps,
+        trainer_cls=trainer_cls,
+        method_name="mappo_no_han",
+        is_system=False,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint)
+    return result
 
 
 def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
@@ -1472,7 +1801,8 @@ def method_tick_label(method: Dict) -> str:
         "HAN+MAPPO": "HAN+\nMAPPO",
         "Joint Greedy": "Joint\nGreedy",
         "Min-Distance": "Min-\nDistance",
-        "Threshold-RVT Adaptive": "Threshold-RVT\nAdaptive",
+        "Full-Local": "Full-\nLocal",
+        "MAPPO (no HAN)": "MAPPO\n(no HAN)",
     }
     return replacements.get(label, label)
 
@@ -1583,21 +1913,27 @@ def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[
     if not training:
         return False
 
-    steps = np.array([record.get("total_steps", 0) for record in training], dtype=float)
-    rewards = np.array([record.get("recent_mean_reward", 0.0) for record in training], dtype=float)
+    steps, rewards = extract_training_reward_curve(training)
 
-    mean_reward, lower_reward, upper_reward = compute_confidence_band(rewards, window=max(window, 3))
+    mean_reward, effective_window = reward_smooth(rewards, window=max(window, 3))
     system_color = SYSTEM_STYLE["color"]
-    ax.plot(steps, rewards, color=system_color, alpha=0.16, linewidth=1.0)
-    ax.fill_between(
+    draw_raw_reward_shadow(
+        ax,
         steps,
-        lower_reward,
-        upper_reward,
-        color=system_color,
-        alpha=0.18,
-        label="HAN+MAPPO variance",
+        rewards,
+        mean_reward,
+        system_color,
+        alpha=0.20,
+        label="HAN+MAPPO raw reward",
     )
-    ax.plot(steps, mean_reward, color=system_color, linewidth=3.0, label="HAN+MAPPO")
+    ax.plot(
+        steps,
+        mean_reward,
+        color=system_color,
+        linewidth=3.0,
+        zorder=3,
+        label=f"HAN+MAPPO smoothed (w={effective_window})",
+    )
 
     if evaluation:
         eval_steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
@@ -2057,6 +2393,12 @@ def parse_args() -> argparse.Namespace:
                         help="Offload candidates for simple heuristic baselines.")
     parser.add_argument("--joint-offload-grid", type=float, nargs="+", default=[0.0, 0.25, 0.5, 0.75, 1.0],
                         help="Offload grid used by the joint greedy baseline.")
+    parser.add_argument("--dqn-offload-grid", type=float, nargs="+", default=[0.0, 0.5, 1.0],
+                        help="Discrete offload grid used by the DQN baseline.")
+    parser.add_argument("--dqn-timesteps", type=int, default=None,
+                        help="Training steps for the DQN baseline. Defaults to --total-timesteps.")
+    parser.add_argument("--no-han-total-timesteps", type=int, default=None,
+                        help="Training steps for the MAPPO(no-HAN) ablation. Defaults to --total-timesteps.")
     parser.add_argument("--skip-system-eval", action="store_true",
                         help="Skip checkpoint evaluation and only use history summary when available.")
     parser.add_argument("--plot-window", type=int, default=DEFAULT_PLOT_WINDOW,
@@ -2069,7 +2411,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     setup_publication_style()
-    baselines = DEFAULT_BASELINES if "all" in args.baselines else args.baselines
+    requested_baselines = [normalize_baseline_name(name) for name in args.baselines]
+    baselines = DEFAULT_BASELINES if "all" in requested_baselines else requested_baselines
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "results" / "baseline_compare" / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2134,7 +2477,7 @@ def main() -> None:
         methods.append(system_method)
 
     for baseline_name in baselines:
-        if baseline_name in {"random", "stay", "max_elev", "max_rvt", "min_distance"}:
+        if baseline_name in {"random", "min_distance"}:
             result = evaluate_simple_heuristic_with_offload_search(
                 strategy=baseline_name,
                 objective=objective,
@@ -2145,6 +2488,31 @@ def main() -> None:
                 offload_grid=args.fixed_offload_grid,
                 selection_metric_name=args.compare_ranking_metric,
             )
+            result["source"] = "heuristic_eval"
+        elif baseline_name == "dqn":
+            result = train_and_evaluate_dqn_baseline(
+                config=config_data,
+                objective=objective,
+                output_dir=output_dir,
+                episodes=args.episodes,
+                seed=args.seed,
+                max_steps=args.max_steps,
+                total_timesteps=args.dqn_timesteps or args.total_timesteps,
+                offload_bins=args.dqn_offload_grid,
+                device_name=args.device,
+            )
+            result["source"] = "dqn_train_eval"
+        elif baseline_name == "mappo_no_han":
+            result = train_and_evaluate_no_han_mappo(
+                config_data=config_data,
+                objective=objective,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.no_han_total_timesteps or args.total_timesteps,
+            )
+            result["source"] = "mappo_no_han_train_eval"
         else:
             policy = build_policy(
                 name=baseline_name,
@@ -2160,7 +2528,7 @@ def main() -> None:
                 seed=args.seed,
                 max_steps=args.max_steps,
             )
-        result["source"] = "heuristic_eval"
+            result["source"] = "heuristic_eval"
         methods.append(result)
 
     methods = annotate_priority_metrics(methods, metric_name=args.compare_ranking_metric)

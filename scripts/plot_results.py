@@ -32,7 +32,6 @@ python scripts/plot_results.py --window 50
 ```
 """
 
-import os
 import sys
 import json
 import argparse
@@ -129,6 +128,30 @@ def smooth(data: np.ndarray, window: int = 10) -> np.ndarray:
         return np.convolve(data, kernel, mode='same')
 
 
+def reward_smooth(data: np.ndarray, window: int = 10) -> Tuple[np.ndarray, int]:
+    """Use a lighter reward smoothing window so the curve keeps realistic oscillation."""
+    if len(data) == 0:
+        return data, 0
+    if window <= 1 or len(data) < 3:
+        return data.astype(float), 1
+
+    effective_window = min(int(window), 7, len(data))
+    effective_window = max(effective_window, 3)
+    return smooth(data, effective_window), effective_window
+
+
+def plot_reward_shadow(ax, steps: np.ndarray, raw: np.ndarray, smoothed: np.ndarray,
+                       color: str, alpha: float = 0.18, label: Optional[str] = None):
+    """Render raw reward fluctuations as the shaded area around the smoothed line."""
+    if len(raw) == 0:
+        return
+    fill_alpha = min(alpha * 0.55, 0.12)
+    line_alpha = min(alpha + 0.08, 0.30)
+    ax.fill_between(steps, raw, smoothed, color=color, alpha=fill_alpha,
+                    linewidth=0, label=label, zorder=1)
+    ax.plot(steps, raw, color=color, alpha=line_alpha, linewidth=0.55, zorder=2)
+
+
 def compute_confidence_band(data: np.ndarray, window: int = 10
                             ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -168,6 +191,16 @@ def extract_series(records: List[Dict], key: str) -> Tuple[np.ndarray, np.ndarra
     return steps, values
 
 
+def extract_reward_series(records: List[Dict]) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract the least-aggregated reward series available for plotting."""
+    steps = np.array([r['total_steps'] for r in records])
+    values = np.array([
+        r.get('mean_reward', r.get('recent_mean_reward', 0))
+        for r in records
+    ], dtype=float)
+    return steps, values
+
+
 def format_steps(x, _):
     """将步数格式化为 K/M 单位"""
     if x >= 1e6:
@@ -203,20 +236,21 @@ def plot_reward_curve(records: List[Dict], window: int, save_dir: Path,
     - 滑动平均（深色）
     - 置信区间（阴影）
     """
-    steps, rewards = extract_series(records, 'recent_mean_reward')
+    steps, rewards = extract_reward_series(records)
     
     fig, ax = plt.subplots(figsize=(8, 5))
     
     # 原始数据（浅色散点）
-    ax.plot(steps, rewards, alpha=0.25, color=COLORS['primary'], linewidth=0.8,
-            label='Raw Reward')
+    mean, effective_window = reward_smooth(rewards, window)
+    plot_reward_shadow(
+        ax, steps, rewards, mean, COLORS['primary'],
+        alpha=0.20,
+        label='Raw Reward (shadow)',
+    )
     
     # 滑动平均 + 置信区间
-    mean, lower, upper = compute_confidence_band(rewards, window)
-    ax.fill_between(steps, lower, upper, alpha=COLORS['fill_alpha'],
-                    color=COLORS['primary'])
-    ax.plot(steps, mean, color=COLORS['primary'], linewidth=2.0,
-            label=f'Moving Avg (w={window})')
+    ax.plot(steps, mean, color=COLORS['primary'], linewidth=2.0, zorder=3,
+            label=f'Light Moving Avg (w={effective_window})')
     
     ax.set_xlabel('Training Steps')
     if objective == 'delay_only':
@@ -504,7 +538,7 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     fig = plt.figure(figsize=(18, 10))
     gs = gridspec.GridSpec(2, 3, hspace=0.35, wspace=0.35)
     
-    steps, rewards = extract_series(records, 'recent_mean_reward')
+    steps, rewards = extract_reward_series(records)
     _, actor_loss = extract_series(records, 'actor_loss')
     _, critic_loss = extract_series(records, 'critic_loss')
     _, entropy = extract_series(records, 'entropy')
@@ -518,9 +552,9 @@ def plot_dashboard(records: List[Dict], eval_records: List[Dict],
     
     # ---- (0,0) 奖励曲线 ----
     ax = fig.add_subplot(gs[0, 0])
-    ax.plot(steps, rewards, alpha=0.2, color=COLORS['primary'], linewidth=0.6)
-    mean_r = smooth(rewards, window)
-    ax.plot(steps, mean_r, color=COLORS['primary'], linewidth=2)
+    mean_r, _ = reward_smooth(rewards, window)
+    plot_reward_shadow(ax, steps, rewards, mean_r, COLORS['primary'], alpha=0.16)
+    ax.plot(steps, mean_r, color=COLORS['primary'], linewidth=2, zorder=3)
     if objective == 'delay_only':
         reward_title = 'Delay Objective Reward'
         reward_ylabel = '-ΔDelay Reward'
@@ -668,16 +702,17 @@ def plot_comparison(history_paths: List[str], window: int, save_dir: Path):
             print(f"  ⚠ 无训练数据: {path}")
             continue
         
-        steps, rewards = extract_series(records, 'recent_mean_reward')
+        steps, rewards = extract_reward_series(records)
         color = PALETTE[i % len(PALETTE)]
         
         # 提取实验名
         config = data.get('config', {})
         label = config.get('exp_name', Path(path).parent.name)
         
-        ax.plot(steps, rewards, alpha=0.15, color=color, linewidth=0.5)
-        mean_r = smooth(rewards, window)
-        ax.plot(steps, mean_r, color=color, linewidth=2.0, label=label)
+        mean_r, effective_window = reward_smooth(rewards, window)
+        plot_reward_shadow(ax, steps, rewards, mean_r, color, alpha=0.14)
+        ax.plot(steps, mean_r, color=color, linewidth=2.0, zorder=3,
+                label=f'{label} (w={effective_window})')
     
     ax.set_xlabel('Training Steps')
     ax.set_ylabel('Mean Episode Reward')
@@ -826,7 +861,7 @@ def plot_dashboard_publication(records: List[Dict], eval_records: List[Dict],
     fig = plt.figure(figsize=(16.5, 9.2))
     gs = gridspec.GridSpec(2, 3, hspace=0.38, wspace=0.32)
 
-    steps, rewards = extract_series(records, 'recent_mean_reward')
+    steps, rewards = extract_reward_series(records)
     _, actor_loss = extract_series(records, 'actor_loss')
     _, critic_loss = extract_series(records, 'critic_loss')
     _, entropy = extract_series(records, 'entropy')
@@ -843,10 +878,9 @@ def plot_dashboard_publication(records: List[Dict], eval_records: List[Dict],
     final_eval = eval_records[-1] if eval_records else {}
 
     ax = fig.add_subplot(gs[0, 0])
-    reward_mean, reward_low, reward_high = compute_confidence_band(rewards, window)
-    ax.fill_between(steps, reward_low, reward_high, color=COLORS['primary'], alpha=0.12)
-    ax.plot(steps, rewards, alpha=0.10, color=COLORS['primary'], linewidth=0.8)
-    ax.plot(steps, reward_mean, color=COLORS['primary'], linewidth=2.2)
+    reward_mean, _ = reward_smooth(rewards, window)
+    plot_reward_shadow(ax, steps, rewards, reward_mean, COLORS['primary'], alpha=0.16)
+    ax.plot(steps, reward_mean, color=COLORS['primary'], linewidth=2.2, zorder=3)
     if objective == 'delay_only':
         reward_title = 'Delay-Objective Convergence'
         reward_ylabel = 'Objective Reward'
