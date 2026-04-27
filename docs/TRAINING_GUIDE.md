@@ -74,7 +74,7 @@ python scripts\train.py
 python scripts\train.py `
   --num_users 10 `
   --max_steps 2000 `
-  --total_timesteps 1000000 `
+  --total_timesteps 1200000 `
   --learning_rate 3e-4 `
   --batch_size 256 `
   --n_epochs 4 `
@@ -104,7 +104,7 @@ python scripts\train.py `
 | --- | --- | --- |
 | `--num_users` | `10` | 用户数量 |
 | `--max_steps` | `2000` | 每个 episode 最大步数 |
-| `--total_timesteps` | `1000000` | 总训练步数 |
+| `--total_timesteps` | `1200000` | 总训练步数 |
 | `--n_steps` | `2048` | 每次 MAPPO rollout 步数 |
 | `--learning_rate` | `3e-4` | 学习率 |
 | `--batch_size` | `256` | PPO mini-batch 大小 |
@@ -117,7 +117,7 @@ python scripts\train.py `
 | `--save_interval` | `200000` | checkpoint 保存间隔 |
 | `--save_path` | `results/full_train_delay_focus` | 模型与日志保存目录 |
 | `--best-model-metric` | `reward` | `best_model.pt` 的选择指标 |
-| `--early_stop_patience` | `30` | 连续多少次无提升后 early stop |
+| `--early_stop_patience` | `0` | 连续多少次无提升后 early stop，0 表示禁用 |
 
 可用的 `--best-model-metric` 包括：
 

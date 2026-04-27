@@ -83,14 +83,14 @@ latency_priority_score
 
 | 参数 | 当前默认值 |
 | --- | --- |
-| `total_timesteps` | `1_000_000` |
+| `total_timesteps` | `1_200_000` |
 | `n_steps` | `2048` |
 | `eval_interval` | `100_000` |
 | `eval_episodes` | `3` |
 | `graph_update_interval` | `100` |
 | `save_interval` | `200_000` |
 | `log_interval` | `1` |
-| `early_stop_patience` | `30` |
+| `early_stop_patience` | `0` |
 
 ## 7. 当前基线对比配置
 
@@ -131,7 +131,7 @@ MAPPO 无 HAN 消融相关参数：
 python scripts\train.py `
   --num_users 10 `
   --max_steps 2000 `
-  --total_timesteps 1000000 `
+  --total_timesteps 1200000 `
   --save_path results\full_train_delay_focus
 ```
 

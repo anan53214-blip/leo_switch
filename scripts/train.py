@@ -205,7 +205,7 @@ class TrainConfig:
     batch_size: int = 256                 # 批大小
     
     # ---------- 训练参数 ----------
-    total_timesteps: int = 1_000_000      # 总训练步数
+    total_timesteps: int = 1_200_000      # 总训练步数
     n_steps: int = 2048                   # 每次更新收集步数
     eval_interval: int = 100_000          # 评估间隔
     eval_episodes: int = 3                # 评估episode数
@@ -221,7 +221,7 @@ class TrainConfig:
     load_path: Optional[str] = None       # 加载检查点路径
     
     # ---------- Early Stopping ----------
-    early_stop_patience: int = 30         # 连续N次更新无改善则停止（0=禁用）
+    early_stop_patience: int = 0          # 连续N次更新无改善则停止（0=禁用）
     best_model_metric: str = "reward"     # best_model.pt 的选优指标
 
 
@@ -865,7 +865,7 @@ class HANMAPPOTrainer:
         
         self.training_start_time = time.time()
         
-        num_updates = self.config.total_timesteps // self.config.n_steps
+        num_updates = int(np.ceil(self.config.total_timesteps / self.config.n_steps))
         
         # Early stopping 状态
         es_patience = getattr(self.config, 'early_stop_patience', 0)
@@ -1281,7 +1281,7 @@ def parse_args():
                         help='QoS奖励权重')
     
     # 训练参数
-    parser.add_argument('--total_timesteps', type=int, default=1000000,
+    parser.add_argument('--total_timesteps', type=int, default=1200000,
                         help='总训练步数')
     parser.add_argument('--n_steps', type=int, default=2048,
                         help='每次更新收集步数')
@@ -1317,7 +1317,7 @@ def parse_args():
                         help='每次评估的episode数')
     parser.add_argument('--graph_update_interval', type=int, default=100,
                         help='图重建间隔（步），增大可提速')
-    parser.add_argument('--early_stop_patience', type=int, default=30,
+    parser.add_argument('--early_stop_patience', type=int, default=0,
                         help='连续多少次更新无改善后早停，0表示禁用')
     parser.add_argument('--value_loss_type', type=str, default='huber', choices=['mse', 'huber'],
                         help='Critic损失类型')

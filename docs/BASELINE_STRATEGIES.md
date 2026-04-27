@@ -98,6 +98,12 @@ q_action = (handover_action, discrete_offload_ratio)
 <output_dir>/learned_baselines/dqn/dqn_model.pt
 ```
 
+DQN 训练过程会同时保存到：
+
+```text
+<output_dir>/learned_baselines/dqn/training_history.json
+```
+
 ### 2.6 MAPPO 无 HAN 消融
 
 `mappo_no_han` 是系统方法的结构消融。它保留 MAPPO 算法，但移除 HAN 图编码器，策略直接使用每个用户的原始环境观测。
@@ -197,10 +203,11 @@ results/baseline_compare/<timestamp>/
 - `episode_metrics.csv`
 - `method_comparison.pdf`
 - `reward_curve_vs_baselines.pdf`
-- `baseline_reward_episode_comparison.pdf`
 - `delay_energy_tradeoff.pdf`
 - `reward_distribution.pdf`
 - `paper_baseline_dashboard.pdf`
+
+其中 `reward_curve_vs_baselines.pdf` 和 `paper_baseline_dashboard.pdf` 会把 HAN+MAPPO、DQN、MAPPO(no HAN) 的训练历史画成收敛曲线；学习式算法的平滑曲线统一使用实线并以颜色区分，默认平滑窗口为 5，没有训练历史的启发式基线保留为最终评估 reward 水平线。
 
 学习式基线的产物保存在：
 

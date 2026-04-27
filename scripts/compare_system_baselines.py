@@ -97,7 +97,7 @@ DEFAULT_BASELINES = [
 DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority"
 DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
 DEFAULT_TOTAL_TIMESTEPS = 1_200_000
-DEFAULT_PLOT_WINDOW = 10
+DEFAULT_PLOT_WINDOW = 5
 DEFAULT_SELECTION_METRIC = "latency_priority_score"
 TRAIN_ARTIFACT_FILENAMES = (
     "training_history.json",
@@ -226,6 +226,11 @@ BASELINE_MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
 BASELINE_LINESTYLES = ["--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1)), (0, (1, 1)), (0, (7, 2, 1, 2))]
 BAR_HATCH_PATTERNS = ["///", "\\\\\\", "xx", "--", "oo", "++", "..", "**"]
 
+LEARNED_BASELINE_COLORS = {
+    "dqn": "#4E79A7",
+    "mappo_no_han": "#59A14F",
+}
+
 SCATTER_LABEL_OFFSETS = {
     "HAN+MAPPO": (12, -16),
     "Random": (10, 8),
@@ -352,6 +357,51 @@ def extract_training_reward_curve(training: Sequence[Dict]) -> tuple[np.ndarray,
         dtype=float,
     )
     return steps, rewards
+
+
+def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndarray, np.ndarray, List[Dict]]:
+    if history_path is None or not history_path.exists():
+        return np.array([], dtype=float), np.array([], dtype=float), []
+
+    with history_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    training = payload.get("training", [])
+    if not training:
+        return np.array([], dtype=float), np.array([], dtype=float), payload.get("evaluation", [])
+
+    steps, rewards = extract_training_reward_curve(training)
+    valid_mask = np.isfinite(steps) & np.isfinite(rewards)
+    steps = steps[valid_mask]
+    rewards = rewards[valid_mask]
+    if len(steps) == 0:
+        return steps, rewards, payload.get("evaluation", [])
+
+    order = np.argsort(steps)
+    return steps[order], rewards[order], payload.get("evaluation", [])
+
+
+def method_training_history_path(method: Dict, output_dir: Optional[Path] = None) -> Optional[Path]:
+    for key in ("training_history", "history_path"):
+        value = method.get(key)
+        if value:
+            path = Path(str(value))
+            if path.exists():
+                return path
+
+    checkpoint = method.get("checkpoint")
+    if checkpoint:
+        history_path = Path(str(checkpoint)).parent / "training_history.json"
+        if history_path.exists():
+            return history_path
+
+    method_name = str(method.get("method", ""))
+    if output_dir is not None and method_name:
+        history_path = output_dir / "learned_baselines" / method_name / "training_history.json"
+        if history_path.exists():
+            return history_path
+
+    return None
 
 
 def compute_confidence_band(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -696,7 +746,9 @@ def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
 
         method_name = str(method.get("method", ""))
         display_name = str(method.get("display_name", method_name))
-        if method_name == "joint_greedy" or display_name == "Joint Greedy":
+        if method_name in LEARNED_BASELINE_COLORS:
+            color = LEARNED_BASELINE_COLORS[method_name]
+        elif method_name == "joint_greedy" or display_name == "Joint Greedy":
             color = PAPER_COLORS["primary"]
         else:
             color = BASELINE_COLORS[baseline_index % len(BASELINE_COLORS)]
@@ -1161,6 +1213,12 @@ def train_and_evaluate_dqn_baseline(
     epsilon_start = 1.0
     epsilon_final = 0.05
     epsilon_decay_steps = max(total_timesteps * 0.7, 1)
+    training_records: List[Dict] = []
+    recent_episode_rewards: deque = deque(maxlen=10)
+    recent_losses: deque = deque(maxlen=100)
+    episode_reward = 0.0
+    episode_length = 0
+    episode_count = 0
 
     observations, _ = env.reset(seed=seed)
     q_net.train()
@@ -1173,6 +1231,8 @@ def train_and_evaluate_dqn_baseline(
         next_observations, reward, terminated, truncated, _ = env.step(env_actions)
         done = bool(terminated or truncated)
         next_masks = dqn_action_mask(env, clean_bins) if not done else np.zeros_like(masks)
+        episode_reward += float(reward)
+        episode_length += 1
 
         for user_id in range(env.num_users):
             replay.append(
@@ -1208,9 +1268,45 @@ def train_and_evaluate_dqn_baseline(
             loss.backward()
             nn.utils.clip_grad_norm_(q_net.parameters(), 1.0)
             optimizer.step()
+            recent_losses.append(float(loss.detach().cpu().item()))
 
         if (step_idx + 1) % target_update_interval == 0:
             target_net.load_state_dict(q_net.state_dict())
+
+        if done:
+            episode_count += 1
+            recent_episode_rewards.append(episode_reward)
+            training_records.append(
+                {
+                    "update": episode_count,
+                    "total_steps": step_idx + 1,
+                    "episodes": episode_count,
+                    "mean_reward": episode_reward,
+                    "recent_mean_reward": float(np.mean(recent_episode_rewards)),
+                    "mean_length": float(episode_length),
+                    "epsilon": float(epsilon),
+                    "loss": float(np.mean(recent_losses)) if recent_losses else 0.0,
+                }
+            )
+            episode_reward = 0.0
+            episode_length = 0
+
+    if episode_length > 0:
+        episode_count += 1
+        recent_episode_rewards.append(episode_reward)
+        training_records.append(
+            {
+                "update": episode_count,
+                "total_steps": int(total_timesteps),
+                "episodes": episode_count,
+                "mean_reward": episode_reward,
+                "recent_mean_reward": float(np.mean(recent_episode_rewards)),
+                "mean_length": float(episode_length),
+                "epsilon": float(epsilon_final),
+                "loss": float(np.mean(recent_losses)) if recent_losses else 0.0,
+                "partial_episode": True,
+            }
+        )
 
     result = evaluate_dqn_policy(
         q_net=q_net,
@@ -1226,6 +1322,7 @@ def train_and_evaluate_dqn_baseline(
     result["offload_grid"] = clean_bins
     checkpoint_dir = output_dir / "learned_baselines" / "dqn"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    history_path = checkpoint_dir / "training_history.json"
     checkpoint_path = checkpoint_dir / "dqn_model.pt"
     torch.save(
         {
@@ -1234,10 +1331,34 @@ def train_and_evaluate_dqn_baseline(
             "action_dim": action_dim,
             "offload_bins": clean_bins,
             "trained_timesteps": int(total_timesteps),
+            "training_history": str(history_path),
         },
         checkpoint_path,
     )
+    with history_path.open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "config": {
+                    "method": "dqn",
+                    "objective": objective,
+                    "total_timesteps": int(total_timesteps),
+                    "seed": int(seed),
+                    "max_steps": int(max_steps) if max_steps is not None else None,
+                    "offload_grid": clean_bins,
+                },
+                "training": training_records,
+                "evaluation": result.get("episode_metrics", []),
+                "summary": {
+                    "mean_reward": float(result.get("mean_reward", 0.0)),
+                    "std_reward": float(result.get("std_reward", 0.0)),
+                },
+            },
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
     result["checkpoint"] = str(checkpoint_path)
+    result["training_history"] = str(history_path)
     return result
 
 
@@ -1384,6 +1505,7 @@ def train_config_from_dict(
     max_steps: Optional[int],
     episodes: int,
     total_timesteps: Optional[int] = None,
+    early_stop_patience: Optional[int] = None,
     save_path: Optional[Path] = None,
     exp_name: Optional[str] = None,
     load_path: Optional[Path] = None,
@@ -1397,6 +1519,8 @@ def train_config_from_dict(
         config.max_steps = int(max_steps)
     if total_timesteps is not None:
         config.total_timesteps = int(total_timesteps)
+    if early_stop_patience is not None:
+        config.early_stop_patience = int(early_stop_patience)
     if save_path is not None:
         config.save_path = str(save_path)
     if exp_name:
@@ -1414,6 +1538,7 @@ def run_system_training(
     episodes: int,
     max_steps: Optional[int],
     total_timesteps: int,
+    early_stop_patience: int,
     exp_name: Optional[str],
     resume_checkpoint: Optional[Path],
 ) -> tuple[Path, Optional[Path], Optional[Path], Dict]:
@@ -1425,6 +1550,7 @@ def run_system_training(
         max_steps=max_steps,
         episodes=episodes,
         total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
         save_path=system_run_dir,
         exp_name=exp_name,
         load_path=resume_checkpoint,
@@ -1585,6 +1711,7 @@ def train_and_evaluate_no_han_mappo(
     episodes: int,
     max_steps: Optional[int],
     total_timesteps: int,
+    early_stop_patience: int,
 ) -> Dict:
     save_dir = output_dir / "learned_baselines" / "mappo_no_han"
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -1595,6 +1722,7 @@ def train_and_evaluate_no_han_mappo(
         max_steps=max_steps,
         episodes=episodes,
         total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
         save_path=save_dir,
         exp_name="mappo_no_han",
     )
@@ -1615,6 +1743,9 @@ def train_and_evaluate_no_han_mappo(
     )
     result["trained_timesteps"] = int(total_timesteps)
     result["checkpoint"] = str(checkpoint)
+    history_path = save_dir / "training_history.json"
+    if history_path.exists():
+        result["training_history"] = str(history_path)
     return result
 
 
@@ -1664,6 +1795,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
             float(best_record.get("deadline_violations", 0.0)) / max(float(best_record.get("resolved_tasks", 0.0)), 1.0)
         ),
         "episode_metrics": [],
+        "training_history": str(history_path),
         "source": f"training_history_best_{selection_metric_name}",
     }
     return config_data, result
@@ -1704,6 +1836,7 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "primary_metric_wins_text",
         "selected_offload",
         "method_variant",
+        "training_history",
         "source",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -1901,19 +2034,17 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
     style_axes_frame(ax)
 
 
-def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[Dict], window: int, compact: bool = False) -> bool:
-    if history_path is None or not history_path.exists():
+def draw_reward_curve_panel(
+    ax,
+    history_path: Optional[Path],
+    methods: Sequence[Dict],
+    window: int,
+    compact: bool = False,
+    output_dir: Optional[Path] = None,
+) -> bool:
+    steps, rewards, evaluation = load_training_curve_from_path(history_path)
+    if len(steps) == 0:
         return False
-
-    with history_path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-
-    training = payload.get("training", [])
-    evaluation = payload.get("evaluation", [])
-    if not training:
-        return False
-
-    steps, rewards = extract_training_reward_curve(training)
 
     mean_reward, effective_window = reward_smooth(rewards, window=max(window, 3))
     system_color = SYSTEM_STYLE["color"]
@@ -1952,6 +2083,30 @@ def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[
     baseline_styles = build_method_styles(baseline_methods)
     for method in baseline_methods:
         style = baseline_styles[str(method.get("method", ""))]
+        baseline_history_path = method_training_history_path(method, output_dir=output_dir)
+        baseline_steps, baseline_rewards, _ = load_training_curve_from_path(baseline_history_path)
+        if len(baseline_steps) > 0:
+            baseline_mean, baseline_window = reward_smooth(baseline_rewards, window=max(window, 3))
+            draw_raw_reward_shadow(
+                ax,
+                baseline_steps,
+                baseline_rewards,
+                baseline_mean,
+                style["color"],
+                alpha=0.13 if compact else 0.15,
+            )
+            ax.plot(
+                baseline_steps,
+                baseline_mean,
+                color=style["color"],
+                linestyle="-",
+                linewidth=2.2 if compact else 2.4,
+                alpha=0.97,
+                zorder=3,
+                label=f"{method.get('display_name', method.get('method', ''))} smoothed (w={baseline_window})",
+            )
+            continue
+
         mean_value = float(method.get("mean_reward", 0.0))
         std_value = float(method.get("std_reward", 0.0))
         if std_value > 0.0:
@@ -1973,7 +2128,7 @@ def draw_reward_curve_panel(ax, history_path: Optional[Path], methods: Sequence[
 
     ax.set_xlabel("Training Steps")
     ax.set_ylabel("Mean Reward")
-    ax.set_title("Reward Convergence vs. Heuristic Baseline Levels")
+    ax.set_title("Reward Convergence vs. Baseline Levels")
     ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
     ax.legend(
         loc="lower right" if compact else "best",
@@ -1999,14 +2154,6 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
 
 def methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
     return [method for method in order_methods(methods) if method.get("episode_metrics")]
-
-
-def baseline_methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
-    return [
-        method
-        for method in methods_with_episode_metrics(methods)
-        if not method.get("is_system")
-    ]
 
 
 def plot_episode_metric_curve(
@@ -2048,19 +2195,6 @@ def plot_episode_metric_curve(
     ax.legend(loc="best", fontsize=9, ncol=2)
     fig.tight_layout()
     return save_figure(fig, output_path)
-
-
-def plot_baseline_reward_episode_curve(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
-    baseline_methods = baseline_methods_with_episode_metrics(methods)
-    if not baseline_methods:
-        return None
-    return plot_episode_metric_curve(
-        baseline_methods,
-        metric_key="reward",
-        title="Baseline Reward Comparison Across Evaluation Episodes",
-        ylabel="Episode Reward",
-        output_path=output_dir / "baseline_reward_episode_comparison.pdf",
-    )
 
 
 def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -2207,7 +2341,14 @@ def plot_paper_dashboard(
     grid = gridspec.GridSpec(2, 3, figure=fig, hspace=0.30, wspace=0.26, height_ratios=[1.15, 0.95])
 
     ax_reward = fig.add_subplot(grid[0, :])
-    has_reward_curve = draw_reward_curve_panel(ax_reward, history_path, methods, window=window, compact=True)
+    has_reward_curve = draw_reward_curve_panel(
+        ax_reward,
+        history_path,
+        methods,
+        window=window,
+        compact=True,
+        output_dir=output_dir,
+    )
     if not has_reward_curve:
         ax_reward.axis("off")
         ax_reward.text(
@@ -2266,7 +2407,7 @@ def plot_training_curve_vs_baselines(
     window: int,
 ) -> Optional[Path]:
     fig, ax = plt.subplots(figsize=(11, 6.4), dpi=220)
-    has_curve = draw_reward_curve_panel(ax, history_path, methods, window=window)
+    has_curve = draw_reward_curve_panel(ax, history_path, methods, window=window, output_dir=output_dir)
     if not has_curve:
         plt.close(fig)
         return None
@@ -2372,6 +2513,8 @@ def parse_args() -> argparse.Namespace:
                         help="Override episode length for training/evaluation/baselines.")
     parser.add_argument("--total-timesteps", type=int, default=DEFAULT_TOTAL_TIMESTEPS,
                         help="Total system training steps. Default is 1,200,000 steps.")
+    parser.add_argument("--early-stop-patience", type=int, default=0,
+                        help="Early stopping patience for MAPPO training. Default 0 disables early stopping.")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for baseline evaluation.")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"],
@@ -2451,6 +2594,7 @@ def main() -> None:
             episodes=args.episodes,
             max_steps=args.max_steps,
             total_timesteps=args.total_timesteps,
+            early_stop_patience=args.early_stop_patience,
             exp_name=args.exp_name,
             resume_checkpoint=resume_checkpoint,
         )
@@ -2469,6 +2613,8 @@ def main() -> None:
             max_steps=args.max_steps,
         )
         system_method["source"] = "checkpoint_eval"
+        if history_path and history_path.exists():
+            system_method["training_history"] = str(history_path)
     elif history_path and history_path.exists():
         _, system_method = extract_history_method(history_path)
 
@@ -2511,6 +2657,7 @@ def main() -> None:
                 episodes=args.episodes,
                 max_steps=args.max_steps,
                 total_timesteps=args.no_han_total_timesteps or args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
             )
             result["source"] = "mappo_no_han_train_eval"
         else:
@@ -2561,7 +2708,6 @@ def main() -> None:
         output_dir,
         window=args.plot_window,
     )
-    baseline_reward_episode_plot = plot_baseline_reward_episode_curve(methods, output_dir)
     tradeoff_plot = plot_delay_energy_tradeoff(methods, output_dir)
     reward_distribution_plot = plot_reward_distribution(methods, output_dir)
     dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
@@ -2575,8 +2721,6 @@ def main() -> None:
         print(f"Metric comparison figure: {metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
-    if baseline_reward_episode_plot is not None:
-        print(f"Baseline episode reward figure: {baseline_reward_episode_plot}")
     if tradeoff_plot is not None:
         print(f"Delay-energy trade-off figure: {tradeoff_plot}")
     if reward_distribution_plot is not None:

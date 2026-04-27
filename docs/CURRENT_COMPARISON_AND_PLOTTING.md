@@ -103,11 +103,13 @@ python scripts\compare_system_baselines.py `
 
 Reward 图现在使用：
 
+- HAN+MAPPO、DQN、MAPPO(no HAN) 的训练历史都会画成收敛曲线。
 - 原始 `mean_reward` 作为半透明波动背景。
-- 轻度平滑后的 reward 作为前景实线趋势。
+- 轻度平滑后的 reward 作为前景实线趋势；所有学习式算法的平滑曲线都使用实线，并用不同颜色区分。
 - 当旧历史文件没有 `mean_reward` 时，才回退使用 `recent_mean_reward`。
+- 只有没有训练历史的启发式基线继续画成最终评估 mean reward 水平线。
 
-平滑窗口已做上限限制，避免曲线过于平滑。图中仍会保留适当震荡，使训练过程更接近真实 reward 波动。
+系统默认平滑窗口为 5，并保留上限限制，避免曲线过于平滑。图中仍会保留适当震荡，使训练过程更接近真实 reward 波动。
 
 横轴、纵轴、标题和 tick 格式保持项目原有绘图风格，不套用外部参考图的坐标轴。
 
