@@ -9,9 +9,10 @@
 - `full_local`
 - `joint_greedy`
 - `dqn`
+- `maddpg`
 - `mappo_no_han`
 
-旧的单因素切换规则 `stay`、`max_elev`、`max_rvt`、`threshold_rvt` 已从当前主动对比集合中移除。它们适合早期 sanity check，但彼此重叠较多，也会让论文图显得拥挤。当前集合保留了随机下界、几何规则、本地计算下界、强贪心规则、经典值函数 RL 基线，以及去掉 HAN 的结构消融。
+旧的单因素切换规则 `stay`、`max_elev`、`max_rvt`、`threshold_rvt` 已从当前主动对比集合中移除。它们适合早期 sanity check，但彼此重叠较多，也会让论文图显得拥挤。当前集合保留了随机下界、几何规则、本地计算下界、强贪心规则、经典值函数 RL 基线、连续控制 actor-critic RL 基线，以及去掉 HAN 的结构消融。
 
 ## 1. 系统方法
 
@@ -104,7 +105,35 @@ DQN 训练过程会同时保存到：
 <output_dir>/learned_baselines/dqn/training_history.json
 ```
 
-### 2.6 MAPPO 无 HAN 消融
+### 2.6 MADDPG
+
+`maddpg` 是多智能体确定性策略梯度基线，用来对比另一类 CTDE 学习范式。实现中每个用户共享一个去中心化 actor，根据本地原始观测输出：
+
+```text
+action_i = (handover_distribution_i, offload_ratio_i)
+```
+
+训练时使用集中式 critic 读取所有用户观测和联合动作；执行/评估时先用合法动作 mask 过滤不可见卫星，再选择得分最高的切换候选，并直接使用 actor 输出的连续卸载比例。这样可以在不离散化卸载比例的情况下，对比 DQN 之外的连续控制学习型 baseline。
+
+训练步数默认沿用 `--total-timesteps`，也可以单独指定：
+
+```powershell
+--maddpg-timesteps <steps>
+```
+
+训练后的 MADDPG checkpoint 保存到：
+
+```text
+<output_dir>/learned_baselines/maddpg/maddpg_model.pt
+```
+
+训练过程会同时保存到：
+
+```text
+<output_dir>/learned_baselines/maddpg/training_history.json
+```
+
+### 2.7 MAPPO 无 HAN 消融
 
 `mappo_no_han` 是系统方法的结构消融。它保留 MAPPO 算法，但移除 HAN 图编码器，策略直接使用每个用户的原始环境观测。
 
@@ -163,6 +192,7 @@ python scripts\compare_system_baselines.py `
   --episodes 1 `
   --max-steps 50 `
   --dqn-timesteps 500 `
+  --maddpg-timesteps 500 `
   --no-han-total-timesteps 2048
 ```
 
@@ -183,7 +213,7 @@ python scripts\compare_system_baselines.py `
 python scripts\compare_system_baselines.py `
   --run-mode compare_only `
   --system-run-dir results\full_train_latency_priority `
-  --baselines full-local joint-greedy dqn mappo-no-han
+  --baselines full-local joint-greedy dqn maddpg mappo-no-han
 ```
 
 命令行中可以使用 `full-local`、`mappo-no-han` 这样的连字符写法，脚本内部会规范化为 `full_local`、`mappo_no_han`。
@@ -207,7 +237,7 @@ results/baseline_compare/<timestamp>/
 - `reward_distribution.pdf`
 - `paper_baseline_dashboard.pdf`
 
-其中 `reward_curve_vs_baselines.pdf` 和 `paper_baseline_dashboard.pdf` 会把 HAN+MAPPO、DQN、MAPPO(no HAN) 的训练历史画成收敛曲线；学习式算法的平滑曲线统一使用实线并以颜色区分，默认平滑窗口为 5，没有训练历史的启发式基线保留为最终评估 reward 水平线。
+其中 `reward_curve_vs_baselines.pdf` 和 `paper_baseline_dashboard.pdf` 会把 HAN+MAPPO、DQN、MADDPG、MAPPO(no HAN) 的训练历史画成收敛曲线；学习式算法的平滑曲线统一使用实线并以颜色区分，默认平滑窗口为 5，没有训练历史的启发式基线保留为最终评估 reward 水平线。
 
 学习式基线的产物保存在：
 

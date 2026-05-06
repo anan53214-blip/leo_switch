@@ -91,6 +91,7 @@ DEFAULT_BASELINES = [
     "full_local",
     "joint_greedy",
     "dqn",
+    "maddpg",
     "mappo_no_han",
 ]
 
@@ -118,6 +119,7 @@ DISPLAY_NAME_MAP = {
     "full_local": "Full-Local",
     "joint_greedy": "Joint Greedy",
     "dqn": "DQN",
+    "maddpg": "MADDPG",
     "mappo_no_han": "MAPPO (no HAN)",
 }
 
@@ -228,6 +230,7 @@ BAR_HATCH_PATTERNS = ["///", "\\\\\\", "xx", "--", "oo", "++", "..", "**"]
 
 LEARNED_BASELINE_COLORS = {
     "dqn": "#4E79A7",
+    "maddpg": "#AF7AA1",
     "mappo_no_han": "#59A14F",
 }
 
@@ -238,6 +241,7 @@ SCATTER_LABEL_OFFSETS = {
     "Full-Local": (10, -10),
     "Joint Greedy": (10, -12),
     "DQN": (10, 10),
+    "MADDPG": (10, 12),
     "MAPPO (no HAN)": (10, -14),
 }
 
@@ -1362,6 +1366,423 @@ def train_and_evaluate_dqn_baseline(
     return result
 
 
+class MADDPGActor(nn.Module):
+    def __init__(self, obs_dim: int, handover_dim: int, hidden_dims: Sequence[int] = (256, 128)):
+        super().__init__()
+        layers: List[nn.Module] = []
+        in_dim = int(obs_dim)
+        for hidden_dim in hidden_dims:
+            layers.extend([nn.Linear(in_dim, int(hidden_dim)), nn.ReLU()])
+            in_dim = int(hidden_dim)
+        self.trunk = nn.Sequential(*layers)
+        self.handover_head = nn.Linear(in_dim, int(handover_dim))
+        self.offload_head = nn.Linear(in_dim, 1)
+
+    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        features = self.trunk(obs)
+        handover_logits = self.handover_head(features)
+        offload = torch.sigmoid(self.offload_head(features)).squeeze(-1)
+        return handover_logits, offload
+
+
+class MADDPGCritic(nn.Module):
+    def __init__(
+        self,
+        num_agents: int,
+        obs_dim: int,
+        action_feature_dim: int,
+        hidden_dims: Sequence[int] = (512, 256, 128),
+    ):
+        super().__init__()
+        input_dim = int(num_agents) * (int(obs_dim) + int(action_feature_dim))
+        layers: List[nn.Module] = []
+        in_dim = input_dim
+        for hidden_dim in hidden_dims:
+            layers.extend([nn.Linear(in_dim, int(hidden_dim)), nn.ReLU()])
+            in_dim = int(hidden_dim)
+        layers.append(nn.Linear(in_dim, 1))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, observations: torch.Tensor, action_features: torch.Tensor) -> torch.Tensor:
+        if observations.dim() != 3 or action_features.dim() != 3:
+            raise ValueError("MADDPG critic expects batched tensors shaped (batch, agents, dim).")
+        joint_input = torch.cat(
+            [
+                observations.reshape(observations.shape[0], -1),
+                action_features.reshape(action_features.shape[0], -1),
+            ],
+            dim=-1,
+        )
+        return self.net(joint_input).squeeze(-1)
+
+
+def maddpg_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
+    masks = np.zeros((env.num_users, env.max_visible_sats + 1), dtype=bool)
+    masks[:, 0] = True
+    for user_id, user in enumerate(env.user_manager.users):
+        visible_sats = env._get_visible_satellites(user)
+        valid_count = min(len(visible_sats), env.max_visible_sats)
+        if valid_count > 0:
+            masks[user_id, 1:valid_count + 1] = True
+    return masks
+
+
+def safe_mask_tensor(masks: torch.Tensor) -> torch.Tensor:
+    safe_masks = masks.bool().clone()
+    flat_masks = safe_masks.reshape(-1, safe_masks.shape[-1])
+    empty_rows = ~flat_masks.any(dim=-1)
+    if torch.any(empty_rows):
+        flat_masks[empty_rows, 0] = True
+    return safe_masks
+
+
+def maddpg_actor_action_features(
+    actor: MADDPGActor,
+    observations: torch.Tensor,
+    masks: torch.Tensor,
+) -> torch.Tensor:
+    batch_size, num_agents, obs_dim = observations.shape
+    handover_dim = masks.shape[-1]
+    flat_obs = observations.reshape(batch_size * num_agents, obs_dim)
+    flat_masks = safe_mask_tensor(masks).reshape(batch_size * num_agents, handover_dim)
+    logits, offload = actor(flat_obs)
+    probs = torch.softmax(logits.masked_fill(~flat_masks, -1e9), dim=-1)
+    features = torch.cat([probs, offload.unsqueeze(-1)], dim=-1)
+    return features.reshape(batch_size, num_agents, handover_dim + 1)
+
+
+def maddpg_one_hot_action_features(
+    handover_actions: np.ndarray,
+    offload_ratios: np.ndarray,
+    handover_dim: int,
+) -> np.ndarray:
+    handover = np.clip(np.asarray(handover_actions, dtype=np.int64), 0, handover_dim - 1)
+    offload = np.clip(np.asarray(offload_ratios, dtype=np.float32), 0.0, 1.0)
+    features = np.zeros((len(handover), handover_dim + 1), dtype=np.float32)
+    features[np.arange(len(handover)), handover] = 1.0
+    features[:, -1] = offload
+    return features
+
+
+def random_maddpg_actions(
+    masks: np.ndarray,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    handover_actions = []
+    for mask in masks:
+        valid = np.flatnonzero(mask)
+        handover_actions.append(int(rng.choice(valid)) if len(valid) else 0)
+    handover = np.asarray(handover_actions, dtype=np.int64)
+    offload = rng.random(len(handover), dtype=np.float32)
+    features = maddpg_one_hot_action_features(handover, offload, masks.shape[1])
+    env_actions = np.column_stack([handover, offload]).astype(np.float32)
+    return env_actions, features, handover
+
+
+def select_maddpg_env_actions(
+    actor: MADDPGActor,
+    observations: np.ndarray,
+    masks: np.ndarray,
+    noise_std: float,
+    rng: np.random.Generator,
+    device: torch.device,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    was_training = actor.training
+    actor.eval()
+    with torch.no_grad():
+        obs_tensor = torch.tensor(observations, dtype=torch.float32, device=device)
+        logits, offload = actor(obs_tensor)
+        logits_np = logits.detach().cpu().numpy()
+        offload_np = offload.detach().cpu().numpy()
+
+    if noise_std > 0.0:
+        logits_np = logits_np + rng.normal(0.0, noise_std, size=logits_np.shape)
+        offload_np = offload_np + rng.normal(0.0, noise_std, size=offload_np.shape)
+
+    logits_np = np.where(masks, logits_np, -np.inf)
+    handover = np.argmax(logits_np, axis=1).astype(np.int64)
+    offload_np = np.clip(offload_np, 0.0, 1.0).astype(np.float32)
+    features = maddpg_one_hot_action_features(handover, offload_np, masks.shape[1])
+    env_actions = np.column_stack([handover, offload_np]).astype(np.float32)
+    actor.train(was_training)
+    return env_actions, features, handover
+
+
+def soft_update(source: nn.Module, target: nn.Module, tau: float) -> None:
+    with torch.no_grad():
+        for source_param, target_param in zip(source.parameters(), target.parameters()):
+            target_param.data.mul_(1.0 - tau).add_(source_param.data, alpha=tau)
+
+
+def scalar_reward_value(reward) -> float:
+    if isinstance(reward, (int, float)):
+        return float(reward)
+    if isinstance(reward, dict):
+        return float(np.mean(list(reward.values()))) if reward else 0.0
+    return float(np.mean(np.asarray(reward, dtype=float)))
+
+
+def evaluate_maddpg_policy(
+    actor: MADDPGActor,
+    objective: str,
+    config: Dict,
+    episodes: int,
+    seed: int,
+    max_steps: Optional[int],
+    device: torch.device,
+) -> Dict:
+    env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
+    rewards: List[float] = []
+    summaries: List[Dict] = []
+    rng = np.random.default_rng(seed)
+
+    actor.eval()
+    for episode_idx in range(episodes):
+        observations, _ = env.reset(seed=seed + episode_idx)
+        done = False
+        episode_reward = 0.0
+        while not done:
+            masks = maddpg_action_mask(env)
+            env_actions, _, _ = select_maddpg_env_actions(
+                actor=actor,
+                observations=observations,
+                masks=masks,
+                noise_std=0.0,
+                rng=rng,
+                device=device,
+            )
+            observations, reward, terminated, truncated, _ = env.step(env_actions)
+            episode_reward += scalar_reward_value(reward)
+            done = terminated or truncated
+        rewards.append(episode_reward)
+        summaries.append(env.get_stats_summary())
+
+    return summarize_results("maddpg", rewards, summaries, is_system=False)
+
+
+def train_and_evaluate_maddpg_baseline(
+    config: Dict,
+    objective: str,
+    output_dir: Path,
+    episodes: int,
+    seed: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    device_name: str,
+) -> Dict:
+    device = torch.device(resolve_device(device_name))
+    env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
+    obs_dim = int(env.user_obs_dim)
+    num_agents = int(env.num_users)
+    handover_dim = int(env.max_visible_sats + 1)
+    action_feature_dim = handover_dim + 1
+
+    actor = MADDPGActor(obs_dim, handover_dim).to(device)
+    target_actor = MADDPGActor(obs_dim, handover_dim).to(device)
+    critic = MADDPGCritic(num_agents, obs_dim, action_feature_dim).to(device)
+    target_critic = MADDPGCritic(num_agents, obs_dim, action_feature_dim).to(device)
+    target_actor.load_state_dict(actor.state_dict())
+    target_critic.load_state_dict(critic.state_dict())
+
+    actor_optimizer = torch.optim.Adam(actor.parameters(), lr=5e-4)
+    critic_optimizer = torch.optim.Adam(critic.parameters(), lr=1e-3)
+    replay = deque(maxlen=50_000)
+    rng = np.random.default_rng(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    batch_size = 128
+    gamma = 0.99
+    tau = 0.01
+    warmup = min(1_000, max(64, total_timesteps // 20))
+    noise_start = 0.35
+    noise_final = 0.05
+    noise_decay_steps = max(total_timesteps * 0.7, 1)
+    training_records: List[Dict] = []
+    recent_episode_rewards: deque = deque(maxlen=10)
+    recent_actor_losses: deque = deque(maxlen=100)
+    recent_critic_losses: deque = deque(maxlen=100)
+    episode_reward = 0.0
+    episode_length = 0
+    episode_count = 0
+
+    observations, _ = env.reset(seed=seed)
+    actor.train()
+    critic.train()
+    for step_idx in range(max(int(total_timesteps), 0)):
+        progress = min(step_idx / noise_decay_steps, 1.0)
+        noise_std = noise_start + progress * (noise_final - noise_start)
+        masks = maddpg_action_mask(env)
+        if step_idx < warmup:
+            env_actions, action_features, _ = random_maddpg_actions(masks, rng)
+        else:
+            env_actions, action_features, _ = select_maddpg_env_actions(
+                actor=actor,
+                observations=observations,
+                masks=masks,
+                noise_std=float(noise_std),
+                rng=rng,
+                device=device,
+            )
+
+        next_observations, reward, terminated, truncated, _ = env.step(env_actions)
+        done = bool(terminated or truncated)
+        reward_value = scalar_reward_value(reward)
+        next_masks = maddpg_action_mask(env) if not done else np.zeros_like(masks)
+        replay.append(
+            (
+                observations.astype(np.float32, copy=True),
+                action_features.astype(np.float32, copy=True),
+                float(reward_value),
+                next_observations.astype(np.float32, copy=True),
+                bool(done),
+                masks.astype(bool, copy=True),
+                next_masks.astype(bool, copy=True),
+            )
+        )
+
+        observations = next_observations
+        episode_reward += reward_value
+        episode_length += 1
+
+        if len(replay) >= max(batch_size, warmup):
+            batch = random.sample(replay, batch_size)
+            obs_b = torch.tensor(np.stack([item[0] for item in batch]), dtype=torch.float32, device=device)
+            action_b = torch.tensor(np.stack([item[1] for item in batch]), dtype=torch.float32, device=device)
+            reward_b = torch.tensor([item[2] for item in batch], dtype=torch.float32, device=device)
+            next_obs_b = torch.tensor(np.stack([item[3] for item in batch]), dtype=torch.float32, device=device)
+            done_b = torch.tensor([item[4] for item in batch], dtype=torch.float32, device=device)
+            mask_b = torch.tensor(np.stack([item[5] for item in batch]), dtype=torch.bool, device=device)
+            next_mask_b = torch.tensor(np.stack([item[6] for item in batch]), dtype=torch.bool, device=device)
+
+            with torch.no_grad():
+                next_action_b = maddpg_actor_action_features(target_actor, next_obs_b, next_mask_b)
+                target_q = target_critic(next_obs_b, next_action_b)
+                target = reward_b + gamma * (1.0 - done_b) * target_q
+
+            q_values = critic(obs_b, action_b)
+            critic_loss = F.mse_loss(q_values, target)
+            critic_optimizer.zero_grad()
+            critic_loss.backward()
+            nn.utils.clip_grad_norm_(critic.parameters(), 1.0)
+            critic_optimizer.step()
+
+            for param in critic.parameters():
+                param.requires_grad_(False)
+            actor_action_b = maddpg_actor_action_features(actor, obs_b, mask_b)
+            actor_loss = -critic(obs_b, actor_action_b).mean()
+            actor_optimizer.zero_grad()
+            actor_loss.backward()
+            nn.utils.clip_grad_norm_(actor.parameters(), 1.0)
+            actor_optimizer.step()
+            for param in critic.parameters():
+                param.requires_grad_(True)
+
+            soft_update(actor, target_actor, tau)
+            soft_update(critic, target_critic, tau)
+            recent_actor_losses.append(float(actor_loss.detach().cpu().item()))
+            recent_critic_losses.append(float(critic_loss.detach().cpu().item()))
+
+        if done:
+            episode_count += 1
+            recent_episode_rewards.append(episode_reward)
+            training_records.append(
+                {
+                    "update": episode_count,
+                    "total_steps": step_idx + 1,
+                    "episodes": episode_count,
+                    "mean_reward": episode_reward,
+                    "recent_mean_reward": float(np.mean(recent_episode_rewards)),
+                    "mean_length": float(episode_length),
+                    "exploration_noise": float(noise_std),
+                    "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
+                    "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
+                }
+            )
+            observations, _ = env.reset(seed=seed + step_idx + 1)
+            episode_reward = 0.0
+            episode_length = 0
+
+    if episode_length > 0:
+        episode_count += 1
+        recent_episode_rewards.append(episode_reward)
+        training_records.append(
+            {
+                "update": episode_count,
+                "total_steps": int(total_timesteps),
+                "episodes": episode_count,
+                "mean_reward": episode_reward,
+                "recent_mean_reward": float(np.mean(recent_episode_rewards)),
+                "mean_length": float(episode_length),
+                "exploration_noise": float(noise_final),
+                "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
+                "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
+                "partial_episode": True,
+            }
+        )
+
+    result = evaluate_maddpg_policy(
+        actor=actor,
+        objective=objective,
+        config=config,
+        episodes=episodes,
+        seed=seed,
+        max_steps=max_steps,
+        device=device,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    checkpoint_dir = output_dir / "learned_baselines" / "maddpg"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    history_path = checkpoint_dir / "training_history.json"
+    checkpoint_path = checkpoint_dir / "maddpg_model.pt"
+    torch.save(
+        {
+            "actor_state_dict": actor.state_dict(),
+            "critic_state_dict": critic.state_dict(),
+            "target_actor_state_dict": target_actor.state_dict(),
+            "target_critic_state_dict": target_critic.state_dict(),
+            "obs_dim": obs_dim,
+            "num_agents": num_agents,
+            "handover_dim": handover_dim,
+            "action_feature_dim": action_feature_dim,
+            "trained_timesteps": int(total_timesteps),
+            "training_history": str(history_path),
+        },
+        checkpoint_path,
+    )
+    with history_path.open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "config": {
+                    "method": "maddpg",
+                    "objective": objective,
+                    "total_timesteps": int(total_timesteps),
+                    "seed": int(seed),
+                    "max_steps": int(max_steps) if max_steps is not None else None,
+                    "actor_lr": 5e-4,
+                    "critic_lr": 1e-3,
+                    "gamma": gamma,
+                    "tau": tau,
+                    "noise_start": noise_start,
+                    "noise_final": noise_final,
+                    "parameter_sharing": True,
+                },
+                "training": training_records,
+                "evaluation": result.get("episode_metrics", []),
+                "summary": {
+                    "mean_reward": float(result.get("mean_reward", 0.0)),
+                    "std_reward": float(result.get("std_reward", 0.0)),
+                },
+            },
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
+    result["checkpoint"] = str(checkpoint_path)
+    result["training_history"] = str(history_path)
+    return result
+
+
 def build_policy(name: str, objective: str, fixed_offload: float, joint_offload_grid: Sequence[float]) -> BasePolicy:
     if name in {"random", "min_distance"}:
         return SimpleHeuristicPolicy(name, fixed_offload)
@@ -1936,6 +2357,7 @@ def method_tick_label(method: Dict) -> str:
         "Min-Distance": "Min-\nDistance",
         "Full-Local": "Full-\nLocal",
         "MAPPO (no HAN)": "MAPPO\n(no HAN)",
+        "MADDPG": "MADDPG",
     }
     return replacements.get(label, label)
 
@@ -2540,6 +2962,8 @@ def parse_args() -> argparse.Namespace:
                         help="Discrete offload grid used by the DQN baseline.")
     parser.add_argument("--dqn-timesteps", type=int, default=None,
                         help="Training steps for the DQN baseline. Defaults to --total-timesteps.")
+    parser.add_argument("--maddpg-timesteps", type=int, default=None,
+                        help="Training steps for the MADDPG baseline. Defaults to --total-timesteps.")
     parser.add_argument("--no-han-total-timesteps", type=int, default=None,
                         help="Training steps for the MAPPO(no-HAN) ablation. Defaults to --total-timesteps.")
     parser.add_argument("--skip-system-eval", action="store_true",
@@ -2648,6 +3072,18 @@ def main() -> None:
                 device_name=args.device,
             )
             result["source"] = "dqn_train_eval"
+        elif baseline_name == "maddpg":
+            result = train_and_evaluate_maddpg_baseline(
+                config=config_data,
+                objective=objective,
+                output_dir=output_dir,
+                episodes=args.episodes,
+                seed=args.seed,
+                max_steps=args.max_steps,
+                total_timesteps=args.maddpg_timesteps or args.total_timesteps,
+                device_name=args.device,
+            )
+            result["source"] = "maddpg_train_eval"
         elif baseline_name == "mappo_no_han":
             result = train_and_evaluate_no_han_mappo(
                 config_data=config_data,
