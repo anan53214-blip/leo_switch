@@ -351,12 +351,14 @@ def draw_raw_reward_shadow(
 
 
 def extract_training_reward_curve(training: Sequence[Dict]) -> tuple[np.ndarray, np.ndarray]:
-    """Extract the least-aggregated reward series available for plotting."""
-    steps = np.array([record.get("total_steps", 0) for record in training], dtype=float)
+    """Extract the reward series that best represents deterministic convergence."""
+    eval_records = [record for record in training if "eval_mean_reward" in record]
+    source_records = eval_records if eval_records else list(training)
+    steps = np.array([record.get("total_steps", 0) for record in source_records], dtype=float)
     rewards = np.array(
         [
-            record.get("mean_reward", record.get("recent_mean_reward", 0.0))
-            for record in training
+            record.get("eval_mean_reward", record.get("mean_reward", record.get("recent_mean_reward", 0.0)))
+            for record in source_records
         ],
         dtype=float,
     )
@@ -383,6 +385,48 @@ def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndar
 
     order = np.argsort(steps)
     return steps[order], rewards[order], payload.get("evaluation", [])
+
+
+def resolve_summary_path(path_value: str) -> Path:
+    path = Path(path_value)
+    if path.is_dir():
+        path = path / "comparison_summary.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Cannot find comparison summary: {path}")
+    return path
+
+
+def load_reused_methods(
+    sources: Sequence[str],
+    include_methods: Sequence[str],
+    exclude_methods: Sequence[str],
+) -> List[Dict]:
+    """Load selected non-system methods from previous comparison summaries."""
+    include = {normalize_baseline_name(name) for name in include_methods}
+    exclude = {normalize_baseline_name(name) for name in exclude_methods}
+    reused: List[Dict] = []
+    seen: set[str] = set()
+
+    for source in sources:
+        summary_path = resolve_summary_path(source)
+        with summary_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        for method in payload.get("methods", []):
+            method_name = normalize_baseline_name(str(method.get("method", "")))
+            if not method_name or method.get("is_system"):
+                continue
+            if include and method_name not in include:
+                continue
+            if method_name in exclude or method_name in seen:
+                continue
+            reused_method = dict(method)
+            reused_method["method"] = method_name
+            reused_method.setdefault("display_name", pretty_method_name(method_name, is_system=False))
+            reused_method.setdefault("source", f"reused_from_{summary_path.parent.name}")
+            reused.append(reused_method)
+            seen.add(method_name)
+
+    return reused
 
 
 def method_training_history_path(method: Dict, output_dir: Optional[Path] = None) -> Optional[Path]:
@@ -1440,6 +1484,7 @@ def maddpg_actor_action_features(
     actor: MADDPGActor,
     observations: torch.Tensor,
     masks: torch.Tensor,
+    straight_through: bool = True,
 ) -> torch.Tensor:
     batch_size, num_agents, obs_dim = observations.shape
     handover_dim = masks.shape[-1]
@@ -1447,7 +1492,13 @@ def maddpg_actor_action_features(
     flat_masks = safe_mask_tensor(masks).reshape(batch_size * num_agents, handover_dim)
     logits, offload = actor(flat_obs)
     probs = torch.softmax(logits.masked_fill(~flat_masks, -1e9), dim=-1)
-    features = torch.cat([probs, offload.unsqueeze(-1)], dim=-1)
+    if straight_through:
+        hard_indices = torch.argmax(probs, dim=-1)
+        hard_handover = F.one_hot(hard_indices, num_classes=handover_dim).to(probs.dtype)
+        handover_features = hard_handover + probs - probs.detach()
+    else:
+        handover_features = probs
+    features = torch.cat([handover_features, offload.unsqueeze(-1)], dim=-1)
     return features.reshape(batch_size, num_agents, handover_dim + 1)
 
 
@@ -1520,6 +1571,11 @@ def scalar_reward_value(reward) -> float:
     if isinstance(reward, dict):
         return float(np.mean(list(reward.values()))) if reward else 0.0
     return float(np.mean(np.asarray(reward, dtype=float)))
+
+
+def clone_state_dict(module: nn.Module) -> Dict[str, torch.Tensor]:
+    """Clone a module state for in-memory best-checkpoint tracking."""
+    return {key: value.detach().cpu().clone() for key, value in module.state_dict().items()}
 
 
 def evaluate_maddpg_policy(
@@ -1599,9 +1655,17 @@ def train_and_evaluate_maddpg_baseline(
     noise_final = 0.05
     noise_decay_steps = max(total_timesteps * 0.7, 1)
     training_records: List[Dict] = []
+    evaluation_records: List[Dict] = []
     recent_episode_rewards: deque = deque(maxlen=10)
     recent_actor_losses: deque = deque(maxlen=100)
     recent_critic_losses: deque = deque(maxlen=100)
+    eval_interval_episodes = 10
+    train_eval_episodes = min(3, max(1, int(episodes)))
+    best_eval_reward = -float("inf")
+    best_actor_state = clone_state_dict(actor)
+    best_critic_state = clone_state_dict(critic)
+    best_target_actor_state = clone_state_dict(target_actor)
+    best_target_critic_state = clone_state_dict(target_critic)
     episode_reward = 0.0
     episode_length = 0
     episode_count = 0
@@ -1686,19 +1750,46 @@ def train_and_evaluate_maddpg_baseline(
         if done:
             episode_count += 1
             recent_episode_rewards.append(episode_reward)
-            training_records.append(
-                {
+            record = {
+                "update": episode_count,
+                "total_steps": step_idx + 1,
+                "episodes": episode_count,
+                "mean_reward": episode_reward,
+                "recent_mean_reward": float(np.mean(recent_episode_rewards)),
+                "mean_length": float(episode_length),
+                "exploration_noise": float(noise_std),
+                "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
+                "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
+            }
+            if episode_count % eval_interval_episodes == 0:
+                eval_result = evaluate_maddpg_policy(
+                    actor=actor,
+                    objective=objective,
+                    config=config,
+                    episodes=train_eval_episodes,
+                    seed=seed + 10_000,
+                    max_steps=max_steps,
+                    device=device,
+                )
+                record["eval_mean_reward"] = float(eval_result.get("mean_reward", 0.0))
+                record["eval_std_reward"] = float(eval_result.get("std_reward", 0.0))
+                eval_record = {
                     "update": episode_count,
                     "total_steps": step_idx + 1,
-                    "episodes": episode_count,
-                    "mean_reward": episode_reward,
-                    "recent_mean_reward": float(np.mean(recent_episode_rewards)),
-                    "mean_length": float(episode_length),
-                    "exploration_noise": float(noise_std),
-                    "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
-                    "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
+                    "eval_mean_reward": record["eval_mean_reward"],
+                    "eval_std_reward": record["eval_std_reward"],
+                    "eval_episodes": train_eval_episodes,
                 }
-            )
+                evaluation_records.append(eval_record)
+                if record["eval_mean_reward"] > best_eval_reward:
+                    best_eval_reward = record["eval_mean_reward"]
+                    best_actor_state = clone_state_dict(actor)
+                    best_critic_state = clone_state_dict(critic)
+                    best_target_actor_state = clone_state_dict(target_actor)
+                    best_target_critic_state = clone_state_dict(target_critic)
+                actor.train()
+                critic.train()
+            training_records.append(record)
             observations, _ = env.reset(seed=seed + step_idx + 1)
             episode_reward = 0.0
             episode_length = 0
@@ -1721,6 +1812,47 @@ def train_and_evaluate_maddpg_baseline(
             }
         )
 
+    final_eval = evaluate_maddpg_policy(
+        actor=actor,
+        objective=objective,
+        config=config,
+        episodes=train_eval_episodes,
+        seed=seed + 10_000,
+        max_steps=max_steps,
+        device=device,
+    )
+    final_eval_record = {
+        "update": episode_count,
+        "total_steps": int(total_timesteps),
+        "eval_mean_reward": float(final_eval.get("mean_reward", 0.0)),
+        "eval_std_reward": float(final_eval.get("std_reward", 0.0)),
+        "eval_episodes": train_eval_episodes,
+        "final_training_eval": True,
+    }
+    if training_records and (
+        int(training_records[-1].get("total_steps", -1)) == int(total_timesteps)
+        and "eval_mean_reward" not in training_records[-1]
+    ):
+        training_records[-1]["eval_mean_reward"] = final_eval_record["eval_mean_reward"]
+        training_records[-1]["eval_std_reward"] = final_eval_record["eval_std_reward"]
+    if not evaluation_records or int(evaluation_records[-1].get("total_steps", -1)) != int(total_timesteps):
+        evaluation_records.append(final_eval_record)
+    if final_eval_record["eval_mean_reward"] > best_eval_reward:
+        best_eval_reward = final_eval_record["eval_mean_reward"]
+        best_actor_state = clone_state_dict(actor)
+        best_critic_state = clone_state_dict(critic)
+        best_target_actor_state = clone_state_dict(target_actor)
+        best_target_critic_state = clone_state_dict(target_critic)
+
+    final_actor_state = clone_state_dict(actor)
+    final_critic_state = clone_state_dict(critic)
+    final_target_actor_state = clone_state_dict(target_actor)
+    final_target_critic_state = clone_state_dict(target_critic)
+    actor.load_state_dict(best_actor_state)
+    critic.load_state_dict(best_critic_state)
+    target_actor.load_state_dict(best_target_actor_state)
+    target_critic.load_state_dict(best_target_critic_state)
+
     result = evaluate_maddpg_policy(
         actor=actor,
         objective=objective,
@@ -1731,10 +1863,12 @@ def train_and_evaluate_maddpg_baseline(
         device=device,
     )
     result["trained_timesteps"] = int(total_timesteps)
+    result["best_training_eval_reward"] = float(best_eval_reward)
     checkpoint_dir = output_dir / "learned_baselines" / "maddpg"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     history_path = checkpoint_dir / "training_history.json"
     checkpoint_path = checkpoint_dir / "maddpg_model.pt"
+    final_checkpoint_path = checkpoint_dir / "maddpg_final_model.pt"
     torch.save(
         {
             "actor_state_dict": actor.state_dict(),
@@ -1746,9 +1880,25 @@ def train_and_evaluate_maddpg_baseline(
             "handover_dim": handover_dim,
             "action_feature_dim": action_feature_dim,
             "trained_timesteps": int(total_timesteps),
+            "best_training_eval_reward": float(best_eval_reward),
             "training_history": str(history_path),
         },
         checkpoint_path,
+    )
+    torch.save(
+        {
+            "actor_state_dict": final_actor_state,
+            "critic_state_dict": final_critic_state,
+            "target_actor_state_dict": final_target_actor_state,
+            "target_critic_state_dict": final_target_critic_state,
+            "obs_dim": obs_dim,
+            "num_agents": num_agents,
+            "handover_dim": handover_dim,
+            "action_feature_dim": action_feature_dim,
+            "trained_timesteps": int(total_timesteps),
+            "training_history": str(history_path),
+        },
+        final_checkpoint_path,
     )
     with history_path.open("w", encoding="utf-8") as handle:
         json.dump(
@@ -1765,13 +1915,19 @@ def train_and_evaluate_maddpg_baseline(
                     "tau": tau,
                     "noise_start": noise_start,
                     "noise_final": noise_final,
+                    "train_eval_interval_episodes": eval_interval_episodes,
+                    "train_eval_episodes": train_eval_episodes,
+                    "best_training_eval_reward": float(best_eval_reward),
                     "parameter_sharing": True,
+                    "discrete_actor_update": "straight_through_one_hot",
                 },
                 "training": training_records,
+                "training_evaluation": evaluation_records,
                 "evaluation": result.get("episode_metrics", []),
                 "summary": {
                     "mean_reward": float(result.get("mean_reward", 0.0)),
                     "std_reward": float(result.get("std_reward", 0.0)),
+                    "best_training_eval_reward": float(best_eval_reward),
                 },
             },
             handle,
@@ -2972,6 +3128,10 @@ def parse_args() -> argparse.Namespace:
                         help="Smoothing window used by the publication-style reward figure.")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Directory for JSON/CSV summaries and figures.")
+    parser.add_argument("--reuse-methods-from", type=str, nargs="*", default=[],
+                        help="Previous baseline_compare directory or comparison_summary.json to reuse methods from.")
+    parser.add_argument("--reuse-methods", type=str, nargs="*", default=[],
+                        help="Method names to reuse from --reuse-methods-from. Empty means all non-system methods.")
     return parser.parse_args()
 
 
@@ -3045,6 +3205,15 @@ def main() -> None:
     methods: List[Dict] = []
     if system_method is not None:
         methods.append(system_method)
+
+    if args.reuse_methods_from:
+        methods.extend(
+            load_reused_methods(
+                sources=args.reuse_methods_from,
+                include_methods=args.reuse_methods,
+                exclude_methods=baselines,
+            )
+        )
 
     for baseline_name in baselines:
         if baseline_name in {"random", "min_distance"}:
