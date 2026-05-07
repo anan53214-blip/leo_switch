@@ -2647,7 +2647,7 @@ def draw_reward_curve_panel(
     if len(steps) == 0:
         return False
 
-    mean_reward, effective_window = reward_smooth(rewards, window=max(window, 3))
+    mean_reward, _ = reward_smooth(rewards, window=max(window, 3))
     system_color = SYSTEM_STYLE["color"]
     draw_raw_reward_shadow(
         ax,
@@ -2656,7 +2656,6 @@ def draw_reward_curve_panel(
         mean_reward,
         system_color,
         alpha=0.20,
-        label="HAN+MAPPO raw reward",
     )
     ax.plot(
         steps,
@@ -2664,7 +2663,7 @@ def draw_reward_curve_panel(
         color=system_color,
         linewidth=3.0,
         zorder=3,
-        label=f"HAN+MAPPO smoothed (w={effective_window})",
+        label="HAN+MAPPO",
     )
 
     if evaluation:
@@ -2687,7 +2686,7 @@ def draw_reward_curve_panel(
         baseline_history_path = method_training_history_path(method, output_dir=output_dir)
         baseline_steps, baseline_rewards, _ = load_training_curve_from_path(baseline_history_path)
         if len(baseline_steps) > 0:
-            baseline_mean, baseline_window = reward_smooth(baseline_rewards, window=max(window, 3))
+            baseline_mean, _ = reward_smooth(baseline_rewards, window=max(window, 3))
             draw_raw_reward_shadow(
                 ax,
                 baseline_steps,
@@ -2704,7 +2703,7 @@ def draw_reward_curve_panel(
                 linewidth=2.2 if compact else 2.4,
                 alpha=0.97,
                 zorder=3,
-                label=f"{method.get('display_name', method.get('method', ''))} smoothed (w={baseline_window})",
+                label=method.get("display_name", method.get("method", "")),
             )
             continue
 
