@@ -167,6 +167,7 @@ class TrainConfig:
     num_users: int = 10                   # 用户数量
     max_steps: int = 2000                 # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
+    min_effective_offload_ratio: float = 0.05
     reward_delay_weight: float = 1.4
     reward_energy_weight: float = 0.4
     reward_handover_weight: float = 0.3
@@ -362,6 +363,7 @@ class HANMAPPOTrainer:
             num_users=self.config.num_users,
             max_steps=self.config.max_steps,
             time_step_sec=self.config.time_step_sec,
+            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
             reward_delay_weight=self.config.reward_delay_weight,
             reward_energy_weight=self.config.reward_energy_weight,
             reward_handover_weight=self.config.reward_handover_weight,
@@ -1279,6 +1281,8 @@ def parse_args():
                         help='负载均衡奖励权重')
     parser.add_argument('--reward_qos_weight', type=float, default=0.4,
                         help='QoS奖励权重')
+    parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
+                        help='Treat smaller offload ratios as local execution')
     
     # 训练参数
     parser.add_argument('--total_timesteps', type=int, default=1200000,
@@ -1355,6 +1359,7 @@ def main():
     config.reward_handover_weight = args.reward_handover_weight
     config.reward_load_balance_weight = args.reward_load_balance_weight
     config.reward_qos_weight = args.reward_qos_weight
+    config.min_effective_offload_ratio = args.min_effective_offload_ratio
     config.total_timesteps = args.total_timesteps
     config.n_steps = args.n_steps
     config.learning_rate = args.learning_rate

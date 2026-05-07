@@ -56,6 +56,7 @@ class EnvConfig:
     
     # 任务参数
     task_arrival_prob: float = 0.45    # Avoid pathological queue saturation
+    min_effective_offload_ratio: float = 0.05  # Treat tiny noisy offload actions as local execution
     
     # 奖励权重（增大正向奖励系数，平衡奖惩信号）
     reward_delay_weight: float = 1.4
@@ -898,6 +899,8 @@ class LEOSatelliteEnv(gym.Env):
         """
         reward = 0.0
         offload_ratio = float(np.clip(offload_ratio, 0.0, 1.0))
+        if offload_ratio < self.config.min_effective_offload_ratio:
+            offload_ratio = 0.0
         
         # 获取卫星信息
         sat_id = user.serving_satellite

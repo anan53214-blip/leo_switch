@@ -351,18 +351,31 @@ def draw_raw_reward_shadow(
 
 
 def extract_training_reward_curve(training: Sequence[Dict]) -> tuple[np.ndarray, np.ndarray]:
-    """Extract the reward series that best represents deterministic convergence."""
-    eval_records = [record for record in training if "eval_mean_reward" in record]
-    source_records = eval_records if eval_records else list(training)
+    """Extract per-training-update rewards for a comparable learning curve."""
+    source_records = list(training)
     steps = np.array([record.get("total_steps", 0) for record in source_records], dtype=float)
     rewards = np.array(
         [
-            record.get("eval_mean_reward", record.get("mean_reward", record.get("recent_mean_reward", 0.0)))
+            record.get("mean_reward", record.get("recent_mean_reward", record.get("eval_mean_reward", 0.0)))
             for record in source_records
         ],
         dtype=float,
     )
     return steps, rewards
+
+
+def extract_training_evaluation_records(payload: Dict, training: Sequence[Dict]) -> List[Dict]:
+    """Return sparse training-evaluation checkpoints, excluding final episode metrics."""
+    evaluation_records = payload.get("training_evaluation", [])
+    if not evaluation_records:
+        evaluation_records = [record for record in training if "eval_mean_reward" in record]
+    if not evaluation_records:
+        evaluation_records = payload.get("evaluation", [])
+    return [
+        record
+        for record in evaluation_records
+        if "total_steps" in record and "eval_mean_reward" in record
+    ]
 
 
 def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndarray, np.ndarray, List[Dict]]:
@@ -374,17 +387,24 @@ def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndar
 
     training = payload.get("training", [])
     if not training:
-        return np.array([], dtype=float), np.array([], dtype=float), payload.get("evaluation", [])
+        evaluation = extract_training_evaluation_records(payload, training)
+        if not evaluation:
+            return np.array([], dtype=float), np.array([], dtype=float), []
+        steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
+        rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
+        valid_mask = np.isfinite(steps) & np.isfinite(rewards)
+        order = np.argsort(steps[valid_mask])
+        return steps[valid_mask][order], rewards[valid_mask][order], evaluation
 
     steps, rewards = extract_training_reward_curve(training)
     valid_mask = np.isfinite(steps) & np.isfinite(rewards)
     steps = steps[valid_mask]
     rewards = rewards[valid_mask]
     if len(steps) == 0:
-        return steps, rewards, payload.get("evaluation", [])
+        return steps, rewards, extract_training_evaluation_records(payload, training)
 
     order = np.argsort(steps)
-    return steps[order], rewards[order], payload.get("evaluation", [])
+    return steps[order], rewards[order], extract_training_evaluation_records(payload, training)
 
 
 def resolve_summary_path(path_value: str) -> Path:
@@ -496,6 +516,9 @@ def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_st
         num_users=int(config.get("num_users", EnvConfig.num_users)),
         max_steps=int(max_steps if max_steps is not None else config.get("max_steps", EnvConfig.max_steps)),
         time_step_sec=float(config.get("time_step_sec", EnvConfig.time_step_sec)),
+        min_effective_offload_ratio=float(
+            config.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)
+        ),
         reward_delay_weight=float(config.get("reward_delay_weight", EnvConfig.reward_delay_weight)),
         reward_energy_weight=float(config.get("reward_energy_weight", EnvConfig.reward_energy_weight)),
         reward_handover_weight=float(config.get("reward_handover_weight", EnvConfig.reward_handover_weight)),
