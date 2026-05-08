@@ -72,6 +72,7 @@ BEST_MODEL_METRIC_CHOICES = (
     "avg_load_balance_score",
     "task_completion_rate",
     "latency_priority_score",
+    "effective_latency_score",
 )
 
 BEST_MODEL_METRIC_LABELS = {
@@ -84,6 +85,7 @@ BEST_MODEL_METRIC_LABELS = {
     "avg_load_balance_score": "load balance",
     "task_completion_rate": "task completion",
     "latency_priority_score": "latency-priority score",
+    "effective_latency_score": "effective latency score",
 }
 
 
@@ -139,6 +141,14 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
             + 0.15 * load_balance_score
             + 0.05 * energy_score
         )
+    if metric_name == "effective_latency_score":
+        if "effective_latency_score" in record:
+            return _bounded_unit_score(record.get("effective_latency_score", 0.0))
+        delay_score = _inverse_positive_score(record.get("avg_delay", 0.0))
+        continuity_score = _bounded_unit_score(record.get("service_continuity_rate", 0.0))
+        resolution_score = _bounded_unit_score(record.get("task_resolution_rate", 0.0))
+        completion_score = _bounded_unit_score(record.get("task_completion_rate", 0.0))
+        return delay_score * continuity_score * resolution_score * completion_score
 
     raise ValueError(f"Unsupported best-model metric: {metric_name}")
 
@@ -833,7 +843,9 @@ class HANMAPPOTrainer:
             'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
             'task_resolution_rate': summary_env_stats.get('task_resolution_rate', 0.0),
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
+            'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
             'avg_delay': summary_env_stats.get('avg_delay', 0.0),
+            'effective_latency_score': summary_env_stats.get('effective_latency_score', 0.0),
             'total_energy': env_stats.get('total_energy', 0.0),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'reward_delay': env_stats.get('reward_delay', 0.0),
@@ -925,7 +937,9 @@ class HANMAPPOTrainer:
                 'task_completion_rate': rollout_stats.get('task_completion_rate', 0),
                 'task_resolution_rate': rollout_stats.get('task_resolution_rate', 0),
                 'pending_task_rate': rollout_stats.get('pending_task_rate', 0),
+                'deadline_violation_rate': rollout_stats.get('deadline_violation_rate', 0),
                 'avg_delay': rollout_stats.get('avg_delay', 0),
+                'effective_latency_score': rollout_stats.get('effective_latency_score', 0),
                 'total_energy': rollout_stats.get('total_energy', 0),
                 'avg_load_balance_score': rollout_stats.get('avg_load_balance_score', 0),
                 'reward_delay': rollout_stats.get('reward_delay', 0),
@@ -1112,7 +1126,9 @@ class HANMAPPOTrainer:
             'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
             'task_resolution_rate': summary_env_stats.get('task_resolution_rate', 0.0),
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
+            'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
             'avg_delay': summary_env_stats.get('avg_delay', 0.0),
+            'effective_latency_score': summary_env_stats.get('effective_latency_score', 0.0),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)

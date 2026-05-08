@@ -1,6 +1,6 @@
 import math
 
-from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
+from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.mec import MECConfig, MECServer
 from src.environment.user import UserState
 
@@ -19,7 +19,7 @@ def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
     return LEOSatelliteEnv(config)
 
 
-def test_stats_summary_uses_resolved_tasks_for_rates():
+def test_stats_summary_uses_external_task_denominator_for_deadline_violation_rate():
     env = _build_single_user_env()
 
     try:
@@ -44,6 +44,7 @@ def test_stats_summary_uses_resolved_tasks_for_rates():
         assert math.isclose(stats['task_completion_rate'], 0.6)
         assert math.isclose(stats['task_resolution_rate'], 0.5)
         assert math.isclose(stats['pending_task_rate'], 0.5)
+        assert math.isclose(stats['deadline_violation_rate'], 0.2)
         assert math.isclose(stats['avg_delay'], 2.0)
         assert math.isclose(stats['avg_load_balance_score'], 0.9)
     finally:
@@ -74,7 +75,7 @@ def test_stats_summary_prefers_time_based_service_reliability_metrics():
         env.close()
 
 
-def test_task_generation_skips_blocked_users():
+def test_external_task_generation_includes_blocked_users():
     env = _build_single_user_env(task_arrival_prob=1.0)
 
     try:
@@ -84,10 +85,96 @@ def test_task_generation_skips_blocked_users():
 
         env._generate_tasks()
 
-        assert env.stats['total_tasks'] == 0
+        assert env.stats['total_tasks'] == 1
+        assert env.user_tasks[0] is not None
+    finally:
+        env.close()
+
+
+def test_blocked_pending_task_expires_as_deadline_violation():
+    env = _build_single_user_env(task_arrival_prob=1.0)
+
+    try:
+        env.reset(seed=11)
+        env.user_manager.users[0].state = UserState.BLOCKED
+        env._generate_tasks()
+        task = env.user_tasks[0]
+        task.max_delay = 0.5
+
+        env.current_time = 1.0
+        env._expire_pending_user_tasks()
+
+        assert env.stats['deadline_violations'] == 1
+        assert env.stats['total_delay'] == 1.0
         assert env.user_tasks[0] is None
     finally:
         env.close()
+
+
+def test_expired_pending_task_adds_deadline_penalty_signal():
+    env = _build_single_user_env(task_arrival_prob=1.0)
+
+    try:
+        env.reset(seed=11)
+        env.user_manager.users[0].state = UserState.BLOCKED
+        env._generate_tasks()
+        task = env.user_tasks[0]
+        task.max_delay = 0.5
+
+        env.current_time = 1.0
+        env._expire_pending_user_tasks()
+
+        assert env.stats['penalty_deadline'] < 0.0
+        assert env.stats['reward_energy'] == 0.0
+        assert env.pending_rewards[0] < 0.0
+    finally:
+        env.close()
+
+
+def test_task_arrivals_use_independent_rng_from_handover_outcomes():
+    env_a = _build_single_user_env(num_users=2, task_arrival_prob=0.5, seed=31)
+    env_b = _build_single_user_env(num_users=2, task_arrival_prob=0.5, seed=31)
+
+    try:
+        env_a.reset(seed=31)
+        env_b.reset(seed=31)
+
+        # Consume the environment RNG only in env_b. Task arrivals should still
+        # be identical because they use a dedicated task-arrival generator.
+        for _ in range(7):
+            env_b.rng.random()
+
+        env_a._generate_tasks()
+        env_b._generate_tasks()
+
+        arrivals_a = [task is not None for task in env_a.user_tasks.values()]
+        arrivals_b = [task is not None for task in env_b.user_tasks.values()]
+        assert arrivals_a == arrivals_b
+    finally:
+        env_a.close()
+        env_b.close()
+
+
+def test_effective_latency_score_penalizes_low_service_coverage():
+    reliable = summarize_env_stats({
+        'total_tasks': 100,
+        'completed_tasks': 60,
+        'deadline_violations': 40,
+        'total_delay': 220.0,
+        'total_user_seconds': 100.0,
+        'service_interruption_seconds': 3.0,
+    })
+    low_coverage = summarize_env_stats({
+        'total_tasks': 100,
+        'completed_tasks': 55,
+        'deadline_violations': 15,
+        'total_delay': 140.0,
+        'total_user_seconds': 100.0,
+        'service_interruption_seconds': 57.0,
+    })
+
+    assert low_coverage['avg_delay'] < reliable['avg_delay']
+    assert reliable['effective_latency_score'] > low_coverage['effective_latency_score']
 
 
 def test_handover_success_probability_prefers_high_quality_targets():

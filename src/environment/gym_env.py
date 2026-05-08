@@ -57,6 +57,7 @@ class EnvConfig:
     # 任务参数
     task_arrival_prob: float = 0.45    # Avoid pathological queue saturation
     min_effective_offload_ratio: float = 0.05  # Treat tiny noisy offload actions as local execution
+    task_arrival_seed_offset: int = 7919
     
     # 奖励权重（增大正向奖励系数，平衡奖惩信号）
     reward_delay_weight: float = 1.4
@@ -117,6 +118,17 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         if has_time_based_reliability else legacy_continuity_rate
     )
 
+    avg_delay = float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
+    task_completion_rate = float(stats.get('completed_tasks', 0)) / max(resolved_tasks, 1)
+    task_resolution_rate = float(resolved_tasks) / max(total_tasks, 1)
+    delay_score = 1.0 / (1.0 + max(avg_delay, 0.0))
+    effective_latency_score = (
+        delay_score *
+        np.clip(service_continuity_rate, 0.0, 1.0) *
+        np.clip(task_resolution_rate, 0.0, 1.0) *
+        np.clip(task_completion_rate, 0.0, 1.0)
+    )
+
     summary = stats.copy()
     summary.update({
         'resolved_tasks': resolved_tasks,
@@ -134,18 +146,16 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         # Continuity is modeled as uninterrupted service time ratio, which
         # penalizes both handover-induced interruptions and blocked periods.
         'service_continuity_rate': service_continuity_rate,
-        'task_completion_rate': (
-            float(stats.get('completed_tasks', 0)) / max(resolved_tasks, 1)
-        ),
-        'task_resolution_rate': (
-            float(resolved_tasks) / max(total_tasks, 1)
-        ),
+        'task_completion_rate': task_completion_rate,
+        'task_resolution_rate': task_resolution_rate,
         'pending_task_rate': (
             float(pending_tasks) / max(total_tasks, 1)
         ),
-        'avg_delay': (
-            float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
+        'deadline_violation_rate': (
+            float(stats.get('deadline_violations', 0)) / max(total_tasks, 1)
         ),
+        'avg_delay': avg_delay,
+        'effective_latency_score': effective_latency_score,
         'avg_load_balance_score': (
             float(stats.get('load_balance_sum', 0.0)) /
             max(int(stats.get('load_balance_samples', 0)), 1)
@@ -196,6 +206,7 @@ class LEOSatelliteEnv(gym.Env):
         
         # 随机数生成器
         self.rng = np.random.default_rng(self.config.seed)
+        self.task_arrival_rng = self._make_task_arrival_rng(self.config.seed)
         
         # 初始化各模块
         self._init_constellation()
@@ -211,6 +222,7 @@ class LEOSatelliteEnv(gym.Env):
         self.current_step = 0
         self.current_time = 0.0
         self.episode_rewards = []
+        self.pending_rewards: Dict[int, float] = {}
         self._offload_task_meta: Dict[Tuple[int, int], Dict[str, float]] = {}
         
         # RVT估算用的仰角历史
@@ -226,6 +238,12 @@ class LEOSatelliteEnv(gym.Env):
         # 统计信息
         self.stats = self._build_stats()
         self._last_load_balance_score = 1.0
+
+    def _make_task_arrival_rng(self, seed: Optional[int]) -> np.random.Generator:
+        """Build a task-arrival RNG that is independent of action outcomes."""
+        if seed is None:
+            return np.random.default_rng()
+        return np.random.default_rng(int(seed) + int(self.config.task_arrival_seed_offset))
     
     def _init_constellation(self):
         """初始化星座"""
@@ -270,6 +288,9 @@ class LEOSatelliteEnv(gym.Env):
         self.task_manager = TaskManager()
         
         # 当前每个用户的任务
+        self.user_task_queues: Dict[int, List[Task]] = {
+            i: [] for i in range(self.num_users)
+        }
         self.user_tasks: Dict[int, Optional[Task]] = {
             i: None for i in range(self.num_users)
         }
@@ -462,6 +483,7 @@ class LEOSatelliteEnv(gym.Env):
         
         if seed is not None:
             self.rng = np.random.default_rng(seed)
+            self.task_arrival_rng = self._make_task_arrival_rng(seed)
             self.task_generator = TaskGenerator(seed=seed)
         
         # 重置星座时间
@@ -480,6 +502,7 @@ class LEOSatelliteEnv(gym.Env):
         
         # 重置任务
         self.task_manager = TaskManager()
+        self.user_task_queues = {i: [] for i in range(self.num_users)}
         self.user_tasks = {i: None for i in range(self.num_users)}
         
         # 重置统计
@@ -540,6 +563,7 @@ class LEOSatelliteEnv(gym.Env):
         """
         # 0. 使可见性缓存失效
         self._invalidate_visibility_cache()
+        self._expire_pending_user_tasks()
         
         # 1. 生成新任务
         self._generate_tasks()
@@ -599,21 +623,70 @@ class LEOSatelliteEnv(gym.Env):
         
         return observation, total_reward, terminated, truncated, info
     
-    def _generate_tasks(self):
-        """为每个用户生成新任务"""
+    def _refresh_user_task_head(self, user_id: int) -> None:
+        queue = self.user_task_queues[user_id]
+        self.user_tasks[user_id] = queue[0] if queue else None
+
+    def _pop_user_task(self, user_id: int) -> Optional[Task]:
+        queue = self.user_task_queues[user_id]
+        task = queue.pop(0) if queue else None
+        self._refresh_user_task_head(user_id)
+        return task
+
+    def _compute_unserved_deadline_penalty(
+        self,
+        elapsed: float,
+        max_delay: float,
+    ) -> Tuple[float, Dict[str, float]]:
+        """Penalty for a generated task that misses its deadline unserved."""
+        max_delay = max(float(max_delay), 1e-6)
+        delay_ratio = float(elapsed) / max_delay
+        reward_qos = -self.config.reward_qos_weight
+        penalty_deadline = -self.config.reward_deadline_penalty * min(
+            max(delay_ratio - 1.0, 0.0),
+            2.0,
+        )
+        return reward_qos + penalty_deadline, {
+            'reward_qos': reward_qos,
+            'penalty_deadline': penalty_deadline,
+        }
+
+    def _expire_pending_user_tasks(self) -> None:
+        """Resolve pending user tasks that already missed their deadline."""
         for user_id in range(self.num_users):
-            user = self.user_manager.users[user_id]
-            # 如果用户没有待处理任务，以一定概率生成新任务
-            if self.user_tasks[user_id] is None and user.state == UserState.CONNECTED:
-                if self.rng.random() < self.config.task_arrival_prob:
-                    task = self.task_generator.generate_task(
-                        user_id=user_id,
-                        current_time=self.current_time
-                    )
-                    self.user_tasks[user_id] = task
-                    self.task_manager.add_task(task)
-                    self.stats['total_tasks'] += 1
-    
+            queue = self.user_task_queues[user_id]
+            while queue:
+                task = queue[0]
+                elapsed = max(float(self.current_time) - float(task.creation_time), 0.0)
+                if elapsed <= float(task.max_delay):
+                    break
+                queue.pop(0)
+                self.stats['deadline_violations'] += 1
+                self.stats['total_delay'] += elapsed
+                task_reward, reward_terms = self._compute_unserved_deadline_penalty(
+                    elapsed=elapsed,
+                    max_delay=task.max_delay,
+                )
+                self._record_reward_terms(**reward_terms)
+                if user_id not in self.pending_rewards:
+                    self.pending_rewards[user_id] = 0.0
+                self.pending_rewards[user_id] += task_reward
+                self.task_manager.fail_task(task.task_id, self.current_time)
+            self._refresh_user_task_head(user_id)
+
+    def _generate_tasks(self):
+        """Generate exogenous user tasks independent of service connectivity."""
+        for user_id in range(self.num_users):
+            if self.task_arrival_rng.random() < self.config.task_arrival_prob:
+                task = self.task_generator.generate_task(
+                    user_id=user_id,
+                    current_time=self.current_time
+                )
+                self.user_task_queues[user_id].append(task)
+                self._refresh_user_task_head(user_id)
+                self.task_manager.add_task(task)
+                self.stats['total_tasks'] += 1
+
     def _execute_user_action(
         self,
         user: User,
@@ -670,8 +743,8 @@ class LEOSatelliteEnv(gym.Env):
         task = self.user_tasks[user.user_id]
         if task is not None and user.state == UserState.CONNECTED:
             reward += self._execute_offloading(user, task, offload_ratio)
-            self.user_tasks[user.user_id] = None  # 任务已处理
         
+            self._pop_user_task(user.user_id)
         return reward
 
     def _compute_load_balance_score(self) -> float:
@@ -901,6 +974,7 @@ class LEOSatelliteEnv(gym.Env):
         offload_ratio = float(np.clip(offload_ratio, 0.0, 1.0))
         if offload_ratio < self.config.min_effective_offload_ratio:
             offload_ratio = 0.0
+        wait_delay = max(float(self.current_time) - float(task.creation_time), 0.0)
         
         # 获取卫星信息
         sat_id = user.serving_satellite
@@ -950,7 +1024,7 @@ class LEOSatelliteEnv(gym.Env):
                 offload_cycles=offload_cycles,
                 offload_data_bits=offload_data_bits,
                 max_delay=task.max_delay,
-                arrival_time=self.current_time,
+                arrival_time=task.creation_time,
                 upload_delay=upload_delay,
                 download_delay=download_delay,
                 offload_ratio=offload_ratio,
@@ -964,7 +1038,7 @@ class LEOSatelliteEnv(gym.Env):
                 task.local_energy = local_energy
                 task.transmission_energy = upload_energy
                 self._offload_task_meta[(user.user_id, task.task_id)] = {
-                    'local_delay': local_delay,
+                    'local_delay': wait_delay + local_delay,
                     'local_energy': local_energy,
                 }
                 queue_margin = 1.0 - (
@@ -982,7 +1056,8 @@ class LEOSatelliteEnv(gym.Env):
                 
                 local_delay += fallback_delay
                 local_energy += fallback_energy
-                self.stats['total_delay'] += local_delay
+                total_delay = wait_delay + local_delay
+                self.stats['total_delay'] += total_delay
                 self.stats['total_energy'] += fallback_energy
                 
                 # 惩罚：队列满导致无法卸载
@@ -990,34 +1065,35 @@ class LEOSatelliteEnv(gym.Env):
                 reward += queue_penalty
                 self._record_reward_terms(penalty_queue_full=queue_penalty)
 
-                if local_delay <= task.max_delay:
+                if total_delay <= task.max_delay:
                     self.stats['completed_tasks'] += 1
                 else:
                     self.stats['deadline_violations'] += 1
                 task_reward, reward_terms = self._compute_task_reward(
-                    total_delay=local_delay,
+                    total_delay=total_delay,
                     total_energy=local_energy + upload_energy,
                     max_delay=task.max_delay,
                 )
                 reward += task_reward
                 self._record_reward_terms(**reward_terms)
                 
-                task.total_delay = local_delay
+                task.total_delay = total_delay
                 task.total_energy = local_energy + upload_energy
                 task.offload_ratio = 0.0  # 实际退化为本地
         else:
             # 完全本地执行
-            self.stats['total_delay'] += local_delay
-            task.total_delay = local_delay
+            total_delay = wait_delay + local_delay
+            self.stats['total_delay'] += total_delay
+            task.total_delay = total_delay
             task.total_energy = local_energy
             task.offload_ratio = 0.0
             
-            if local_delay <= task.max_delay:
+            if total_delay <= task.max_delay:
                 self.stats['completed_tasks'] += 1
             else:
                 self.stats['deadline_violations'] += 1
             task_reward, reward_terms = self._compute_task_reward(
-                total_delay=local_delay,
+                total_delay=total_delay,
                 total_energy=local_energy,
                 max_delay=task.max_delay,
             )
@@ -1030,6 +1106,7 @@ class LEOSatelliteEnv(gym.Env):
         """更新环境状态（包含 MEC 队列处理）"""
         # 更新时间
         self.current_time += self.config.time_step_sec
+        self._expire_pending_user_tasks()
         
         # 传播星座
         self.constellation.propagate(self.config.time_step_sec)

@@ -99,7 +99,7 @@ DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority
 DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
 DEFAULT_TOTAL_TIMESTEPS = 1_200_000
 DEFAULT_PLOT_WINDOW = 5
-DEFAULT_SELECTION_METRIC = "latency_priority_score"
+DEFAULT_SELECTION_METRIC = "effective_latency_score"
 TRAIN_ARTIFACT_FILENAMES = (
     "training_history.json",
     "best_model.pt",
@@ -110,6 +110,7 @@ PRIMARY_COMPARE_METRICS = [
     ("avg_delay", "Average Delay"),
     ("service_continuity_rate", "Service Continuity"),
     ("service_availability_rate", "Service Availability"),
+    ("task_resolution_rate", "Task Resolution"),
     ("task_completion_rate", "Task Completion"),
 ]
 
@@ -141,6 +142,7 @@ SUMMARY_METRIC_KEYS = [
     "completed_tasks",
     "deadline_violations",
     "deadline_violation_rate",
+    "effective_latency_score",
 ]
 
 HIGHER_IS_BETTER = {
@@ -151,6 +153,7 @@ HIGHER_IS_BETTER = {
     "service_availability_rate": True,
     "task_completion_rate": True,
     "task_resolution_rate": True,
+    "effective_latency_score": True,
     "avg_load_balance_score": True,
     "handover_failure_rate": False,
     "forced_termination_rate": False,
@@ -171,9 +174,43 @@ PAPER_METRIC_PLOTS = [
 
 CORE_BAR_METRICS = [
     ("avg_delay", "Average Delay", "Average Delay (ms)"),
-    ("task_completion_rate", "Task Completion Rate", "Task Completion Rate (%)"),
+    ("effective_latency_score", "Effective Latency Score", "Effective Latency Score"),
     ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
+    ("task_resolution_rate", "Task Resolution Rate", "Task Resolution Rate (%)"),
+    ("task_completion_rate", "Task Completion Rate", "Task Completion Rate (%)"),
     ("avg_load_balance_score", "Avg Load Balance Score", "Avg Load Balance Score"),
+]
+
+TRAINING_QOS_STEP_METRICS = [
+    ("mean_reward", "Reward", "Mean Episode Reward", 1.0),
+    ("avg_delay", "Average Delay", "Average Delay (ms)", 1000.0),
+    ("effective_latency_score", "Effective Latency Score", "Score", 1.0),
+    ("service_continuity_rate", "Service Continuity", "Rate (%)", 100.0),
+    ("task_resolution_rate", "Task Resolution", "Rate (%)", 100.0),
+    ("task_completion_rate", "Task Completion", "Rate (%)", 100.0),
+    ("deadline_violation_rate", "Deadline Violation", "Rate (%)", 100.0),
+    ("avg_load_balance_score", "Load Balance", "Score", 1.0),
+]
+
+REWARD_COMPONENT_STEP_METRICS = [
+    ("mean_reward", "Total Reward", "Reward", 1.0),
+    ("reward_delay", "Delay Reward", "Reward Term", 1.0),
+    ("reward_qos", "QoS Reward", "Reward Term", 1.0),
+    ("reward_handover", "Handover Reward", "Reward Term", 1.0),
+    ("reward_load_balance", "Load Balance Reward", "Reward Term", 1.0),
+    ("reward_enqueue", "Enqueue Reward", "Reward Term", 1.0),
+    ("penalty_deadline", "Deadline Penalty", "Penalty Term", 1.0),
+    ("penalty_queue_full", "Queue-Full Penalty", "Penalty Term", 1.0),
+]
+
+RADAR_METRICS = [
+    ("effective_latency_score", "Effective\nLatency", True),
+    ("service_continuity_rate", "Continuity", True),
+    ("task_resolution_rate", "Resolution", True),
+    ("task_completion_rate", "Completion", True),
+    ("avg_load_balance_score", "Load\nBalance", True),
+    ("avg_delay", "Low\nDelay", False),
+    ("deadline_violation_rate", "Deadline\nReliability", False),
 ]
 
 PAPER_DASHBOARD_LEFT_METRICS = [
@@ -350,6 +387,38 @@ def draw_raw_reward_shadow(
     ax.plot(steps, raw_rewards, color=color, alpha=line_alpha, linewidth=0.55, zorder=2)
 
 
+def draw_raw_metric_shadow(
+    ax,
+    steps: np.ndarray,
+    raw_values: np.ndarray,
+    smoothed_values: np.ndarray,
+    color: str,
+    alpha: float = 0.18,
+) -> None:
+    if len(raw_values) == 0:
+        return
+    fill_alpha = min(alpha * 0.55, 0.12)
+    line_alpha = min(alpha + 0.08, 0.30)
+    ax.fill_between(
+        steps,
+        raw_values,
+        smoothed_values,
+        color=color,
+        alpha=fill_alpha,
+        linewidth=0,
+        zorder=1,
+    )
+    ax.plot(
+        steps,
+        raw_values,
+        color=color,
+        linestyle="--",
+        alpha=line_alpha,
+        linewidth=0.65,
+        zorder=2,
+    )
+
+
 def extract_training_reward_curve(training: Sequence[Dict]) -> tuple[np.ndarray, np.ndarray]:
     """Extract per-training-update rewards for a comparable learning curve."""
     source_records = list(training)
@@ -362,6 +431,39 @@ def extract_training_reward_curve(training: Sequence[Dict]) -> tuple[np.ndarray,
         dtype=float,
     )
     return steps, rewards
+
+
+def metric_record_value(record: Dict, metric_key: str) -> Optional[float]:
+    if metric_key == "mean_reward":
+        for key in ("mean_reward", "recent_mean_reward", "eval_mean_reward", "reward"):
+            if key in record:
+                return float(record.get(key, 0.0))
+        return None
+    if metric_key in record:
+        return float(record.get(metric_key, 0.0))
+    return None
+
+
+def extract_training_metric_curve(records: Sequence[Dict], metric_key: str) -> tuple[np.ndarray, np.ndarray]:
+    pairs = []
+    for record in records:
+        if "total_steps" not in record:
+            continue
+        value = metric_record_value(record, metric_key)
+        if value is None:
+            continue
+        step = float(record.get("total_steps", 0.0))
+        if np.isfinite(step) and np.isfinite(value):
+            pairs.append((step, float(value)))
+
+    if not pairs:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    pairs.sort(key=lambda item: item[0])
+    return (
+        np.array([item[0] for item in pairs], dtype=float),
+        np.array([item[1] for item in pairs], dtype=float),
+    )
 
 
 def extract_training_evaluation_records(payload: Dict, training: Sequence[Dict]) -> List[Dict]:
@@ -405,6 +507,24 @@ def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndar
 
     order = np.argsort(steps)
     return steps[order], rewards[order], extract_training_evaluation_records(payload, training)
+
+
+def load_training_metric_curve_from_path(history_path: Optional[Path], metric_key: str) -> tuple[np.ndarray, np.ndarray]:
+    if history_path is None or not history_path.exists():
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    with history_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    training = payload.get("training", [])
+    steps, values = extract_training_metric_curve(training, metric_key)
+    if len(steps) > 0:
+        return steps, values
+
+    evaluation_records = []
+    evaluation_records.extend(payload.get("training_evaluation", []))
+    evaluation_records.extend(payload.get("evaluation", []))
+    return extract_training_metric_curve(evaluation_records, metric_key)
 
 
 def resolve_summary_path(path_value: str) -> Path:
@@ -710,8 +830,8 @@ def normalize_baseline_name(name: str) -> str:
 
 
 def compute_deadline_violation_rate(summary: Dict) -> float:
-    resolved_tasks = float(summary.get("resolved_tasks", 0.0))
-    return float(summary.get("deadline_violations", 0.0)) / max(resolved_tasks, 1.0)
+    total_tasks = float(summary.get("total_tasks", 0.0))
+    return float(summary.get("deadline_violations", 0.0)) / max(total_tasks, 1.0)
 
 
 def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -> List[Dict]:
@@ -2365,6 +2485,12 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
     )
     handover_success_rate = float(best_record.get("handover_success_rate", 0.0))
     service_continuity_rate = float(best_record.get("service_continuity_rate", 0.0))
+    effective_latency_score = float(
+        best_record.get(
+            "effective_latency_score",
+            compute_model_selection_score(best_record, "effective_latency_score"),
+        )
+    )
     result = {
         "method": str(config_data.get("exp_name", history_path.parent.name or "system")),
         "display_name": pretty_method_name(
@@ -2391,9 +2517,8 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "total_tasks": float(best_record.get("total_tasks", 0.0)),
         "completed_tasks": float(best_record.get("completed_tasks", 0.0)),
         "deadline_violations": float(best_record.get("deadline_violations", 0.0)),
-        "deadline_violation_rate": (
-            float(best_record.get("deadline_violations", 0.0)) / max(float(best_record.get("resolved_tasks", 0.0)), 1.0)
-        ),
+        "deadline_violation_rate": compute_deadline_violation_rate(best_record),
+        "effective_latency_score": effective_latency_score,
         "episode_metrics": [],
         "training_history": str(history_path),
         "source": f"training_history_best_{selection_metric_name}",
@@ -2428,6 +2553,7 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "task_resolution_rate",
         "pending_task_rate",
         "deadline_violation_rate",
+        "effective_latency_score",
         "avg_load_balance_score",
         "energy_per_resolved_task",
         "selection_metric",
@@ -2467,6 +2593,7 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
+                "effective_latency_score": float(record.get("effective_latency_score", 0.0)),
                 "avg_load_balance_score": float(record.get("avg_load_balance_score", 0.0)),
                 "deadline_violation_rate": float(record.get("deadline_violation_rate", 0.0)),
                 "resolved_tasks": float(record.get("resolved_tasks", 0.0)),
@@ -2743,13 +2870,139 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
     if not methods:
         return None
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 11), dpi=220)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11), dpi=220)
     for axis, (metric_key, title, ylabel) in zip(axes.flatten(), CORE_BAR_METRICS):
         draw_metric_bar_panel(axis, methods, metric_key=metric_key, title=title, ylabel=ylabel)
 
     fig.suptitle("HAN+MAPPO vs. Heuristic Baselines: Core Metrics", fontsize=16, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     return save_figure(fig, output_dir / "method_comparison.pdf")
+
+
+def draw_training_metric_step_panel(
+    ax,
+    history_path: Optional[Path],
+    metric_key: str,
+    title: str,
+    ylabel: str,
+    scale: float,
+    window: int,
+    color: str,
+) -> bool:
+    steps, values = load_training_metric_curve_from_path(history_path, metric_key)
+    if len(steps) == 0:
+        ax.axis("off")
+        ax.text(
+            0.5,
+            0.5,
+            "No step data",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=10,
+            color=PAPER_COLORS["muted"],
+        )
+        ax.set_title(title)
+        return False
+
+    scaled_values = values.astype(float) * float(scale)
+    smoothed_values, effective_window = reward_smooth(scaled_values, window=max(window, 3))
+    draw_raw_metric_shadow(ax, steps, scaled_values, smoothed_values, color=color, alpha=0.20)
+    ax.plot(
+        steps,
+        smoothed_values,
+        color=color,
+        linewidth=2.0,
+        label=f"Smoothed (w={effective_window})",
+        zorder=3,
+    )
+    ax.set_title(title)
+    ax.set_xlabel("Training Steps")
+    ax.set_ylabel(ylabel)
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    style_axes_frame(ax)
+    return True
+
+
+def plot_step_metric_group(
+    history_path: Optional[Path],
+    output_dir: Path,
+    window: int,
+    metric_specs: Sequence[tuple[str, str, str, float]],
+    output_name: str,
+    title: str,
+) -> Optional[Path]:
+    if history_path is None or not history_path.exists():
+        return None
+
+    ncols = 2
+    nrows = int(np.ceil(len(metric_specs) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(14, 3.6 * nrows), dpi=220)
+    axes = np.asarray(axes).reshape(-1)
+    colors = [
+        PAPER_COLORS["primary"],
+        PAPER_COLORS["secondary"],
+        PAPER_COLORS["info"],
+        PAPER_COLORS["success"],
+        PAPER_COLORS["warning"],
+        "#5DA5DA",
+        "#60BD68",
+        "#F17CB0",
+        "#B2912F",
+        "#B276B2",
+    ]
+
+    has_any_data = False
+    for index, (axis, spec) in enumerate(zip(axes, metric_specs)):
+        metric_key, metric_title, ylabel, scale = spec
+        has_data = draw_training_metric_step_panel(
+            axis,
+            history_path,
+            metric_key,
+            metric_title,
+            ylabel,
+            scale,
+            window,
+            colors[index % len(colors)],
+        )
+        has_any_data = has_any_data or has_data
+
+    for axis in axes[len(metric_specs):]:
+        axis.axis("off")
+
+    if not has_any_data:
+        plt.close(fig)
+        return None
+
+    fig.suptitle(title, fontsize=15, fontweight="bold", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.975))
+    return save_figure(fig, output_dir / output_name)
+
+
+def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, window: int) -> List[Path]:
+    paths: List[Path] = []
+    qos_path = plot_step_metric_group(
+        history_path,
+        output_dir,
+        window,
+        TRAINING_QOS_STEP_METRICS,
+        "training_qos_metrics_vs_steps.pdf",
+        "Training QoS Metrics vs. Steps",
+    )
+    if qos_path is not None:
+        paths.append(qos_path)
+
+    reward_component_path = plot_step_metric_group(
+        history_path,
+        output_dir,
+        window,
+        REWARD_COMPONENT_STEP_METRICS,
+        "reward_components_vs_steps.pdf",
+        "Reward Components vs. Steps",
+    )
+    if reward_component_path is not None:
+        paths.append(reward_component_path)
+    return paths
 
 
 def methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
@@ -2926,6 +3179,132 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
     style_axes_frame(ax)
     fig.tight_layout()
     return save_figure(fig, output_dir / "delay_energy_tradeoff.pdf")
+
+
+def plot_reliability_resolution_scatter(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    ordered = order_methods(methods)
+    if not ordered:
+        return None
+
+    styles = build_method_styles(ordered)
+    fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=220)
+    for method in ordered:
+        style = styles[str(method.get("method", ""))]
+        x_value = float(method.get("task_resolution_rate", 0.0)) * 100.0
+        y_value = float(method.get("service_continuity_rate", 0.0)) * 100.0
+        completion = float(method.get("task_completion_rate", 0.0))
+        effective = float(method.get("effective_latency_score", 0.0))
+        size = 90.0 + 360.0 * max(completion, 0.0)
+        if method.get("is_system"):
+            size *= 1.20
+
+        ax.scatter(
+            x_value,
+            y_value,
+            s=size,
+            marker=style.get("marker", "o"),
+            color=style.get("color", PAPER_COLORS["muted"]),
+            alpha=0.88,
+            edgecolors=PAPER_COLORS["dark"],
+            linewidths=1.0,
+            zorder=4 if method.get("is_system") else 3,
+        )
+        label = method.get("display_name", method.get("method", ""))
+        ax.annotate(
+            label,
+            xy=(x_value, y_value),
+            xytext=(8, 7),
+            textcoords="offset points",
+            fontsize=10,
+            color=PAPER_COLORS["dark"],
+        )
+        ax.text(
+            x_value,
+            y_value,
+            f"{effective:.2f}",
+            ha="center",
+            va="center",
+            fontsize=8,
+            color="white",
+            fontweight="bold",
+            zorder=5,
+        )
+
+    ax.set_xlabel("Task Resolution Rate (%)")
+    ax.set_ylabel("Service Continuity Rate (%)")
+    ax.set_title("Reliability-Resolution Trade-off (marker size: completion, label: effective latency)")
+    ax.set_xlim(left=0.0, right=max(100.0, ax.get_xlim()[1]))
+    ax.set_ylim(bottom=0.0, top=max(100.0, ax.get_ylim()[1]))
+    style_axes_frame(ax)
+    fig.tight_layout()
+    return save_figure(fig, output_dir / "reliability_resolution_tradeoff.pdf")
+
+
+def normalized_metric_values(methods: Sequence[Dict], metric_key: str, higher_is_better: bool) -> np.ndarray:
+    values = np.array([float(method.get(metric_key, 0.0)) for method in methods], dtype=float)
+    if len(values) == 0:
+        return values
+    if metric_key.endswith("_rate") or metric_key in {"effective_latency_score", "avg_load_balance_score"}:
+        bounded = np.clip(values, 0.0, 1.0)
+        return bounded if higher_is_better else 1.0 - bounded
+
+    min_value = float(np.min(values))
+    max_value = float(np.max(values))
+    if np.isclose(min_value, max_value):
+        return np.ones_like(values)
+    normalized = (values - min_value) / (max_value - min_value)
+    return normalized if higher_is_better else 1.0 - normalized
+
+
+def plot_performance_radar(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    ordered = order_methods(methods)
+    if not ordered:
+        return None
+
+    styles = build_method_styles(ordered)
+    labels = [label for _, label, _ in RADAR_METRICS]
+    angles = np.linspace(0, 2 * np.pi, len(RADAR_METRICS), endpoint=False)
+    closed_angles = np.concatenate([angles, angles[:1]])
+    normalized_by_metric = [
+        normalized_metric_values(ordered, metric_key, higher_is_better)
+        for metric_key, _label, higher_is_better in RADAR_METRICS
+    ]
+
+    fig, ax = plt.subplots(figsize=(9.2, 9.2), dpi=220, subplot_kw={"polar": True})
+    for method_index, method in enumerate(ordered):
+        values = np.array(
+            [metric_values[method_index] for metric_values in normalized_by_metric],
+            dtype=float,
+        )
+        closed_values = np.concatenate([values, values[:1]])
+        style = styles[str(method.get("method", ""))]
+        linewidth = 2.3 if method.get("is_system") else 1.45
+        alpha = 0.18 if method.get("is_system") else 0.08
+        ax.plot(
+            closed_angles,
+            closed_values,
+            color=style.get("color", PAPER_COLORS["muted"]),
+            linewidth=linewidth,
+            linestyle=style.get("linestyle", "-"),
+            label=method.get("display_name", method.get("method", "")),
+        )
+        ax.fill(
+            closed_angles,
+            closed_values,
+            color=style.get("color", PAPER_COLORS["muted"]),
+            alpha=alpha,
+        )
+
+    ax.set_xticks(angles)
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_yticks([0.25, 0.50, 0.75, 1.00])
+    ax.set_yticklabels(["0.25", "0.50", "0.75", "1.00"], fontsize=8)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_title("Normalized Multi-Metric Performance Radar", fontsize=14, fontweight="bold", pad=22)
+    ax.grid(True, linestyle="--", alpha=0.45)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2, fontsize=9)
+    fig.tight_layout()
+    return save_figure(fig, output_dir / "performance_radar.pdf")
 
 
 def plot_paper_dashboard(
@@ -3335,7 +3714,11 @@ def main() -> None:
         output_dir,
         window=args.plot_window,
     )
+    step_metric_plots = plot_step_metric_curves(history_path, output_dir, window=args.plot_window)
+    episode_metric_plot = plot_additional_metric_curves(methods, output_dir)
     tradeoff_plot = plot_delay_energy_tradeoff(methods, output_dir)
+    reliability_plot = plot_reliability_resolution_scatter(methods, output_dir)
+    radar_plot = plot_performance_radar(methods, output_dir)
     reward_distribution_plot = plot_reward_distribution(methods, output_dir)
     dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
 
@@ -3348,8 +3731,16 @@ def main() -> None:
         print(f"Metric comparison figure: {metrics_plot}")
     if reward_curve_plot is not None:
         print(f"Reward curve comparison figure: {reward_curve_plot}")
+    for step_metric_plot in step_metric_plots:
+        print(f"Step metric curve figure: {step_metric_plot}")
+    if episode_metric_plot is not None:
+        print(f"Episode metric comparison figure: {episode_metric_plot}")
     if tradeoff_plot is not None:
         print(f"Delay-energy trade-off figure: {tradeoff_plot}")
+    if reliability_plot is not None:
+        print(f"Reliability-resolution trade-off figure: {reliability_plot}")
+    if radar_plot is not None:
+        print(f"Performance radar figure: {radar_plot}")
     if reward_distribution_plot is not None:
         print(f"Reward distribution figure: {reward_distribution_plot}")
     if dashboard_plot is not None:
