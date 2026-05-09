@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.mec import MECConfig, MECServer
 from src.environment.user import UserState
@@ -49,6 +51,46 @@ def test_stats_summary_uses_external_task_denominator_for_deadline_violation_rat
         assert math.isclose(stats['avg_load_balance_score'], 0.9)
     finally:
         env.close()
+
+
+def test_task_success_metrics_distinguish_success_failure_and_settlement():
+    stats = {
+        "total_tasks": 100,
+        "completed_tasks": 40,
+        "deadline_violations": 55,
+        "total_delay": 250.0,
+        "total_user_seconds": 1000.0,
+        "blocked_user_seconds": 0.0,
+        "handover_interruption_seconds": 0.0,
+        "service_interruption_seconds": 0.0,
+    }
+
+    summary = summarize_env_stats(stats)
+
+    assert summary["resolved_tasks"] == 95
+    assert summary["pending_tasks"] == 5
+    assert summary["task_success_rate"] == pytest.approx(0.40)
+    assert summary["task_failure_rate"] == pytest.approx(0.55)
+    assert summary["task_settlement_rate"] == pytest.approx(0.95)
+    assert summary["task_resolution_rate"] == pytest.approx(0.95)
+    assert summary["task_completion_rate"] == pytest.approx(40 / 95)
+    assert summary["deadline_violation_rate"] == pytest.approx(0.55)
+
+
+def test_effective_latency_score_uses_task_success_rate_not_settlement_rate():
+    base = {
+        "total_tasks": 100,
+        "total_delay": 100.0,
+        "total_user_seconds": 1000.0,
+        "blocked_user_seconds": 0.0,
+        "handover_interruption_seconds": 0.0,
+        "service_interruption_seconds": 0.0,
+    }
+    good = summarize_env_stats({**base, "completed_tasks": 80, "deadline_violations": 15})
+    bad = summarize_env_stats({**base, "completed_tasks": 20, "deadline_violations": 75})
+
+    assert good["task_settlement_rate"] == pytest.approx(bad["task_settlement_rate"])
+    assert good["effective_latency_score"] > bad["effective_latency_score"]
 
 
 def test_stats_summary_prefers_time_based_service_reliability_metrics():

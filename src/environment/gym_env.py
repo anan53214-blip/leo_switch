@@ -119,14 +119,18 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     )
 
     avg_delay = float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
-    task_completion_rate = float(stats.get('completed_tasks', 0)) / max(resolved_tasks, 1)
-    task_resolution_rate = float(resolved_tasks) / max(total_tasks, 1)
+    completed_count = float(stats.get('completed_tasks', 0))
+    deadline_count = float(stats.get('deadline_violations', 0))
+    task_completion_rate = completed_count / max(resolved_tasks, 1)
+    task_success_rate = completed_count / max(total_tasks, 1)
+    task_failure_rate = deadline_count / max(total_tasks, 1)
+    task_settlement_rate = float(resolved_tasks) / max(total_tasks, 1)
+    task_resolution_rate = task_settlement_rate
     delay_score = 1.0 / (1.0 + max(avg_delay, 0.0))
     effective_latency_score = (
         delay_score *
         np.clip(service_continuity_rate, 0.0, 1.0) *
-        np.clip(task_resolution_rate, 0.0, 1.0) *
-        np.clip(task_completion_rate, 0.0, 1.0)
+        np.clip(task_success_rate, 0.0, 1.0)
     )
 
     summary = stats.copy()
@@ -147,6 +151,9 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         # penalizes both handover-induced interruptions and blocked periods.
         'service_continuity_rate': service_continuity_rate,
         'task_completion_rate': task_completion_rate,
+        'task_success_rate': task_success_rate,
+        'task_failure_rate': task_failure_rate,
+        'task_settlement_rate': task_settlement_rate,
         'task_resolution_rate': task_resolution_rate,
         'pending_task_rate': (
             float(pending_tasks) / max(total_tasks, 1)
