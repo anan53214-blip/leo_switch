@@ -110,8 +110,8 @@ PRIMARY_COMPARE_METRICS = [
     ("avg_delay", "Average Delay"),
     ("service_continuity_rate", "Service Continuity"),
     ("service_availability_rate", "Service Availability"),
-    ("task_resolution_rate", "Task Resolution"),
-    ("task_completion_rate", "Task Completion"),
+    ("task_success_rate", "Task Success"),
+    ("deadline_violation_rate", "Deadline Violation"),
 ]
 
 DISPLAY_NAME_MAP = {
@@ -133,6 +133,9 @@ SUMMARY_METRIC_KEYS = [
     "service_continuity_rate",
     "service_availability_rate",
     "task_completion_rate",
+    "task_success_rate",
+    "task_failure_rate",
+    "task_settlement_rate",
     "task_resolution_rate",
     "pending_task_rate",
     "avg_load_balance_score",
@@ -152,6 +155,9 @@ HIGHER_IS_BETTER = {
     "service_continuity_rate": True,
     "service_availability_rate": True,
     "task_completion_rate": True,
+    "task_success_rate": True,
+    "task_failure_rate": False,
+    "task_settlement_rate": True,
     "task_resolution_rate": True,
     "effective_latency_score": True,
     "avg_load_balance_score": True,
@@ -176,8 +182,8 @@ CORE_BAR_METRICS = [
     ("avg_delay", "Average Delay", "Average Delay (ms)"),
     ("effective_latency_score", "Effective Latency Score", "Effective Latency Score"),
     ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
-    ("task_resolution_rate", "Task Resolution Rate", "Task Resolution Rate (%)"),
-    ("task_completion_rate", "Task Completion Rate", "Task Completion Rate (%)"),
+    ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
+    ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)"),
     ("avg_load_balance_score", "Avg Load Balance Score", "Avg Load Balance Score"),
 ]
 
@@ -186,8 +192,8 @@ TRAINING_QOS_STEP_METRICS = [
     ("avg_delay", "Average Delay", "Average Delay (ms)", 1000.0),
     ("effective_latency_score", "Effective Latency Score", "Score", 1.0),
     ("service_continuity_rate", "Service Continuity", "Rate (%)", 100.0),
-    ("task_resolution_rate", "Task Resolution", "Rate (%)", 100.0),
-    ("task_completion_rate", "Task Completion", "Rate (%)", 100.0),
+    ("task_success_rate", "Task Success", "Rate (%)", 100.0),
+    ("task_settlement_rate", "Task Settlement", "Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation", "Rate (%)", 100.0),
     ("avg_load_balance_score", "Load Balance", "Score", 1.0),
 ]
@@ -206,7 +212,7 @@ REWARD_COMPONENT_STEP_METRICS = [
 RADAR_METRICS = [
     ("effective_latency_score", "Effective\nLatency", True),
     ("service_continuity_rate", "Continuity", True),
-    ("task_resolution_rate", "Resolution", True),
+    ("task_success_rate", "Task\nSuccess", True),
     ("task_completion_rate", "Completion", True),
     ("avg_load_balance_score", "Load\nBalance", True),
     ("avg_delay", "Low\nDelay", False),
@@ -2509,6 +2515,9 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "service_continuity_rate": service_continuity_rate,
         "service_availability_rate": float(best_record.get("service_availability_rate", service_continuity_rate)),
         "task_completion_rate": float(best_record.get("task_completion_rate", 0.0)),
+        "task_success_rate": float(best_record.get("task_success_rate", best_record.get("task_completion_rate", 0.0))),
+        "task_failure_rate": float(best_record.get("task_failure_rate", best_record.get("deadline_violation_rate", 0.0))),
+        "task_settlement_rate": float(best_record.get("task_settlement_rate", best_record.get("task_resolution_rate", 0.0))),
         "task_resolution_rate": float(best_record.get("task_resolution_rate", 0.0)),
         "pending_task_rate": float(best_record.get("pending_task_rate", 0.0)),
         "avg_load_balance_score": float(best_record.get("avg_load_balance_score", 0.0)),
@@ -2550,6 +2559,9 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "service_continuity_rate",
         "service_availability_rate",
         "task_completion_rate",
+        "task_success_rate",
+        "task_failure_rate",
+        "task_settlement_rate",
         "task_resolution_rate",
         "pending_task_rate",
         "deadline_violation_rate",
@@ -2591,6 +2603,9 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "service_continuity_rate": float(record.get("service_continuity_rate", 0.0)),
                 "service_availability_rate": float(record.get("service_availability_rate", 0.0)),
                 "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
+                "task_success_rate": float(record.get("task_success_rate", record.get("task_completion_rate", 0.0))),
+                "task_failure_rate": float(record.get("task_failure_rate", record.get("deadline_violation_rate", 0.0))),
+                "task_settlement_rate": float(record.get("task_settlement_rate", record.get("task_resolution_rate", 0.0))),
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
                 "effective_latency_score": float(record.get("effective_latency_score", 0.0)),
@@ -3181,7 +3196,7 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
     return save_figure(fig, output_dir / "delay_energy_tradeoff.pdf")
 
 
-def plot_reliability_resolution_scatter(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
     ordered = order_methods(methods)
     if not ordered:
         return None
@@ -3190,11 +3205,11 @@ def plot_reliability_resolution_scatter(methods: Sequence[Dict], output_dir: Pat
     fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=220)
     for method in ordered:
         style = styles[str(method.get("method", ""))]
-        x_value = float(method.get("task_resolution_rate", 0.0)) * 100.0
+        x_value = float(method.get("task_success_rate", method.get("task_completion_rate", 0.0))) * 100.0
         y_value = float(method.get("service_continuity_rate", 0.0)) * 100.0
-        completion = float(method.get("task_completion_rate", 0.0))
+        load_balance = float(method.get("avg_load_balance_score", 0.0))
         effective = float(method.get("effective_latency_score", 0.0))
-        size = 90.0 + 360.0 * max(completion, 0.0)
+        size = 90.0 + 360.0 * np.clip(load_balance, 0.0, 1.0)
         if method.get("is_system"):
             size *= 1.20
 
@@ -3230,14 +3245,14 @@ def plot_reliability_resolution_scatter(methods: Sequence[Dict], output_dir: Pat
             zorder=5,
         )
 
-    ax.set_xlabel("Task Resolution Rate (%)")
+    ax.set_xlabel("Task Success Rate (%)")
     ax.set_ylabel("Service Continuity Rate (%)")
-    ax.set_title("Reliability-Resolution Trade-off (marker size: completion, label: effective latency)")
+    ax.set_title("Success-Continuity Trade-off (marker size: load balance, label: effective latency)")
     ax.set_xlim(left=0.0, right=max(100.0, ax.get_xlim()[1]))
     ax.set_ylim(bottom=0.0, top=max(100.0, ax.get_ylim()[1]))
     style_axes_frame(ax)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "reliability_resolution_tradeoff.pdf")
+    return save_figure(fig, output_dir / "success_continuity_tradeoff.pdf")
 
 
 def normalized_metric_values(methods: Sequence[Dict], metric_key: str, higher_is_better: bool) -> np.ndarray:
@@ -3717,7 +3732,7 @@ def main() -> None:
     step_metric_plots = plot_step_metric_curves(history_path, output_dir, window=args.plot_window)
     episode_metric_plot = plot_additional_metric_curves(methods, output_dir)
     tradeoff_plot = plot_delay_energy_tradeoff(methods, output_dir)
-    reliability_plot = plot_reliability_resolution_scatter(methods, output_dir)
+    reliability_plot = plot_success_continuity_scatter(methods, output_dir)
     radar_plot = plot_performance_radar(methods, output_dir)
     reward_distribution_plot = plot_reward_distribution(methods, output_dir)
     dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
@@ -3738,7 +3753,7 @@ def main() -> None:
     if tradeoff_plot is not None:
         print(f"Delay-energy trade-off figure: {tradeoff_plot}")
     if reliability_plot is not None:
-        print(f"Reliability-resolution trade-off figure: {reliability_plot}")
+        print(f"Success-continuity trade-off figure: {reliability_plot}")
     if radar_plot is not None:
         print(f"Performance radar figure: {radar_plot}")
     if reward_distribution_plot is not None:

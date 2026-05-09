@@ -5,6 +5,7 @@ import pytest
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.mec import MECConfig, MECServer
 from src.environment.user import UserState
+from scripts.compare_system_baselines import SUMMARY_METRIC_KEYS, HIGHER_IS_BETTER
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
@@ -75,6 +76,15 @@ def test_task_success_metrics_distinguish_success_failure_and_settlement():
     assert summary["task_resolution_rate"] == pytest.approx(0.95)
     assert summary["task_completion_rate"] == pytest.approx(40 / 95)
     assert summary["deadline_violation_rate"] == pytest.approx(0.55)
+
+
+def test_compare_summary_includes_task_success_metrics():
+    assert "task_success_rate" in SUMMARY_METRIC_KEYS
+    assert "task_failure_rate" in SUMMARY_METRIC_KEYS
+    assert "task_settlement_rate" in SUMMARY_METRIC_KEYS
+    assert HIGHER_IS_BETTER["task_success_rate"] is True
+    assert HIGHER_IS_BETTER["task_failure_rate"] is False
+    assert HIGHER_IS_BETTER["task_settlement_rate"] is True
 
 
 def test_effective_latency_score_uses_task_success_rate_not_settlement_rate():
