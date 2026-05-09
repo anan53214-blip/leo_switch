@@ -71,6 +71,9 @@ BEST_MODEL_METRIC_CHOICES = (
     "handover_failure_rate",
     "avg_load_balance_score",
     "task_completion_rate",
+    "task_success_rate",
+    "task_failure_rate",
+    "task_settlement_rate",
     "latency_priority_score",
     "effective_latency_score",
 )
@@ -84,6 +87,9 @@ BEST_MODEL_METRIC_LABELS = {
     "handover_failure_rate": "handover failure rate",
     "avg_load_balance_score": "load balance",
     "task_completion_rate": "task completion",
+    "task_success_rate": "task success",
+    "task_failure_rate": "task failure rate",
+    "task_settlement_rate": "task settlement",
     "latency_priority_score": "latency-priority score",
     "effective_latency_score": "effective latency score",
 }
@@ -128,6 +134,12 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
         return _bounded_unit_score(record.get("avg_load_balance_score", 0.0))
     if metric_name == "task_completion_rate":
         return _bounded_unit_score(record.get("task_completion_rate", 0.0))
+    if metric_name == "task_success_rate":
+        return _bounded_unit_score(record.get("task_success_rate", record.get("task_completion_rate", 0.0)))
+    if metric_name == "task_failure_rate":
+        return -_bounded_unit_score(record.get("task_failure_rate", record.get("deadline_violation_rate", 0.0)))
+    if metric_name == "task_settlement_rate":
+        return _bounded_unit_score(record.get("task_settlement_rate", record.get("task_resolution_rate", 0.0)))
     if metric_name == "latency_priority_score":
         delay_score = _inverse_positive_score(record.get("avg_delay", 0.0))
         continuity_score = _bounded_unit_score(record.get("service_continuity_rate", 0.0))
@@ -146,9 +158,10 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
             return _bounded_unit_score(record.get("effective_latency_score", 0.0))
         delay_score = _inverse_positive_score(record.get("avg_delay", 0.0))
         continuity_score = _bounded_unit_score(record.get("service_continuity_rate", 0.0))
-        resolution_score = _bounded_unit_score(record.get("task_resolution_rate", 0.0))
-        completion_score = _bounded_unit_score(record.get("task_completion_rate", 0.0))
-        return delay_score * continuity_score * resolution_score * completion_score
+        success_score = _bounded_unit_score(
+            record.get("task_success_rate", record.get("task_completion_rate", 0.0))
+        )
+        return delay_score * continuity_score * success_score
 
     raise ValueError(f"Unsupported best-model metric: {metric_name}")
 
@@ -174,7 +187,7 @@ class TrainConfig:
     sats_per_plane: int = 11              # 每轨道卫星数
     altitude_km: float = 550.0            # 轨道高度
     inclination_deg: float = 53.0         # 轨道倾角
-    num_users: int = 10                   # 用户数量
+    num_users: int = 20                   # 用户数量
     max_steps: int = 2000                 # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
     min_effective_offload_ratio: float = 0.05
@@ -841,6 +854,9 @@ class HANMAPPOTrainer:
             'resolved_tasks': summary_env_stats.get('resolved_tasks', 0),
             'pending_tasks': summary_env_stats.get('pending_tasks', 0),
             'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
+            'task_success_rate': summary_env_stats.get('task_success_rate', 0.0),
+            'task_failure_rate': summary_env_stats.get('task_failure_rate', 0.0),
+            'task_settlement_rate': summary_env_stats.get('task_settlement_rate', 0.0),
             'task_resolution_rate': summary_env_stats.get('task_resolution_rate', 0.0),
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
@@ -935,6 +951,9 @@ class HANMAPPOTrainer:
                 'resolved_tasks': rollout_stats.get('resolved_tasks', 0),
                 'pending_tasks': rollout_stats.get('pending_tasks', 0),
                 'task_completion_rate': rollout_stats.get('task_completion_rate', 0),
+                'task_success_rate': rollout_stats.get('task_success_rate', 0),
+                'task_failure_rate': rollout_stats.get('task_failure_rate', 0),
+                'task_settlement_rate': rollout_stats.get('task_settlement_rate', 0),
                 'task_resolution_rate': rollout_stats.get('task_resolution_rate', 0),
                 'pending_task_rate': rollout_stats.get('pending_task_rate', 0),
                 'deadline_violation_rate': rollout_stats.get('deadline_violation_rate', 0),
@@ -1124,6 +1143,9 @@ class HANMAPPOTrainer:
             'completed_tasks': eval_env_stats.get('completed_tasks', 0),
             'deadline_violations': eval_env_stats.get('deadline_violations', 0),
             'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
+            'task_success_rate': summary_env_stats.get('task_success_rate', 0.0),
+            'task_failure_rate': summary_env_stats.get('task_failure_rate', 0.0),
+            'task_settlement_rate': summary_env_stats.get('task_settlement_rate', 0.0),
             'task_resolution_rate': summary_env_stats.get('task_resolution_rate', 0.0),
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
@@ -1283,7 +1305,7 @@ def parse_args():
                         help='设备 (cuda/cpu/auto)')
     
     # 环境参数
-    parser.add_argument('--num_users', type=int, default=10,
+    parser.add_argument('--num_users', type=int, default=20,
                         help='用户数量')
     parser.add_argument('--max_steps', type=int, default=2000,
                         help='每episode最大步数')

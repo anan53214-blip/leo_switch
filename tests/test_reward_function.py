@@ -1,6 +1,26 @@
 import numpy as np
+import pytest
 
+from scripts.train import compute_model_selection_score
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
+
+
+def test_effective_latency_score_fallback_uses_task_success_rate():
+    record = {
+        "avg_delay": 1.0,
+        "service_continuity_rate": 0.8,
+        "task_success_rate": 0.5,
+        "task_resolution_rate": 1.0,
+        "task_completion_rate": 0.9,
+    }
+
+    assert compute_model_selection_score(record, "effective_latency_score") == pytest.approx(0.2)
+
+
+def test_task_success_rate_can_be_used_as_selection_metric():
+    record = {"task_success_rate": 0.73}
+
+    assert compute_model_selection_score(record, "task_success_rate") == pytest.approx(0.73)
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
