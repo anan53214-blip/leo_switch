@@ -234,10 +234,16 @@ results/baseline_compare/<timestamp>/
 - `method_comparison.pdf`
 - `reward_curve_vs_baselines.pdf`
 - `delay_energy_tradeoff.pdf`
+- `success_continuity_tradeoff.pdf`
+- `reward_components_per_task_vs_steps.pdf`
 - `reward_distribution.pdf`
 - `paper_baseline_dashboard.pdf`
 
 其中 `reward_curve_vs_baselines.pdf` 和 `paper_baseline_dashboard.pdf` 会把 HAN+MAPPO、DQN、MADDPG、MAPPO(no HAN) 的训练历史画成收敛曲线；学习式算法的平滑曲线统一使用实线并以颜色区分，默认平滑窗口为 5，没有训练历史的启发式基线保留为最终评估 reward 水平线。
+
+`success_continuity_tradeoff.pdf` compares task success and service continuity. Marker size represents load balance and the marker label shows effective latency score.
+
+`reward_components_per_task_vs_steps.pdf` normalizes reward components by total generated tasks so reward-term scales can be compared without being dominated by task-count changes.
 
 学习式基线的产物保存在：
 
@@ -257,6 +263,9 @@ results/baseline_compare/<timestamp>/learned_baselines/
 - `service_continuity_rate`
 - `service_availability_rate`
 - `task_completion_rate`
+- `task_success_rate`
+- `task_failure_rate`
+- `task_settlement_rate`
 - `task_resolution_rate`
 - `pending_task_rate`
 - `avg_load_balance_score`
@@ -272,4 +281,4 @@ results/baseline_compare/<timestamp>/learned_baselines/
 latency_priority_score
 ```
 
-主要对比维度包括平均时延、服务连续性、服务可用性和任务完成率。
+主要对比维度包括平均时延、服务连续性、服务可用性、任务成功率和截止期违约率。

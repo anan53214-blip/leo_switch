@@ -28,11 +28,11 @@ latency_priority_score
 | 卫星总数 | `66` |
 | `altitude_km` | `550.0` |
 | `inclination_deg` | `53.0` |
-| `num_users` | `10` |
+| `num_users` | `20` |
 | `max_steps` | `2000` |
 | `time_step_sec` | `1.0` |
 | `max_visible_sats` | `10` |
-| `task_arrival_prob` | `0.45` |
+| `task_arrival_prob` | `0.35` |
 
 ## 3. Reward 权重
 
@@ -51,10 +51,13 @@ latency_priority_score
 | 参数 | 当前默认值 |
 | --- | --- |
 | `satellite_cpu_freq_ghz` | `5.0` |
+| `satellite_num_cores` | `4` |
 | `satellite_max_cpu_freq_ghz` | `8.0` |
-| `max_queue_size` | `20` |
-| `user_cpu_freq_ghz` | `0.5` |
-| `user_max_cpu_freq_ghz` | `1.0` |
+| `max_queue_size` | `6` |
+| `user_cpu_freq_ghz` | `1.0` |
+| `user_max_cpu_freq_ghz` | `1.5` |
+| `bandwidth_mhz` | `10.0` |
+| `user_tx_power_dbm` | `24.0` |
 
 这些设置会让卫星 MEC 队列存在竞争，同时保留本地计算能力较弱的对比场景。
 
@@ -129,7 +132,7 @@ MAPPO 无 HAN 消融相关参数：
 
 ```powershell
 python scripts\train.py `
-  --num_users 10 `
+  --num_users 20 `
   --max_steps 2000 `
   --total_timesteps 1200000 `
   --save_path results\full_train_delay_focus

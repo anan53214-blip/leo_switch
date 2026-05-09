@@ -72,7 +72,7 @@ python scripts\train.py
 
 ```powershell
 python scripts\train.py `
-  --num_users 10 `
+  --num_users 20 `
   --max_steps 2000 `
   --total_timesteps 1200000 `
   --learning_rate 3e-4 `
@@ -102,7 +102,7 @@ python scripts\train.py `
 
 | 参数 | 默认值 | 含义 |
 | --- | --- | --- |
-| `--num_users` | `10` | 用户数量 |
+| `--num_users` | `20` | 用户数量 |
 | `--max_steps` | `2000` | 每个 episode 最大步数 |
 | `--total_timesteps` | `1200000` | 总训练步数 |
 | `--n_steps` | `2048` | 每次 MAPPO rollout 步数 |
@@ -127,6 +127,9 @@ python scripts\train.py `
 - `service_continuity_rate`
 - `avg_load_balance_score`
 - `task_completion_rate`
+- `task_success_rate`
+- `task_failure_rate`
+- `task_settlement_rate`
 - `latency_priority_score`
 
 ## 5. 默认环境参数
@@ -139,7 +142,15 @@ python scripts\train.py `
 | `inclination_deg` | `53.0` |
 | `time_step_sec` | `1.0` |
 | `max_visible_sats` | `10` |
-| `task_arrival_prob` | `0.45` |
+| `num_users` | `20` |
+| `task_arrival_prob` | `0.35` |
+| `satellite_cpu_freq_ghz` | `5.0` |
+| `satellite_num_cores` | `4` |
+| `max_queue_size` | `6` |
+| `user_cpu_freq_ghz` | `1.0` |
+| `user_max_cpu_freq_ghz` | `1.5` |
+| `bandwidth_mhz` | `10.0` |
+| `user_tx_power_dbm` | `24.0` |
 
 Reward 权重：
 
@@ -191,6 +202,9 @@ results/full_train_delay_focus/
 - `kl_divergence`
 - `handover_success_rate`
 - `task_completion_rate`
+- `task_success_rate`
+- `task_failure_rate`
+- `task_settlement_rate`
 - `avg_delay`
 - `total_energy`
 - `service_continuity_rate`

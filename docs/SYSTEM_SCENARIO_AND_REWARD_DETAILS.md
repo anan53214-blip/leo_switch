@@ -11,7 +11,7 @@
 - 总卫星数为 `66`。
 - 轨道高度为 `550 km`。
 - 轨道倾角为 `53 deg`。
-- 默认用户数为 `10`。
+- 默认用户数为 `20`。
 - 每步时间为 `1 s`。
 - 每个用户最多保留 `10` 个可见卫星候选。
 
@@ -60,14 +60,17 @@ action_i = (handover_action_i, offload_ratio_i)
 | --- | --- |
 | `satellite_cpu_freq_ghz` | `5.0` |
 | `satellite_max_cpu_freq_ghz` | `8.0` |
-| `max_queue_size` | `20` |
+| `satellite_num_cores` | `4` |
+| `max_queue_size` | `6` |
 
 用户本地计算参数：
 
 | 参数 | 当前默认值 |
 | --- | --- |
-| `user_cpu_freq_ghz` | `0.5` |
-| `user_max_cpu_freq_ghz` | `1.0` |
+| `user_cpu_freq_ghz` | `1.0` |
+| `user_max_cpu_freq_ghz` | `1.5` |
+| `bandwidth_mhz` | `10.0` |
+| `user_tx_power_dbm` | `24.0` |
 
 任务进入系统后，环境会计算：
 
@@ -116,9 +119,23 @@ action_i = (handover_action_i, offload_ratio_i)
 | `service_continuity_rate` | 服务连续性 |
 | `service_availability_rate` | 服务可用性 |
 | `task_completion_rate` | 任务完成率 |
+| `task_success_rate` | 任务成功率 |
+| `task_failure_rate` | 任务失败率 |
+| `task_settlement_rate` | 任务结算率 |
 | `task_resolution_rate` | 任务解析率 |
 | `pending_task_rate` | 未完成或排队任务比例 |
 | `avg_load_balance_score` | 平均负载均衡得分 |
+
+`task_success_rate` is the primary task outcome metric and is computed as `completed_tasks / total_tasks`.
+`task_failure_rate` is computed as `deadline_violations / total_tasks`.
+`task_settlement_rate` is computed as `(completed_tasks + deadline_violations) / total_tasks`.
+The legacy `task_resolution_rate` is kept as an alias of `task_settlement_rate` for backward compatibility, but it should not be used as the main competitiveness metric because deadline failures are counted as settled tasks.
+
+The default `effective_latency_score` is now:
+
+`1 / (1 + avg_delay) * service_continuity_rate * task_success_rate`
+
+This makes deadline failures reduce the primary latency-oriented score directly.
 
 ## 7. 与基线的关系
 
