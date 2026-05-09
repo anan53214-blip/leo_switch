@@ -61,7 +61,7 @@ STANDARD_CONFIG = {
     'device':           'cuda',          # 3090 自动使用 CUDA
 
     # 环境
-    'num_users':        10,              # 10 个用户（增加竞争）
+    'num_users':        20,              # 20 个用户（增加竞争）
     'max_steps':        2000,            # 每 episode 2000 步（更长的决策序列）
     'reward_delay_weight': 1.4,
     'reward_energy_weight': 0.4,

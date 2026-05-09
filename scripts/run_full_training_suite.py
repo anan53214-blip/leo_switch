@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
                         help="Maximum steps per episode, aligned with previous full run.")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for training and baseline evaluation.")
-    parser.add_argument("--num-users", type=int, default=10,
+    parser.add_argument("--num-users", type=int, default=20,
                         help="Number of users in the environment.")
     parser.add_argument("--plot-window", type=int, default=5,
                         help="Smoothing window for generated paper figures.")
