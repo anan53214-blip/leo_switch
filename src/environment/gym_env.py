@@ -38,7 +38,7 @@ class EnvConfig:
     inclination_deg: float = 53.0
     
     # 用户参数
-    num_users: int = 10
+    num_users: int = 20
     user_center_lat: float = 39.9      # 北京
     user_center_lon: float = 116.4
     user_radius_deg: float = 5.0       # 扩大用户分布范围，增加可见卫星差异
@@ -55,7 +55,7 @@ class EnvConfig:
     rvt_threshold_sec: float = 60.0    # Encourage proactive switching
     
     # 任务参数
-    task_arrival_prob: float = 0.45    # Avoid pathological queue saturation
+    task_arrival_prob: float = 0.35    # Moderate competition without pathological saturation
     min_effective_offload_ratio: float = 0.05  # Treat tiny noisy offload actions as local execution
     task_arrival_seed_offset: int = 7919
     

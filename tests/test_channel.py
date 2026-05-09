@@ -15,6 +15,13 @@ from src.environment.channel import (
 )
 
 
+def test_default_channel_config_uses_moderate_leo_uplink_pressure():
+    config = ChannelConfig()
+
+    assert config.bandwidth_mhz == 10.0
+    assert config.user_tx_power_dbm == 24.0
+
+
 @pytest.fixture
 def channel():
     return SatelliteChannel()

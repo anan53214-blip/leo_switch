@@ -29,14 +29,14 @@ class ChannelConfig:
     """
     # 频率参数
     carrier_frequency_ghz: float = 20.0      # 载波频率 (GHz)，Ka频段
-    bandwidth_mhz: float = 50.0              # 信道带宽 (MHz)，增加带宽
+    bandwidth_mhz: float = 10.0              # 信道带宽 (MHz)，增加带宽
     
     # 发射端参数 (卫星)
     satellite_tx_power_dbm: float = 40.0     # 卫星发射功率 (dBm)，10W
     satellite_antenna_gain_db: float = 34.0  # 卫星天线增益 (dB)，相控阵
     
     # 接收端参数 (用户终端)
-    user_tx_power_dbm: float = 33.0          # 用户发射功率 (dBm)，2W卫星终端
+    user_tx_power_dbm: float = 24.0          # 用户发射功率 (dBm)，2W卫星终端
     user_antenna_gain_db: float = 38.5       # 用户天线增益 (dB)，相控阵终端
     
     # 噪声参数

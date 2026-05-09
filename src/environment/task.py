@@ -92,19 +92,19 @@ class TaskConfig:
     定义不同类型任务的参数范围
     """
     # 轻量级任务
-    light_data_range: Tuple[float, float] = (0.5e6, 2e6)      # 0.5-2 Mbits
-    light_compute_range: Tuple[float, float] = (0.1e9, 0.5e9) # 0.1-0.5 G cycles
-    light_delay_range: Tuple[float, float] = (0.5, 2.0)       # 0.5-2 s
+    light_data_range: Tuple[float, float] = (1e6, 3e6)        # 1-3 Mbits
+    light_compute_range: Tuple[float, float] = (0.3e9, 0.8e9) # 0.3-0.8 G cycles
+    light_delay_range: Tuple[float, float] = (1.5, 3.0)       # 1.5-3 s
     
     # 中等任务
-    medium_data_range: Tuple[float, float] = (2e6, 10e6)      # 2-10 Mbits
-    medium_compute_range: Tuple[float, float] = (0.5e9, 2e9)  # 0.5-2 G cycles
-    medium_delay_range: Tuple[float, float] = (1.0, 5.0)      # 1-5 s
+    medium_data_range: Tuple[float, float] = (5e6, 10e6)      # 5-10 Mbits
+    medium_compute_range: Tuple[float, float] = (1.2e9, 2.5e9) # 1.2-2.5 G cycles
+    medium_delay_range: Tuple[float, float] = (2.5, 5.5)      # 2.5-5.5 s
     
     # 重型任务
-    heavy_data_range: Tuple[float, float] = (10e6, 50e6)      # 10-50 Mbits
-    heavy_compute_range: Tuple[float, float] = (2e9, 10e9)    # 2-10 G cycles
-    heavy_delay_range: Tuple[float, float] = (2.0, 10.0)      # 2-10 s
+    heavy_data_range: Tuple[float, float] = (12e6, 25e6)      # 12-25 Mbits
+    heavy_compute_range: Tuple[float, float] = (3e9, 7e9)     # 3-7 G cycles
+    heavy_delay_range: Tuple[float, float] = (4.0, 8.0)       # 4-8 s
 
 
 class TaskGenerator:

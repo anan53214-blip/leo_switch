@@ -16,6 +16,18 @@ from src.environment.mec import (
 )
 
 
+def test_default_mec_config_keeps_20ghz_satellite_capacity_with_tighter_queue():
+    config = MECConfig()
+
+    assert config.satellite_cpu_freq_ghz == 5.0
+    assert config.satellite_num_cores == 4
+    assert config.satellite_cpu_freq_ghz * config.satellite_num_cores == 20.0
+    assert config.max_queue_size == 6
+    assert config.user_cpu_freq_ghz == 1.0
+    assert config.user_max_cpu_freq_ghz == 1.5
+    assert config.user_idle_power_w == 0.05
+
+
 @pytest.fixture
 def calc():
     return OffloadingCalculator()

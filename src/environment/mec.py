@@ -29,15 +29,15 @@ class MECConfig:
     satellite_cpu_freq_ghz: float = 5.0       # 卫星CPU频率 (GHz) - 降低以增加竞争
     satellite_max_cpu_freq_ghz: float = 8.0   # 最大CPU频率 (GHz)
     satellite_num_cores: int = 4              # CPU核心数 - 减半
-    max_queue_size: int = 20                  # 最大任务队列长度 - 大幅缩小，迫使智能选择
+    max_queue_size: int = 6                   # 最大任务队列长度 - 大幅缩小，迫使智能选择
     
     # 用户本地计算参数
-    user_cpu_freq_ghz: float = 0.5            # 用户设备CPU频率 (GHz) - 降低本地能力
-    user_max_cpu_freq_ghz: float = 1.0        # 最大CPU频率 (GHz)
+    user_cpu_freq_ghz: float = 1.0            # 用户设备CPU频率 (GHz) - 降低本地能力
+    user_max_cpu_freq_ghz: float = 1.5        # 最大CPU频率 (GHz)
     
     # 能耗参数
     kappa: float = 1e-27                      # 能耗系数 (J/cycle³)
-    user_idle_power_w: float = 0.1            # 空闲功率 (W)
+    user_idle_power_w: float = 0.05           # 空闲功率 (W)
     
     # 传输参数
     result_ratio: float = 0.1                 # 结果数据与输入数据比例

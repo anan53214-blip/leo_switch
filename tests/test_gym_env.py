@@ -18,6 +18,18 @@ except ImportError:
     print("警告: gymnasium未安装，请运行: pip install gymnasium")
 
 
+def test_default_env_config_uses_20_user_competitive_scenario():
+    from src.environment.gym_env import EnvConfig
+
+    config = EnvConfig()
+
+    assert config.num_users == 20
+    assert config.task_arrival_prob == 0.35
+    assert config.altitude_km == 550.0
+    assert config.handover_delay_sec == 0.6
+    assert config.rvt_threshold_sec == 60.0
+
+
 @pytest.fixture
 def env():
     from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
