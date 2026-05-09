@@ -201,11 +201,15 @@ TRAINING_QOS_STEP_METRICS = [
 REWARD_COMPONENT_STEP_METRICS = [
     ("mean_reward", "Total Reward", "Reward", 1.0),
     ("reward_delay", "Delay Reward", "Reward Term", 1.0),
+    ("reward_energy", "Energy Reward", "Reward Term", 1.0),
     ("reward_qos", "QoS Reward", "Reward Term", 1.0),
     ("reward_handover", "Handover Reward", "Reward Term", 1.0),
     ("reward_load_balance", "Load Balance Reward", "Reward Term", 1.0),
     ("reward_enqueue", "Enqueue Reward", "Reward Term", 1.0),
     ("penalty_deadline", "Deadline Penalty", "Penalty Term", 1.0),
+    ("penalty_failed_handover", "Failed Handover Penalty", "Penalty Term", 1.0),
+    ("penalty_handover_cost", "Handover Cost Penalty", "Penalty Term", 1.0),
+    ("penalty_blocked", "Blocked-Service Penalty", "Penalty Term", 1.0),
     ("penalty_queue_full", "Queue-Full Penalty", "Penalty Term", 1.0),
 ]
 
@@ -531,6 +535,11 @@ def load_training_metric_curve_from_path(history_path: Optional[Path], metric_ke
     evaluation_records.extend(payload.get("training_evaluation", []))
     evaluation_records.extend(payload.get("evaluation", []))
     return extract_training_metric_curve(evaluation_records, metric_key)
+
+
+def load_training_history(history_path: Path) -> Dict:
+    with history_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def resolve_summary_path(path_value: str) -> Path:
@@ -2939,6 +2948,47 @@ def draw_training_metric_step_panel(
     return True
 
 
+def load_training_metric_per_task_curve_from_path(history_path: Optional[Path], metric_key: str) -> tuple[np.ndarray, np.ndarray]:
+    steps, values = load_training_metric_curve_from_path(history_path, metric_key)
+    if history_path is None or not history_path.exists() or len(steps) == 0:
+        return steps, values
+    history = load_training_history(history_path)
+    training = history.get("training", []) if isinstance(history, dict) else []
+    totals = np.array([max(float(record.get("total_tasks", 0.0)), 1.0) for record in training if "total_steps" in record and metric_key in record], dtype=float)
+    if len(totals) != len(values):
+        return steps, values
+    return steps, values / totals
+
+
+def draw_training_metric_per_task_step_panel(
+    ax,
+    history_path: Optional[Path],
+    metric_key: str,
+    title: str,
+    ylabel: str,
+    scale: float,
+    window: int,
+    color: str,
+) -> bool:
+    steps, values = load_training_metric_per_task_curve_from_path(history_path, metric_key)
+    if len(steps) == 0:
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No step data", transform=ax.transAxes, ha="center", va="center", fontsize=10, color=PAPER_COLORS["muted"])
+        ax.set_title(title)
+        return False
+
+    scaled_values = values.astype(float) * float(scale)
+    smoothed_values, effective_window = reward_smooth(scaled_values, window=max(window, 3))
+    draw_raw_metric_shadow(ax, steps, scaled_values, smoothed_values, color=color, alpha=0.20)
+    ax.plot(steps, smoothed_values, color=color, linewidth=2.0, label=f"Smoothed (w={effective_window})", zorder=3)
+    ax.set_title(title)
+    ax.set_xlabel("Training Steps")
+    ax.set_ylabel(ylabel)
+    ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
+    style_axes_frame(ax)
+    return True
+
+
 def plot_step_metric_group(
     history_path: Optional[Path],
     output_dir: Path,
@@ -2994,6 +3044,55 @@ def plot_step_metric_group(
     return save_figure(fig, output_dir / output_name)
 
 
+def plot_reward_component_per_task_curves(history_path: Optional[Path], output_dir: Path, window: int) -> Optional[Path]:
+    if history_path is None or not history_path.exists():
+        return None
+
+    metric_specs = [spec for spec in REWARD_COMPONENT_STEP_METRICS if spec[0] != "mean_reward"]
+    ncols = 2
+    nrows = int(np.ceil(len(metric_specs) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(14, 3.6 * nrows), dpi=220)
+    axes = np.asarray(axes).reshape(-1)
+    colors = [
+        PAPER_COLORS["primary"],
+        PAPER_COLORS["secondary"],
+        PAPER_COLORS["info"],
+        PAPER_COLORS["success"],
+        PAPER_COLORS["warning"],
+        "#5DA5DA",
+        "#60BD68",
+        "#F17CB0",
+        "#B2912F",
+        "#B276B2",
+    ]
+
+    has_any_data = False
+    for index, (axis, spec) in enumerate(zip(axes, metric_specs)):
+        metric_key, metric_title, _ylabel, scale = spec
+        has_data = draw_training_metric_per_task_step_panel(
+            axis,
+            history_path,
+            metric_key,
+            f"{metric_title} per Task",
+            "Reward Term / Task",
+            scale,
+            window,
+            colors[index % len(colors)],
+        )
+        has_any_data = has_any_data or has_data
+
+    for axis in axes[len(metric_specs):]:
+        axis.axis("off")
+
+    if not has_any_data:
+        plt.close(fig)
+        return None
+
+    fig.suptitle("Reward Components per Task vs. Steps", fontsize=15, fontweight="bold", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.975))
+    return save_figure(fig, output_dir / "reward_components_per_task_vs_steps.pdf")
+
+
 def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, window: int) -> List[Path]:
     paths: List[Path] = []
     qos_path = plot_step_metric_group(
@@ -3017,6 +3116,13 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
     )
     if reward_component_path is not None:
         paths.append(reward_component_path)
+    reward_component_per_task_path = plot_reward_component_per_task_curves(
+        history_path,
+        output_dir,
+        window,
+    )
+    if reward_component_per_task_path is not None:
+        paths.append(reward_component_per_task_path)
     return paths
 
 
