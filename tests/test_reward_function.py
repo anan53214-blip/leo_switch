@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from scripts.train import compute_model_selection_score
+from scripts.train import TrainConfig, compute_model_selection_score
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
 
 
@@ -115,6 +115,7 @@ def test_info_contains_reward_breakdown_and_load_balance():
             'reward_delay',
             'reward_energy',
             'reward_qos',
+            'reward_service_continuity',
             'reward_handover',
             'reward_load_balance',
             'reward_enqueue',
@@ -124,3 +125,23 @@ def test_info_contains_reward_breakdown_and_load_balance():
             assert key in info['stats']
     finally:
         env.close()
+
+
+def test_service_continuity_reward_scales_with_uninterrupted_step_time():
+    env = _build_single_user_env(reward_service_continuity_weight=0.5)
+
+    try:
+        assert env._compute_service_continuity_reward(10.0, 0.0) == pytest.approx(0.5)
+        assert env._compute_service_continuity_reward(10.0, 2.0) == pytest.approx(0.4)
+        assert env._compute_service_continuity_reward(10.0, 10.0) == pytest.approx(0.0)
+    finally:
+        env.close()
+
+
+def test_training_defaults_keep_exploration_and_use_smaller_batches():
+    config = TrainConfig()
+
+    assert config.n_epochs == 10
+    assert config.batch_size == 64
+    assert config.entropy_schedule == "constant"
+    assert config.reward_failed_handover_penalty == pytest.approx(0.3)

@@ -148,6 +148,22 @@ SUMMARY_METRIC_KEYS = [
     "effective_latency_score",
 ]
 
+REWARD_BREAKDOWN_KEYS = [
+    "reward_delay",
+    "reward_energy",
+    "reward_qos",
+    "reward_service_continuity",
+    "reward_handover",
+    "reward_load_balance",
+    "reward_enqueue",
+    "penalty_deadline",
+    "penalty_queue_full",
+    "penalty_invalid_action",
+    "penalty_blocked",
+    "penalty_failed_handover",
+    "penalty_handover_cost",
+]
+
 HIGHER_IS_BETTER = {
     "mean_reward": True,
     "reward": True,
@@ -203,6 +219,7 @@ REWARD_COMPONENT_STEP_METRICS = [
     ("reward_delay", "Delay Reward", "Reward Term", 1.0),
     ("reward_energy", "Energy Reward", "Reward Term", 1.0),
     ("reward_qos", "QoS Reward", "Reward Term", 1.0),
+    ("reward_service_continuity", "Service Continuity Reward", "Reward Term", 1.0),
     ("reward_handover", "Handover Reward", "Reward Term", 1.0),
     ("reward_load_balance", "Load Balance Reward", "Reward Term", 1.0),
     ("reward_enqueue", "Enqueue Reward", "Reward Term", 1.0),
@@ -661,6 +678,12 @@ def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_st
             config.get("reward_load_balance_weight", EnvConfig.reward_load_balance_weight)
         ),
         reward_qos_weight=float(config.get("reward_qos_weight", EnvConfig.reward_qos_weight)),
+        reward_service_continuity_weight=float(
+            config.get("reward_service_continuity_weight", EnvConfig.reward_service_continuity_weight)
+        ),
+        reward_failed_handover_penalty=float(
+            config.get("reward_failed_handover_penalty", EnvConfig.reward_failed_handover_penalty)
+        ),
         seed=seed if seed is not None else config.get("seed"),
     )
 
@@ -860,6 +883,8 @@ def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -
             if key == "deadline_violation_rate":
                 continue
             record[key] = float(summary.get(key, 0.0))
+        for key in REWARD_BREAKDOWN_KEYS:
+            record[key] = float(summary.get(key, 0.0))
         record["deadline_violation_rate"] = compute_deadline_violation_rate(summary)
         episode_records.append(record)
     return episode_records
@@ -883,6 +908,9 @@ def summarize_results(
         "episode_metrics": episode_metrics,
     }
     for key in SUMMARY_METRIC_KEYS:
+        values = [float(record.get(key, 0.0)) for record in episode_metrics]
+        result[key] = float(np.mean(values)) if values else 0.0
+    for key in REWARD_BREAKDOWN_KEYS:
         values = [float(record.get(key, 0.0)) for record in episode_metrics]
         result[key] = float(np.mean(values)) if values else 0.0
     if extra:
@@ -2577,6 +2605,7 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "effective_latency_score",
         "avg_load_balance_score",
         "energy_per_resolved_task",
+        *REWARD_BREAKDOWN_KEYS,
         "selection_metric",
         "selection_score",
         "primary_metric_win_count",
@@ -2623,6 +2652,7 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "resolved_tasks": float(record.get("resolved_tasks", 0.0)),
                 "completed_tasks": float(record.get("completed_tasks", 0.0)),
                 "deadline_violations": float(record.get("deadline_violations", 0.0)),
+                **{key: float(record.get(key, 0.0)) for key in REWARD_BREAKDOWN_KEYS},
                 "selected_offload": method.get("selected_offload", ""),
             }
             rows.append(row)

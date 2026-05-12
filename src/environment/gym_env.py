@@ -65,11 +65,12 @@ class EnvConfig:
     reward_handover_weight: float = 0.3
     reward_load_balance_weight: float = 0.1
     reward_qos_weight: float = 0.4
+    reward_service_continuity_weight: float = 0.5
     reward_enqueue_bonus: float = 0.02
     reward_invalid_action_penalty: float = 0.5
     reward_blocked_penalty: float = 1.0
     reward_queue_full_penalty: float = 0.3
-    reward_failed_handover_penalty: float = 0.6
+    reward_failed_handover_penalty: float = 0.3
     reward_deadline_penalty: float = 1.0
     reward_energy_reference: float = 10.0
     
@@ -344,6 +345,7 @@ class LEOSatelliteEnv(gym.Env):
             'reward_delay': 0.0,
             'reward_energy': 0.0,
             'reward_qos': 0.0,
+            'reward_service_continuity': 0.0,
             'reward_handover': 0.0,
             'reward_load_balance': 0.0,
             'reward_enqueue': 0.0,
@@ -362,6 +364,21 @@ class LEOSatelliteEnv(gym.Env):
         for key, value in terms.items():
             if key in self.stats:
                 self.stats[key] += float(value)
+
+    def _compute_service_continuity_reward(
+        self,
+        step_user_seconds: float,
+        interruption_seconds: float,
+    ) -> float:
+        """Reward uninterrupted service time at the same step granularity as the metric."""
+        if step_user_seconds <= 0.0:
+            return 0.0
+        continuity_score = 1.0 - np.clip(
+            float(interruption_seconds) / float(step_user_seconds),
+            0.0,
+            1.0,
+        )
+        return float(self.config.reward_service_continuity_weight * continuity_score)
 
     @staticmethod
     def _summarize_stats(stats: Dict[str, float]) -> Dict[str, float]:
@@ -601,7 +618,6 @@ class LEOSatelliteEnv(gym.Env):
         
         # 4. 计算全局奖励
         total_reward = np.mean(user_rewards)
-        self.episode_rewards.append(total_reward)
         load_balance_score = self._compute_load_balance_score()
         self._last_load_balance_score = load_balance_score
         self.stats['load_balance_sum'] += load_balance_score
@@ -618,6 +634,13 @@ class LEOSatelliteEnv(gym.Env):
         self.stats['blocked_user_seconds'] += blocked_seconds
         self.stats['handover_interruption_seconds'] += handover_seconds
         self.stats['service_interruption_seconds'] += interruption_seconds
+        reward_service_continuity = self._compute_service_continuity_reward(
+            step_user_seconds=step_user_seconds,
+            interruption_seconds=interruption_seconds,
+        )
+        total_reward += reward_service_continuity
+        self._record_reward_terms(reward_service_continuity=reward_service_continuity)
+        self.episode_rewards.append(total_reward)
         
         # 5. 检查终止条件
         self.current_step += 1

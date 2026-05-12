@@ -196,6 +196,8 @@ class TrainConfig:
     reward_handover_weight: float = 0.3
     reward_load_balance_weight: float = 0.1
     reward_qos_weight: float = 0.4
+    reward_service_continuity_weight: float = 0.5
+    reward_failed_handover_penalty: float = 0.3
     
     # ---------- 图参数 ----------
     max_visible_sats: int = 10            # 最大可见卫星数（候选集）
@@ -223,10 +225,11 @@ class TrainConfig:
     value_loss_type: str = "huber"       # 值函数损失类型: mse/huber
     normalize_returns: bool = True        # 是否标准化returns后再计算value loss
     value_huber_beta: float = 10.0        # Huber损失beta（仅value_loss_type=huber时有效）
-    entropy_coef: float = 0.01            # 熵系数（v4: 从0.05降至0.01）
+    entropy_coef: float = 0.005            # Keep exploration from collapsing too early
     max_grad_norm: float = 0.5            # 梯度裁剪
-    n_epochs: int = 4                     # 更新轮数
-    batch_size: int = 256                 # 批大小
+    entropy_schedule: str = "constant"    # Entropy schedule: constant / linear
+    n_epochs: int = 10                    # PPO epochs per update
+    batch_size: int = 64                  # PPO mini-batch size
     
     # ---------- 训练参数 ----------
     total_timesteps: int = 1_200_000      # 总训练步数
@@ -358,16 +361,21 @@ class HANMAPPOTrainer:
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = log_dir / f"{self.config.exp_name}_{timestamp}.log"
-        
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s | %(levelname)s | %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
-        )
-        self.logger = logging.getLogger(__name__)
+
+        logger_name = f"{__name__}.{self.config.exp_name}.{timestamp}.{id(self)}"
+        self.logger = logging.getLogger(logger_name)
+        self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False
+        self.logger.handlers.clear()
+
+        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(formatter)
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(stream_handler)
+        self.log_file = log_file
     
     def _create_directories(self):
         """创建必要目录"""
@@ -392,6 +400,8 @@ class HANMAPPOTrainer:
             reward_handover_weight=self.config.reward_handover_weight,
             reward_load_balance_weight=self.config.reward_load_balance_weight,
             reward_qos_weight=self.config.reward_qos_weight,
+            reward_service_continuity_weight=self.config.reward_service_continuity_weight,
+            reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
             seed=self.config.seed
         )
         
@@ -468,6 +478,7 @@ class HANMAPPOTrainer:
             normalize_returns=self.config.normalize_returns,
             value_huber_beta=self.config.value_huber_beta,
             entropy_coef=self.config.entropy_coef,
+            entropy_schedule=self.config.entropy_schedule,
             learning_rate=self.config.learning_rate,
             max_grad_norm=self.config.max_grad_norm,
             n_epochs=self.config.n_epochs,
@@ -692,6 +703,7 @@ class HANMAPPOTrainer:
             'reward_delay': 0.0,
             'reward_energy': 0.0,
             'reward_qos': 0.0,
+            'reward_service_continuity': 0.0,
             'reward_handover': 0.0,
             'reward_load_balance': 0.0,
             'reward_enqueue': 0.0,
@@ -867,6 +879,7 @@ class HANMAPPOTrainer:
             'reward_delay': env_stats.get('reward_delay', 0.0),
             'reward_energy': env_stats.get('reward_energy', 0.0),
             'reward_qos': env_stats.get('reward_qos', 0.0),
+            'reward_service_continuity': env_stats.get('reward_service_continuity', 0.0),
             'reward_handover': env_stats.get('reward_handover', 0.0),
             'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
             'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
@@ -964,6 +977,7 @@ class HANMAPPOTrainer:
                 'reward_delay': rollout_stats.get('reward_delay', 0),
                 'reward_energy': rollout_stats.get('reward_energy', 0),
                 'reward_qos': rollout_stats.get('reward_qos', 0),
+                'reward_service_continuity': rollout_stats.get('reward_service_continuity', 0),
                 'reward_handover': rollout_stats.get('reward_handover', 0),
                 'reward_load_balance': rollout_stats.get('reward_load_balance', 0),
                 'reward_enqueue': rollout_stats.get('reward_enqueue', 0),
@@ -1159,6 +1173,7 @@ class HANMAPPOTrainer:
             'reward_delay': eval_env_stats.get('reward_delay', 0.0),
             'reward_energy': eval_env_stats.get('reward_energy', 0.0),
             'reward_qos': eval_env_stats.get('reward_qos', 0.0),
+            'reward_service_continuity': eval_env_stats.get('reward_service_continuity', 0.0),
             'reward_handover': eval_env_stats.get('reward_handover', 0.0),
             'reward_load_balance': eval_env_stats.get('reward_load_balance', 0.0),
             'reward_enqueue': eval_env_stats.get('reward_enqueue', 0.0),
@@ -1318,7 +1333,11 @@ def parse_args():
     parser.add_argument('--reward_load_balance_weight', type=float, default=0.1,
                         help='负载均衡奖励权重')
     parser.add_argument('--reward_qos_weight', type=float, default=0.4,
-                        help='QoS奖励权重')
+                        help='QoS reward weight')
+    parser.add_argument('--reward_service_continuity_weight', type=float, default=0.5,
+                        help='Service continuity reward weight')
+    parser.add_argument('--reward_failed_handover_penalty', type=float, default=0.3,
+                        help='Failed handover penalty weight')
     parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
                         help='Treat smaller offload ratios as local execution')
     
@@ -1329,10 +1348,14 @@ def parse_args():
                         help='每次更新收集步数')
     parser.add_argument('--learning_rate', type=float, default=3e-4,
                         help='学习率')
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=64,
                         help='批大小')
-    parser.add_argument('--n_epochs', type=int, default=4,
-                        help='每次更新的PPO epoch数')
+    parser.add_argument('--n_epochs', type=int, default=10,
+                        help='PPO epochs per update')
+    parser.add_argument('--entropy_coef', type=float, default=0.005,
+                        help='Entropy coefficient')
+    parser.add_argument('--entropy_schedule', type=str, default='constant', choices=['constant', 'linear'],
+                        help='Entropy coefficient schedule')
     
     # HAN参数
     parser.add_argument('--han_hidden_dim', type=int, default=64,
@@ -1397,12 +1420,16 @@ def main():
     config.reward_handover_weight = args.reward_handover_weight
     config.reward_load_balance_weight = args.reward_load_balance_weight
     config.reward_qos_weight = args.reward_qos_weight
+    config.reward_service_continuity_weight = args.reward_service_continuity_weight
+    config.reward_failed_handover_penalty = args.reward_failed_handover_penalty
     config.min_effective_offload_ratio = args.min_effective_offload_ratio
     config.total_timesteps = args.total_timesteps
     config.n_steps = args.n_steps
     config.learning_rate = args.learning_rate
     config.batch_size = args.batch_size
     config.n_epochs = args.n_epochs
+    config.entropy_coef = args.entropy_coef
+    config.entropy_schedule = args.entropy_schedule
     config.han_hidden_dim = args.han_hidden_dim
     config.han_num_heads = args.han_num_heads
     config.han_num_layers = args.han_num_layers

@@ -5,7 +5,12 @@ import pytest
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.mec import MECConfig, MECServer
 from src.environment.user import UserState
-from scripts.compare_system_baselines import SUMMARY_METRIC_KEYS, HIGHER_IS_BETTER
+from scripts.compare_system_baselines import (
+    HIGHER_IS_BETTER,
+    REWARD_BREAKDOWN_KEYS,
+    SUMMARY_METRIC_KEYS,
+    summarize_results,
+)
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
@@ -85,6 +90,27 @@ def test_compare_summary_includes_task_success_metrics():
     assert HIGHER_IS_BETTER["task_success_rate"] is True
     assert HIGHER_IS_BETTER["task_failure_rate"] is False
     assert HIGHER_IS_BETTER["task_settlement_rate"] is True
+
+
+def test_compare_summary_preserves_reward_breakdown_metrics():
+    summary = {
+        "avg_delay": 1.0,
+        "total_tasks": 2,
+        "completed_tasks": 2,
+        "reward_delay": 2.5,
+        "reward_energy": 1.5,
+        "reward_qos": 0.8,
+        "reward_service_continuity": 0.4,
+        "penalty_deadline": -0.1,
+    }
+
+    result = summarize_results("example", [4.0], [summary])
+    episode = result["episode_metrics"][0]
+
+    assert "reward_service_continuity" in REWARD_BREAKDOWN_KEYS
+    assert result["reward_delay"] == pytest.approx(2.5)
+    assert result["reward_service_continuity"] == pytest.approx(0.4)
+    assert episode["penalty_deadline"] == pytest.approx(-0.1)
 
 
 def test_effective_latency_score_uses_task_success_rate_not_settlement_rate():

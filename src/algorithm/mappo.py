@@ -85,7 +85,10 @@ class MAPPOConfig:
     
     # ---------- 损失系数 ----------
     value_loss_coef: float = 0.5        # 价值损失系数 c1
-    entropy_coef: float = 0.01          # 熵奖励系数 c2（v4: 从0.05降至0.01，Beta分布下0.05过大）
+    entropy_coef: float = 0.005          # Keep exploration from collapsing too early
+    entropy_schedule: str = "constant"   # Entropy schedule: constant / linear
+    entropy_decay_steps: int = 300       # Decay steps for linear schedule
+    entropy_min_coef_ratio: float = 0.1  # Minimum ratio for linear schedule
     
     # ---------- 优化参数 ----------
     learning_rate: float = 3e-4         # 学习率（v4: 从5e-5提升至3e-4，增大策略更新步长）
@@ -182,6 +185,15 @@ class MAPPO:
         # ---------- 训练统计 ----------
         self.train_step = 0
         self._last_train_stats = {}
+    
+    def _current_entropy_coef(self) -> float:
+        """Return the entropy coefficient for the current update."""
+        if self.config.entropy_schedule == "linear":
+            decay_steps = max(int(self.config.entropy_decay_steps), 1)
+            min_ratio = float(np.clip(self.config.entropy_min_coef_ratio, 0.0, 1.0))
+            scale = max(1.0 - self.train_step / decay_steps, min_ratio)
+            return float(self.config.entropy_coef * scale)
+        return float(self.config.entropy_coef)
     
     def set_buffer(self, buffer: MultiAgentRolloutBuffer):
         """设置经验缓冲区"""
@@ -419,8 +431,8 @@ class MAPPO:
                 else:
                     critic_loss = _value_loss(new_values_for_loss, returns_for_loss)
                 
-                # ---------- 总损失（entropy_coef 线性衰减）----------
-                entropy_coef = self.config.entropy_coef * max(1.0 - self.train_step / 300, 0.1)
+                # ---------- Total loss ----------
+                entropy_coef = self._current_entropy_coef()
                 loss = (
                     actor_loss
                     + self.config.value_loss_coef * critic_loss
