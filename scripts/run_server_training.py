@@ -147,22 +147,115 @@ QUICK_TEST_CONFIG = {
 
 # 方案 D: 多种子对比实验（用于论文）
 MULTI_SEED_SEEDS = [42, 123, 456, 789, 2024]
+SUPPORTED_ALGORITHMS = ("mappo", "maddpg", "pdqn")
 
 
 # ============================================================
 #  主训练函数
 # ============================================================
 
-def run_training(config_dict: dict):
-    """执行单次训练"""
-    from train import TrainConfig, HANMAPPOTrainer
+def get_trainer_class(algorithm: str):
+    """Return the trainer class for the requested HAN-backed algorithm."""
+    try:
+        from scripts.train import HANMADDPGTrainer, HANMAPPOTrainer, HANPDQNTrainer
+    except ModuleNotFoundError:
+        from train import HANMADDPGTrainer, HANMAPPOTrainer, HANPDQNTrainer
+
+    trainers = {
+        "mappo": HANMAPPOTrainer,
+        "maddpg": HANMADDPGTrainer,
+        "pdqn": HANPDQNTrainer,
+    }
+    try:
+        return trainers[algorithm]
+    except KeyError as exc:
+        choices = ", ".join(SUPPORTED_ALGORITHMS)
+        raise ValueError(f"Unsupported algorithm '{algorithm}'. Expected one of: {choices}") from exc
+
+
+def _algorithm_exp_name(exp_name: str, algorithm: str) -> str:
+    if algorithm == "mappo":
+        return exp_name
+    if "han_mappo" in exp_name:
+        return exp_name.replace("han_mappo", f"han_{algorithm}", 1)
+    if f"han_{algorithm}" in exp_name:
+        return exp_name
+    return f"han_{algorithm}_{exp_name}"
+
+
+def _algorithm_save_path(save_path: str, algorithm: str) -> str:
+    if algorithm == "mappo":
+        return save_path
+    suffix = f"_{algorithm}"
+    stripped = save_path.rstrip("/\\")
+    sep_index = max(stripped.rfind("/"), stripped.rfind("\\"))
+    if sep_index >= 0:
+        directory = stripped[:sep_index]
+        name = stripped[sep_index + 1:]
+        separator = stripped[sep_index]
+    else:
+        directory = ""
+        name = stripped
+        separator = ""
+    if name.endswith(suffix) or algorithm in name.split("_"):
+        return save_path
+    if directory:
+        return f"{directory}{separator}{name}{suffix}"
+    return f"{name}{suffix}"
+
+
+def build_training_config(
+    config_dict: dict,
+    algorithm: str = "mappo",
+    save_path: str | None = None,
+    log_path: str | None = None,
+):
+    """Build TrainConfig with server-script defaults and algorithm overrides."""
+    try:
+        from scripts.train import TrainConfig
+    except ModuleNotFoundError:
+        from train import TrainConfig
+
+    if algorithm not in SUPPORTED_ALGORITHMS:
+        choices = ", ".join(SUPPORTED_ALGORITHMS)
+        raise ValueError(f"Unsupported algorithm '{algorithm}'. Expected one of: {choices}")
+
+    config_values = config_dict.copy()
+    config_values["algorithm"] = algorithm
+    config_values["exp_name"] = _algorithm_exp_name(
+        str(config_values.get("exp_name", "han_mappo_server_train")),
+        algorithm,
+    )
+
+    if save_path is not None:
+        config_values["save_path"] = save_path
+    elif "save_path" in config_values:
+        config_values["save_path"] = _algorithm_save_path(str(config_values["save_path"]), algorithm)
+
+    if log_path is not None:
+        config_values["log_path"] = log_path
 
     config = TrainConfig()
-
-    # 更新配置
-    for key, value in config_dict.items():
+    for key, value in config_values.items():
         if hasattr(config, key):
             setattr(config, key, value)
+
+    return config
+
+
+def run_training(
+    config_dict: dict,
+    algorithm: str = "mappo",
+    save_path: str | None = None,
+    log_path: str | None = None,
+):
+    """执行单次训练"""
+    config = build_training_config(
+        config_dict,
+        algorithm=algorithm,
+        save_path=save_path,
+        log_path=log_path,
+    )
 
     # 设备检测
     if config.device == 'cuda' and not torch.cuda.is_available():
@@ -174,6 +267,7 @@ def run_training(config_dict: dict):
     print(f"  实验: {config.exp_name}")
     print(f"  时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  设备: {config.device}")
+    print(f"  Algorithm: {config.algorithm}")
     if config.device == 'cuda':
         print(f"  GPU:  {torch.cuda.get_device_name(0)}")
         print(f"  显存: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
@@ -185,7 +279,8 @@ def run_training(config_dict: dict):
     print("=" * 70)
 
     # 创建训练器并开始训练
-    trainer = HANMAPPOTrainer(config)
+    trainer_cls = get_trainer_class(config.algorithm)
+    trainer = trainer_cls(config)
     if getattr(config, 'load_path', None):
         trainer.load_checkpoint(config.load_path)
     start = time.time()
@@ -198,7 +293,7 @@ def run_training(config_dict: dict):
     return config.save_path
 
 
-def run_multi_seed(base_config: dict, seeds: list):
+def run_multi_seed(base_config: dict, seeds: list, algorithm: str = "mappo", log_path: str | None = None):
     """多种子对比实验"""
     history_paths = []
 
@@ -302,6 +397,13 @@ if __name__ == '__main__':
                         help='覆盖随机种子')
     parser.add_argument('--device', type=str, default='cuda',
                         help='设备 (cuda/cpu)')
+    parser.add_argument('--algorithm', type=str, default='mappo',
+                        choices=list(SUPPORTED_ALGORITHMS),
+                        help='Training algorithm: mappo, maddpg, or pdqn')
+    parser.add_argument('--save_path', type=str, default=None,
+                        help='Override model/result save path')
+    parser.add_argument('--log_path', type=str, default=None,
+                        help='Override log directory')
     parser.add_argument('--load_path', type=str, default=None,
                         help='从检查点恢复训练')
     parser.add_argument('--window', type=int, default=10,
@@ -336,7 +438,12 @@ if __name__ == '__main__':
         if args.load_path:
             base['load_path'] = args.load_path
 
-        paths = run_multi_seed(base, MULTI_SEED_SEEDS)
+        paths = run_multi_seed(
+            base,
+            MULTI_SEED_SEEDS,
+            algorithm=args.algorithm,
+            log_path=args.log_path,
+        )
 
         if not args.no_plot:
             # 每个种子单独画图
@@ -357,7 +464,12 @@ if __name__ == '__main__':
         if args.load_path:
             cfg['load_path'] = args.load_path
 
-        save_path = run_training(cfg)
+        save_path = run_training(
+            cfg,
+            algorithm=args.algorithm,
+            save_path=args.save_path,
+            log_path=args.log_path,
+        )
 
         if not args.no_plot:
             generate_plots(save_path, window=args.window)

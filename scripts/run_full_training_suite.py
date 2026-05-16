@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Run the full HAN+MAPPO training and baseline comparison suite.
+Run the full current-code training and baseline comparison suite.
 
 This wrapper keeps one reproducible entry point for the paper experiment:
-it launches scripts/compare_system_baselines.py with the 1,200K-step setup,
-stores logs under results/baseline_compare/<timestamp>, and leaves model
-artifacts in the same results layout used by previous runs.
+it launches scripts/compare_system_baselines.py with a fixed method list,
+stores logs under results/baseline_compare/<timestamp>, writes a manifest and
+run command, and keeps all learned-baseline artifacts inside that comparison
+directory.
 """
 
 from __future__ import annotations
@@ -23,6 +24,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TOTAL_TIMESTEPS = 1_200_000
 DEFAULT_EXP_NAME = "han_mappo_latency_priority"
 DEFAULT_SELECTION_METRIC = "effective_latency_score"
+DEFAULT_BASELINES = [
+    "random",
+    "min_distance",
+    "full_local",
+    "joint_greedy",
+    "maddpg",
+    "pdqn",
+    "mappo_no_han",
+    "han_maddpg",
+    "han_pdqn",
+]
 
 
 def repo_relative(path: Path) -> str:
@@ -39,7 +51,8 @@ def timestamp_string() -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the full 1,200K-step HAN+MAPPO plus baseline training suite "
+            "Run the full 1,200K-step HAN+MAPPO plus all strict baseline "
+            "training/evaluation suite "
             "and generate comparison figures/logs under results/."
         )
     )
@@ -51,6 +64,12 @@ def parse_args() -> argparse.Namespace:
                         help="Training/evaluation device passed through to the comparison script.")
     parser.add_argument("--total-timesteps", type=int, default=DEFAULT_TOTAL_TIMESTEPS,
                         help="Training steps for HAN+MAPPO and learned baselines.")
+    parser.add_argument("--maddpg-timesteps", type=int, default=None,
+                        help="Training steps for raw MADDPG and HAN+MADDPG. Defaults to --total-timesteps.")
+    parser.add_argument("--pdqn-timesteps", type=int, default=None,
+                        help="Training steps for raw PDQN and HAN+PDQN. Defaults to --total-timesteps.")
+    parser.add_argument("--no-han-total-timesteps", type=int, default=None,
+                        help="Training steps for MAPPO(no HAN). Defaults to --total-timesteps.")
     parser.add_argument("--episodes", type=int, default=10,
                         help="Evaluation episodes for each method.")
     parser.add_argument("--max-steps", type=int, default=2000,
@@ -67,7 +86,7 @@ def parse_args() -> argparse.Namespace:
                         help="Metric used to rank methods and select heuristic variants.")
     parser.add_argument("--exp-name", type=str, default=DEFAULT_EXP_NAME,
                         help="Experiment name written into training history.")
-    parser.add_argument("--baselines", nargs="+", default=["all"],
+    parser.add_argument("--baselines", nargs="+", default=DEFAULT_BASELINES,
                         help="Baselines passed through to compare_system_baselines.py.")
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "results" / "baseline_compare",
                         help="Root folder for comparison outputs.")
@@ -92,6 +111,9 @@ def build_compare_command(args: argparse.Namespace, output_dir: Path, system_run
         "--exp-name", args.exp_name,
         "--objective", "multi_objective",
         "--total-timesteps", str(int(args.total_timesteps)),
+        "--maddpg-timesteps", str(int(args.maddpg_timesteps or args.total_timesteps)),
+        "--pdqn-timesteps", str(int(args.pdqn_timesteps or args.total_timesteps)),
+        "--no-han-total-timesteps", str(int(args.no_han_total_timesteps or args.total_timesteps)),
         "--episodes", str(int(args.episodes)),
         "--max-steps", str(int(args.max_steps)),
         "--seed", str(int(args.seed)),
@@ -128,6 +150,13 @@ def write_manifest(
         "output_dir": str(output_dir),
         "system_run_dir": str(system_run_dir),
         "total_timesteps": int(args.total_timesteps),
+        "learned_baseline_timesteps": {
+            "maddpg": int(args.maddpg_timesteps or args.total_timesteps),
+            "han_maddpg": int(args.maddpg_timesteps or args.total_timesteps),
+            "pdqn": int(args.pdqn_timesteps or args.total_timesteps),
+            "han_pdqn": int(args.pdqn_timesteps or args.total_timesteps),
+            "mappo_no_han": int(args.no_han_total_timesteps or args.total_timesteps),
+        },
         "episodes": int(args.episodes),
         "max_steps": int(args.max_steps),
         "seed": int(args.seed),
@@ -144,6 +173,19 @@ def write_manifest(
             "system_training_history": str(system_run_dir / "training_history.json"),
             "system_best_model": str(system_run_dir / "best_model.pt"),
             "learned_baselines_dir": str(output_dir / "learned_baselines"),
+            "figures": [
+                str(output_dir / "method_comparison.pdf"),
+                str(output_dir / "reward_curve_vs_baselines.pdf"),
+                str(output_dir / "training_qos_metrics_vs_steps.pdf"),
+                str(output_dir / "reward_components_vs_steps.pdf"),
+                str(output_dir / "reward_components_per_task_vs_steps.pdf"),
+                str(output_dir / "additional_metrics_episode_comparison.pdf"),
+                str(output_dir / "delay_energy_tradeoff.pdf"),
+                str(output_dir / "success_continuity_tradeoff.pdf"),
+                str(output_dir / "performance_radar.pdf"),
+                str(output_dir / "reward_distribution.pdf"),
+                str(output_dir / "paper_baseline_dashboard.pdf"),
+            ],
         },
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -204,6 +246,12 @@ def main() -> int:
     print(f"  System dir: {repo_relative(system_run_dir)}")
     print(f"  Log file:   {repo_relative(log_path)}")
     print(f"  Steps:      {args.total_timesteps:,}")
+    print(
+        "  Learned:   "
+        f"MADDPG={int(args.maddpg_timesteps or args.total_timesteps):,}, "
+        f"PDQN={int(args.pdqn_timesteps or args.total_timesteps):,}, "
+        f"MAPPO(no HAN)={int(args.no_han_total_timesteps or args.total_timesteps):,}"
+    )
     print(f"  Baselines:  {' '.join(args.baselines)}")
 
     if args.dry_run:

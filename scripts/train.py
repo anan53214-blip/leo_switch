@@ -59,6 +59,9 @@ from src.model.actor import MultiAgentActor, ActorConfig
 from src.model.critic import CentralizedCritic, CriticConfig
 from src.algorithm.mappo import MAPPO, MAPPOConfig
 from src.algorithm.buffer import MultiAgentRolloutBuffer
+from src.algorithm.replay_buffer import MultiAgentReplayBuffer
+from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
+from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 from src.algorithm.runner import Runner, RunnerConfig
 
 
@@ -216,6 +219,7 @@ class TrainConfig:
     critic_hidden_dims: tuple = (256, 256, 128)  # Critic隐藏层
     
     # ---------- MAPPO参数 ----------
+    algorithm: str = "mappo"
     learning_rate: float = 3e-4           # 学习率（v4: 从5e-5提升至3e-4）
     gamma: float = 0.99                   # 折扣因子
     gae_lambda: float = 0.95              # GAE参数
@@ -230,6 +234,16 @@ class TrainConfig:
     entropy_schedule: str = "constant"    # Entropy schedule: constant / linear
     n_epochs: int = 10                    # PPO epochs per update
     batch_size: int = 64                  # PPO mini-batch size
+    maddpg_actor_lr: float = 5e-4
+    maddpg_critic_lr: float = 1e-3
+    pdqn_lr: float = 1e-3
+    replay_size: int = 50_000
+    warmup_steps: int = 1_000
+    noise_start: float = 0.35
+    noise_final: float = 0.05
+    epsilon_start: float = 1.0
+    epsilon_final: float = 0.05
+    target_update_interval: int = 500
     
     # ---------- 训练参数 ----------
     total_timesteps: int = 1_200_000      # 总训练步数
@@ -1301,6 +1315,452 @@ class HANMAPPOTrainer:
         self.logger.info(f"从步数 {self.total_steps:,} 恢复训练")
 
 
+class HANMADDPGTrainer(HANMAPPOTrainer):
+    """HAN feature encoder with off-policy MADDPG on cached no-grad user embeddings."""
+
+    algorithm_name = "maddpg"
+
+    def _init_mappo(self):
+        self.logger.info("初始化 HAN+MADDPG...")
+        maddpg_config = MADDPGConfig(
+            num_agents=self.num_agents,
+            obs_dim=self.obs_dim,
+            max_candidates=self.max_candidates,
+            sat_embed_dim=self.han_out_dim,
+            actor_hidden_dims=tuple(self.config.actor_hidden_dims),
+            critic_hidden_dims=(512, 256, 128),
+            actor_lr=self.config.maddpg_actor_lr,
+            critic_lr=self.config.maddpg_critic_lr,
+            gamma=self.config.gamma,
+            tau=0.01,
+            noise_start=self.config.noise_start,
+            noise_final=self.config.noise_final,
+            noise_decay_steps=max(int(self.config.total_timesteps), 1),
+            batch_size=self.config.batch_size,
+            replay_size=self.config.replay_size,
+            warmup_steps=self.config.warmup_steps,
+            grad_clip_norm=self.config.max_grad_norm,
+            device=self.config.device,
+        )
+        self.algorithm = MADDPGAlgorithm(maddpg_config)
+        self.maddpg = self.algorithm
+        actor_params = sum(p.numel() for p in self.algorithm.actor.parameters())
+        critic_params = sum(p.numel() for p in self.algorithm.critic.parameters())
+        self.logger.info(f"  - MADDPG Actor参数量: {actor_params:,}")
+        self.logger.info(f"  - MADDPG Critic参数量: {critic_params:,}")
+
+    def _init_buffer(self):
+        self.logger.info("初始化 off-policy replay buffer...")
+        self.buffer = MultiAgentReplayBuffer(
+            capacity=self.config.replay_size,
+            num_agents=self.num_agents,
+            obs_dim=self.obs_dim,
+            action_feature_dim=self.max_candidates + 2,
+            mask_dim=self.max_candidates + 1,
+            device=self.config.device,
+        )
+
+    @staticmethod
+    def _scalar_reward(rewards) -> float:
+        if isinstance(rewards, (int, float)):
+            return float(rewards)
+        if isinstance(rewards, dict):
+            return float(np.mean(list(rewards.values()))) if rewards else 0.0
+        return float(np.mean(np.asarray(rewards, dtype=float)))
+
+    def _reset_encoded_env(self, seed: Optional[int] = None):
+        self._cached_han_user_embed = None
+        self._cached_sat_embed = None
+        self.env.reset(seed=seed)
+        return self._encode_graph_state()
+
+    def _select_train_action(self, observations: np.ndarray, masks: np.ndarray, step_idx: int):
+        if step_idx < self.config.warmup_steps:
+            return self.algorithm.random_actions(masks.astype(bool))
+        return self.algorithm.act(observations, masks.astype(bool), deterministic=False)
+
+    def _select_eval_action(self, observations: np.ndarray, masks: np.ndarray):
+        return self.algorithm.act(observations, masks.astype(bool), deterministic=True)
+
+    def _record_from_stats(
+        self,
+        update: int,
+        episode_reward: float,
+        episode_length: int,
+        env_stats: Dict[str, float],
+        update_stats: Dict[str, float],
+        elapsed: float,
+        partial_episode: bool = False,
+    ) -> Dict[str, float]:
+        summary = summarize_env_stats(env_stats)
+        record = {
+            'update': update,
+            'total_steps': self.total_steps,
+            'episodes': self.episodes,
+            'elapsed_sec': elapsed,
+            'mean_reward': float(episode_reward),
+            'std_reward': 0.0,
+            'mean_length': float(episode_length),
+            'rollout_total_reward': float(episode_reward),
+            'rollout_mean_reward': float(episode_reward / max(episode_length, 1)),
+            'recent_mean_reward': float(np.mean(self.recent_rewards)) if self.recent_rewards else 0.0,
+            'actor_loss': float(update_stats.get('actor_loss', 0.0)),
+            'critic_loss': float(update_stats.get('critic_loss', update_stats.get('q_loss', 0.0))),
+            'q_loss': float(update_stats.get('q_loss', 0.0)),
+            'param_loss': float(update_stats.get('param_loss', 0.0)),
+            'epsilon': float(update_stats.get('epsilon', 0.0)),
+            'exploration_noise': float(update_stats.get('exploration_noise', 0.0)),
+            'total_handovers': env_stats.get('total_handovers', 0),
+            'successful_handovers': env_stats.get('successful_handovers', 0),
+            'failed_handovers': env_stats.get('failed_handovers', 0),
+            'forced_disconnects': env_stats.get('forced_disconnects', 0),
+            'total_user_seconds': env_stats.get('total_user_seconds', 0.0),
+            'blocked_user_seconds': env_stats.get('blocked_user_seconds', 0.0),
+            'handover_interruption_seconds': env_stats.get('handover_interruption_seconds', 0.0),
+            'service_interruption_seconds': env_stats.get('service_interruption_seconds', 0.0),
+            'handover_success_rate': summary.get('handover_success_rate', 0.0),
+            'handover_failure_rate': summary.get('handover_failure_rate', 0.0),
+            'forced_termination_rate': summary.get('forced_termination_rate', 0.0),
+            'service_availability_rate': summary.get('service_availability_rate', 0.0),
+            'service_continuity_rate': summary.get('service_continuity_rate', 0.0),
+            'total_tasks': env_stats.get('total_tasks', 0),
+            'completed_tasks': env_stats.get('completed_tasks', 0),
+            'deadline_violations': env_stats.get('deadline_violations', 0),
+            'resolved_tasks': summary.get('resolved_tasks', 0),
+            'pending_tasks': summary.get('pending_tasks', 0),
+            'task_completion_rate': summary.get('task_completion_rate', 0.0),
+            'task_success_rate': summary.get('task_success_rate', 0.0),
+            'task_failure_rate': summary.get('task_failure_rate', 0.0),
+            'task_settlement_rate': summary.get('task_settlement_rate', 0.0),
+            'task_resolution_rate': summary.get('task_resolution_rate', 0.0),
+            'pending_task_rate': summary.get('pending_task_rate', 0.0),
+            'deadline_violation_rate': summary.get('deadline_violation_rate', 0.0),
+            'avg_delay': summary.get('avg_delay', 0.0),
+            'effective_latency_score': summary.get('effective_latency_score', 0.0),
+            'total_energy': env_stats.get('total_energy', 0.0),
+            'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
+            'reward_delay': env_stats.get('reward_delay', 0.0),
+            'reward_energy': env_stats.get('reward_energy', 0.0),
+            'reward_qos': env_stats.get('reward_qos', 0.0),
+            'reward_service_continuity': env_stats.get('reward_service_continuity', 0.0),
+            'reward_handover': env_stats.get('reward_handover', 0.0),
+            'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
+            'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
+            'penalty_deadline': env_stats.get('penalty_deadline', 0.0),
+            'penalty_queue_full': env_stats.get('penalty_queue_full', 0.0),
+            'penalty_invalid_action': env_stats.get('penalty_invalid_action', 0.0),
+            'penalty_blocked': env_stats.get('penalty_blocked', 0.0),
+            'penalty_failed_handover': env_stats.get('penalty_failed_handover', 0.0),
+            'penalty_handover_cost': env_stats.get('penalty_handover_cost', 0.0),
+        }
+        if partial_episode:
+            record['partial_episode'] = True
+        return record
+
+    def train(self):
+        self.logger.info("=" * 60)
+        self.logger.info(f"开始训练 HAN+{self.algorithm_name.upper()}")
+        self.logger.info(f"  总步数: {self.config.total_timesteps:,}")
+        self.logger.info(f"  warmup: {self.config.warmup_steps:,}")
+        self.logger.info(f"  replay_size: {self.config.replay_size:,}")
+        self.logger.info(f"  设备: {self.device}")
+        self.logger.info("=" * 60)
+
+        self.training_start_time = time.time()
+        observations, _, masks = self._reset_encoded_env(seed=self.config.seed)
+        episode_reward = 0.0
+        episode_length = 0
+        update_stats: Dict[str, float] = {}
+        update = 0
+
+        for step_idx in range(int(self.config.total_timesteps)):
+            update_start = time.time()
+            env_actions, action_features, _ = self._select_train_action(observations, masks, step_idx)
+            _, rewards, terminated, truncated, _ = self.env.step(
+                env_actions,
+                return_observation=False,
+                return_info=False,
+            )
+            done = bool(terminated or truncated)
+            reward_value = self._scalar_reward(rewards)
+            next_observations, _, next_masks = self._encode_graph_state()
+            replay_next_masks = np.zeros_like(masks, dtype=bool) if done else next_masks.astype(bool)
+            self.buffer.add(
+                observations,
+                action_features,
+                reward_value,
+                next_observations,
+                done,
+                masks.astype(bool),
+                replay_next_masks,
+            )
+
+            if len(self.buffer) >= max(int(self.config.batch_size), int(self.config.warmup_steps), 1):
+                update_stats = self.algorithm.update(self.buffer)
+                if hasattr(self.algorithm, "_noise_std"):
+                    update_stats["exploration_noise"] = self.algorithm._noise_std()
+
+            observations, masks = next_observations, next_masks
+            episode_reward += reward_value
+            episode_length += 1
+            self.total_steps += 1
+
+            if done:
+                update += 1
+                self.episodes += 1
+                self.recent_rewards.append(episode_reward)
+                if len(self.recent_rewards) > 100:
+                    self.recent_rewards.pop(0)
+                self.episode_rewards.append(episode_reward)
+                self.episode_lengths.append(episode_length)
+                record = self._record_from_stats(
+                    update,
+                    episode_reward,
+                    episode_length,
+                    self.env.get_stats_summary(),
+                    update_stats,
+                    time.time() - update_start,
+                )
+                self.training_history.append(record)
+                if update % self.config.log_interval == 0:
+                    self._log_training(update, record, update_stats, update_start)
+                episode_reward = 0.0
+                episode_length = 0
+                observations, _, masks = self._reset_encoded_env(seed=self.config.seed + self.total_steps)
+
+            if self.total_steps > 0 and self.total_steps % self.config.eval_interval == 0:
+                self._evaluate()
+            if self.total_steps > 0 and self.total_steps % self.config.save_interval == 0:
+                self._save_checkpoint()
+
+        if episode_length > 0:
+            update += 1
+            self.training_history.append(
+                self._record_from_stats(
+                    update,
+                    episode_reward,
+                    episode_length,
+                    self.env.stats.copy(),
+                    update_stats,
+                    0.0,
+                    partial_episode=True,
+                )
+            )
+
+        if self.config.eval_episodes > 0:
+            self._evaluate()
+        self._save_checkpoint(final=True)
+        self._save_training_history()
+
+    def _evaluate(self):
+        self.logger.info("-" * 40)
+        self.logger.info(f"开始评估 HAN+{self.algorithm_name.upper()}...")
+        eval_rewards = []
+        eval_lengths = []
+        eval_env_stats = self._empty_env_stats()
+
+        for ep in range(self.config.eval_episodes):
+            observations, _, masks = self._reset_encoded_env(seed=self.config.seed + 100_000 + ep)
+            episode_reward = 0.0
+            episode_length = 0
+            done = False
+            while not done:
+                env_actions, _, _ = self._select_eval_action(observations, masks)
+                _, rewards, terminated, truncated, _ = self.env.step(
+                    env_actions,
+                    return_observation=False,
+                    return_info=False,
+                )
+                done = bool(terminated or truncated)
+                episode_reward += self._scalar_reward(rewards)
+                episode_length += 1
+                observations, _, masks = self._encode_graph_state()
+            eval_rewards.append(episode_reward)
+            eval_lengths.append(episode_length)
+            self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
+
+        mean_reward = float(np.mean(eval_rewards)) if eval_rewards else 0.0
+        std_reward = float(np.std(eval_rewards)) if eval_rewards else 0.0
+        mean_length = float(np.mean(eval_lengths)) if eval_lengths else 0.0
+        summary = summarize_env_stats(eval_env_stats)
+        eval_record = {
+            'total_steps': self.total_steps,
+            'episodes': self.episodes,
+            'eval_mean_reward': mean_reward,
+            'eval_std_reward': std_reward,
+            'eval_mean_length': mean_length,
+            'eval_rewards': [float(r) for r in eval_rewards],
+            'total_handovers': eval_env_stats.get('total_handovers', 0),
+            'successful_handovers': eval_env_stats.get('successful_handovers', 0),
+            'failed_handovers': eval_env_stats.get('failed_handovers', 0),
+            'forced_disconnects': eval_env_stats.get('forced_disconnects', 0),
+            'total_user_seconds': eval_env_stats.get('total_user_seconds', 0.0),
+            'blocked_user_seconds': eval_env_stats.get('blocked_user_seconds', 0.0),
+            'handover_interruption_seconds': eval_env_stats.get('handover_interruption_seconds', 0.0),
+            'service_interruption_seconds': eval_env_stats.get('service_interruption_seconds', 0.0),
+            'handover_success_rate': summary.get('handover_success_rate', 0.0),
+            'handover_failure_rate': summary.get('handover_failure_rate', 0.0),
+            'forced_termination_rate': summary.get('forced_termination_rate', 0.0),
+            'service_availability_rate': summary.get('service_availability_rate', 0.0),
+            'service_continuity_rate': summary.get('service_continuity_rate', 0.0),
+            'resolved_tasks': summary.get('resolved_tasks', 0),
+            'pending_tasks': summary.get('pending_tasks', 0),
+            'total_tasks': eval_env_stats.get('total_tasks', 0),
+            'completed_tasks': eval_env_stats.get('completed_tasks', 0),
+            'deadline_violations': eval_env_stats.get('deadline_violations', 0),
+            'task_completion_rate': summary.get('task_completion_rate', 0.0),
+            'task_success_rate': summary.get('task_success_rate', 0.0),
+            'task_failure_rate': summary.get('task_failure_rate', 0.0),
+            'task_settlement_rate': summary.get('task_settlement_rate', 0.0),
+            'task_resolution_rate': summary.get('task_resolution_rate', 0.0),
+            'pending_task_rate': summary.get('pending_task_rate', 0.0),
+            'deadline_violation_rate': summary.get('deadline_violation_rate', 0.0),
+            'avg_delay': summary.get('avg_delay', 0.0),
+            'effective_latency_score': summary.get('effective_latency_score', 0.0),
+            'total_energy': eval_env_stats.get('total_energy', 0.0),
+            'energy_per_resolved_task': (
+                eval_env_stats.get('total_energy', 0.0) / max(float(summary.get('resolved_tasks', 0.0)), 1.0)
+            ),
+            'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
+        }
+        selection_metric = getattr(self.config, 'best_model_metric', 'reward')
+        eval_record['best_model_metric'] = selection_metric
+        eval_record['best_model_score'] = float(compute_model_selection_score(eval_record, selection_metric))
+        self.eval_history.append(eval_record)
+
+        if mean_reward > self.best_reward:
+            self.best_reward = mean_reward
+        if eval_record['best_model_score'] > self.best_model_score:
+            self.best_model_score = eval_record['best_model_score']
+            self._save_checkpoint(best=True)
+        self.logger.info(
+            f"评估结果: 奖励 = {mean_reward:.2f} ± {std_reward:.2f}, "
+            f"长度 = {mean_length:.0f}, 延迟 = {eval_record['avg_delay']:.3f}s"
+        )
+        self.logger.info("-" * 40)
+
+    def _algorithm_checkpoint(self) -> Dict[str, Any]:
+        return {
+            'algorithm': self.algorithm_name,
+            'algorithm_train_step': self.algorithm.train_step,
+            'actor_state_dict': self.algorithm.actor.state_dict(),
+            'target_actor_state_dict': self.algorithm.target_actor.state_dict(),
+            'critic_state_dict': self.algorithm.critic.state_dict(),
+            'target_critic_state_dict': self.algorithm.target_critic.state_dict(),
+            'actor_optimizer_state_dict': self.algorithm.actor_optimizer.state_dict(),
+            'critic_optimizer_state_dict': self.algorithm.critic_optimizer.state_dict(),
+        }
+
+    def _load_algorithm_checkpoint(self, checkpoint: Dict[str, Any]):
+        self.algorithm.actor.load_state_dict(checkpoint['actor_state_dict'])
+        self.algorithm.target_actor.load_state_dict(checkpoint.get('target_actor_state_dict', checkpoint['actor_state_dict']))
+        self.algorithm.critic.load_state_dict(checkpoint['critic_state_dict'])
+        self.algorithm.target_critic.load_state_dict(checkpoint.get('target_critic_state_dict', checkpoint['critic_state_dict']))
+        self.algorithm.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
+        self.algorithm.critic_optimizer.load_state_dict(checkpoint['critic_optimizer_state_dict'])
+        self.algorithm.train_step = int(checkpoint.get('algorithm_train_step', 0))
+
+    def _save_checkpoint(self, best: bool = False, final: bool = False):
+        save_dir = Path(self.config.save_path)
+        if best:
+            filename = "best_model.pt"
+        elif final:
+            filename = "final_model.pt"
+        else:
+            filename = f"checkpoint_{self.total_steps}.pt"
+        checkpoint = {
+            'total_steps': self.total_steps,
+            'episodes': self.episodes,
+            'best_reward': self.best_reward,
+            'best_model_metric': self.config.best_model_metric,
+            'best_model_score': self.best_model_score,
+            'config': asdict(self.config),
+            'han_state_dict': self.han_encoder.state_dict(),
+        }
+        checkpoint.update(self._algorithm_checkpoint())
+        save_path = save_dir / filename
+        torch.save(checkpoint, save_path)
+        self.logger.info(f"模型已保存: {save_path}")
+
+    def load_checkpoint(self, path: str):
+        self.logger.info(f"加载检查点: {path}")
+        checkpoint = torch.load(path, map_location=self.device)
+        self.total_steps = checkpoint['total_steps']
+        self.episodes = checkpoint['episodes']
+        self.best_reward = checkpoint['best_reward']
+        self.best_model_score = checkpoint.get('best_model_score', self.best_model_score)
+        if 'best_model_metric' in checkpoint:
+            self.config.best_model_metric = checkpoint['best_model_metric']
+        self._load_algorithm_checkpoint(checkpoint)
+        if 'han_state_dict' in checkpoint:
+            self.han_encoder.load_state_dict(checkpoint['han_state_dict'])
+        self.logger.info(f"从步数 {self.total_steps:,} 恢复训练")
+
+
+class HANPDQNTrainer(HANMADDPGTrainer):
+    """HAN feature encoder with PDQN over the hybrid handover/offload action."""
+
+    algorithm_name = "pdqn"
+
+    def _init_mappo(self):
+        self.logger.info("初始化 HAN+PDQN...")
+        pdqn_config = PDQNConfig(
+            num_agents=self.num_agents,
+            obs_dim=self.obs_dim,
+            max_candidates=self.max_candidates,
+            q_hidden_dims=(256, 128),
+            param_hidden_dims=(128, 64),
+            lr=self.config.pdqn_lr,
+            gamma=self.config.gamma,
+            batch_size=self.config.batch_size,
+            replay_size=self.config.replay_size,
+            warmup_steps=self.config.warmup_steps,
+            target_update_interval=self.config.target_update_interval,
+            epsilon_start=self.config.epsilon_start,
+            epsilon_final=self.config.epsilon_final,
+            epsilon_decay_steps=max(int(self.config.total_timesteps), 1),
+            grad_clip_norm=self.config.max_grad_norm,
+            device=self.config.device,
+        )
+        self.algorithm = PDQNAlgorithm(pdqn_config)
+        self.pdqn = self.algorithm
+        q_params = sum(p.numel() for p in self.algorithm.q_net.parameters())
+        param_params = sum(p.numel() for p in self.algorithm.param_nets.parameters())
+        self.logger.info(f"  - PDQN Q参数量: {q_params:,}")
+        self.logger.info(f"  - PDQN 参数网络参数量: {param_params:,}")
+
+    def _select_train_action(self, observations: np.ndarray, masks: np.ndarray, step_idx: int):
+        if step_idx < self.config.warmup_steps:
+            return self.algorithm.random_actions(masks.astype(bool))
+        return self.algorithm.act(observations, masks.astype(bool), epsilon=self.algorithm.current_epsilon())
+
+    def _select_eval_action(self, observations: np.ndarray, masks: np.ndarray):
+        return self.algorithm.act(observations, masks.astype(bool), epsilon=0.0)
+
+    def _algorithm_checkpoint(self) -> Dict[str, Any]:
+        return {
+            'algorithm': self.algorithm_name,
+            'algorithm_train_step': self.algorithm.train_step,
+            'q_net_state_dict': self.algorithm.q_net.state_dict(),
+            'target_q_net_state_dict': self.algorithm.target_q_net.state_dict(),
+            'param_nets_state_dict': self.algorithm.param_nets.state_dict(),
+            'target_param_nets_state_dict': self.algorithm.target_param_nets.state_dict(),
+            'q_optimizer_state_dict': self.algorithm.q_optimizer.state_dict(),
+            'param_optimizer_state_dict': self.algorithm.param_optimizer.state_dict(),
+        }
+
+    def _load_algorithm_checkpoint(self, checkpoint: Dict[str, Any]):
+        self.algorithm.q_net.load_state_dict(checkpoint['q_net_state_dict'])
+        self.algorithm.target_q_net.load_state_dict(checkpoint.get('target_q_net_state_dict', checkpoint['q_net_state_dict']))
+        self.algorithm.param_nets.load_state_dict(checkpoint['param_nets_state_dict'])
+        self.algorithm.target_param_nets.load_state_dict(
+            checkpoint.get('target_param_nets_state_dict', checkpoint['param_nets_state_dict'])
+        )
+        self.algorithm.q_optimizer.load_state_dict(checkpoint['q_optimizer_state_dict'])
+        self.algorithm.param_optimizer.load_state_dict(checkpoint['param_optimizer_state_dict'])
+        self.algorithm.train_step = int(checkpoint.get('algorithm_train_step', 0))
+
+
 # ============================================================
 # 命令行接口
 # ============================================================
@@ -1318,6 +1778,13 @@ def parse_args():
                         help='随机种子')
     parser.add_argument('--device', type=str, default='auto',
                         help='设备 (cuda/cpu/auto)')
+    parser.add_argument(
+        "--algorithm",
+        type=str,
+        default="mappo",
+        choices=["mappo", "maddpg", "pdqn"],
+        help="Training algorithm: mappo, maddpg, or pdqn",
+    )
     
     # 环境参数
     parser.add_argument('--num_users', type=int, default=20,
@@ -1368,6 +1835,8 @@ def parse_args():
     # 保存加载
     parser.add_argument('--save_path', type=str, default='results/full_train_delay_focus',
                         help='模型保存路径')
+    parser.add_argument('--log_path', type=str, default='results/logs',
+                        help='日志保存路径')
     parser.add_argument('--load_path', type=str, default=None,
                         help='加载检查点路径')
     parser.add_argument('--save_interval', type=int, default=200000,
@@ -1407,6 +1876,7 @@ def main():
     # 更新配置
     config.exp_name = args.exp_name
     config.seed = args.seed
+    config.algorithm = args.algorithm
     
     if args.device == 'auto':
         config.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -1434,6 +1904,7 @@ def main():
     config.han_num_heads = args.han_num_heads
     config.han_num_layers = args.han_num_layers
     config.save_path = args.save_path
+    config.log_path = args.log_path
     config.load_path = args.load_path
     config.save_interval = args.save_interval
     config.log_interval = args.log_interval
@@ -1446,7 +1917,12 @@ def main():
     config.best_model_metric = args.best_model_metric
     
     # 创建训练器
-    trainer = HANMAPPOTrainer(config)
+    trainer_cls = {
+        "mappo": HANMAPPOTrainer,
+        "maddpg": HANMADDPGTrainer,
+        "pdqn": HANPDQNTrainer,
+    }[config.algorithm]
+    trainer = trainer_cls(config)
     
     # 加载检查点
     if config.load_path:

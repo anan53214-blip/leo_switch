@@ -68,3 +68,44 @@ Rerun the same suite with a new output directory and compare reward components
 for every method, not only HAN+MAPPO training history. Primary success criteria:
 HAN+MAPPO should improve `task_success_rate`, lower `deadline_violation_rate`,
 and raise `effective_latency_score` without destroying energy efficiency.
+
+## 2026-05-16 - HAN+MADDPG / HAN+PDQN Implementation Smoke
+
+**Code version:** `b43ecfe` plus local implementation changes for
+`src/algorithm/replay_buffer.py`, `src/algorithm/maddpg.py`,
+`src/algorithm/pdqn.py`, `scripts/train.py`, and
+`scripts/compare_system_baselines.py`.
+
+**Current setting:** post-2026-05-12 environment/reward code is canonical.
+Old 2026-05-10 learned-method results are historical reference only and should
+not be mixed into strict current-code comparison tables.
+
+**Commands and artifacts:**
+
+- `python scripts/train.py --algorithm maddpg --total_timesteps 2000 --max_steps 100 --eval_episodes 1 --save_path results/smoke_han_maddpg --log_path results/smoke_logs --device cpu`
+  - wrote `results/smoke_han_maddpg/training_history.json`
+  - wrote `results/smoke_han_maddpg/final_model.pt`
+- `python scripts/train.py --algorithm pdqn --total_timesteps 2000 --max_steps 100 --eval_episodes 1 --save_path results/smoke_han_pdqn --log_path results/smoke_logs --device cpu`
+  - wrote `results/smoke_han_pdqn/training_history.json`
+  - wrote `results/smoke_han_pdqn/final_model.pt`
+- `python scripts/compare_system_baselines.py --baselines random maddpg pdqn han_maddpg han_pdqn --total-timesteps 2000 --maddpg-timesteps 2000 --pdqn-timesteps 2000 --episodes 1 --max-steps 100 --device cpu`
+  - wrote `results/baseline_compare/20260516_153817/comparison_summary.json`
+  - wrote `results/baseline_compare/20260516_153817/comparison_summary.csv`
+
+**Smoke comparison snapshot:** 2000 timesteps, 1 evaluation episode, max 100
+steps, CPU, seed 42. This is only a wiring smoke, not a paper-quality ranking.
+
+| Method | Mean Reward | Effective Latency | Avg Delay | Continuity | Task Success | Deadline Violation | Energy / Resolved Task |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| MADDPG | 98.752 | 0.319489 | 1.955349 | 0.999400 | 0.944767 | 0.055233 | 1.955349 |
+| HAN+PDQN | 89.720 | 0.283957 | 2.161456 | 0.999400 | 0.898256 | 0.101744 | 0.783904 |
+| PDQN | 88.287 | 0.275211 | 2.235813 | 0.991400 | 0.898256 | 0.101744 | 1.130091 |
+| HAN+MADDPG | 89.545 | 0.274444 | 2.260448 | 0.999400 | 0.895349 | 0.104651 | 0.058514 |
+| Random | 58.879 | 0.095314 | 2.417965 | 0.396000 | 0.822674 | 0.171512 | 1.912117 |
+| HAN+MAPPO smoke system | 37.526 | 0.035208 | 2.632047 | 0.166000 | 0.770349 | 0.223837 | 1.004960 |
+
+**Verification:** `pytest tests/ -v` passed with 77 passed and 4 skipped.
+
+**Follow-up decision:** keep the implementation and rerun strict comparisons
+under current code for `han_mappo`, `mappo_no_han`, `maddpg`, `han_maddpg`,
+`pdqn`, and `han_pdqn`. Heuristic methods can be re-evaluated cheaply.

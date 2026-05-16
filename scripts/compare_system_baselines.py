@@ -43,13 +43,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
+from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.user import UserState
+from src.algorithm.replay_buffer import MultiAgentReplayBuffer
+from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
 try:
     from scripts.train import (
         BEST_MODEL_METRIC_CHOICES,
+        HANMADDPGTrainer,
         HANMAPPOTrainer,
+        HANPDQNTrainer,
         TrainConfig,
         compute_model_selection_score,
         energy_per_resolved_task,
@@ -58,7 +62,9 @@ except ModuleNotFoundError:
     # Compatible with direct execution: python scripts/compare_system_baselines.py
     from train import (
         BEST_MODEL_METRIC_CHOICES,
+        HANMADDPGTrainer,
         HANMAPPOTrainer,
+        HANPDQNTrainer,
         TrainConfig,
         compute_model_selection_score,
         energy_per_resolved_task,
@@ -90,9 +96,11 @@ DEFAULT_BASELINES = [
     "min_distance",
     "full_local",
     "joint_greedy",
-    "dqn",
     "maddpg",
+    "pdqn",
     "mappo_no_han",
+    "han_maddpg",
+    "han_pdqn",
 ]
 
 DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority"
@@ -121,7 +129,10 @@ DISPLAY_NAME_MAP = {
     "joint_greedy": "Joint Greedy",
     "dqn": "DQN",
     "maddpg": "MADDPG",
+    "pdqn": "PDQN",
     "mappo_no_han": "MAPPO (no HAN)",
+    "han_maddpg": "HAN+MADDPG",
+    "han_pdqn": "HAN+PDQN",
 }
 
 SUMMARY_METRIC_KEYS = [
@@ -295,7 +306,10 @@ BAR_HATCH_PATTERNS = ["///", "\\\\\\", "xx", "--", "oo", "++", "..", "**"]
 LEARNED_BASELINE_COLORS = {
     "dqn": "#4E79A7",
     "maddpg": "#AF7AA1",
+    "pdqn": "#EDC948",
     "mappo_no_han": "#59A14F",
+    "han_maddpg": "#B07AA1",
+    "han_pdqn": "#F28E2B",
 }
 
 SCATTER_LABEL_OFFSETS = {
@@ -306,7 +320,10 @@ SCATTER_LABEL_OFFSETS = {
     "Joint Greedy": (10, -12),
     "DQN": (10, 10),
     "MADDPG": (10, 12),
+    "PDQN": (10, 12),
     "MAPPO (no HAN)": (10, -14),
+    "HAN+MADDPG": (10, 12),
+    "HAN+PDQN": (10, 12),
 }
 
 PAPER_COLORS = {
@@ -2125,6 +2142,178 @@ def train_and_evaluate_maddpg_baseline(
     return result
 
 
+def pdqn_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
+    masks = np.zeros((env.num_users, env.max_visible_sats + 1), dtype=bool)
+    masks[:, 0] = True
+    for user_id, user in enumerate(env.user_manager.users):
+        visible_sats = env._get_visible_satellites(user)
+        valid_count = min(len(visible_sats), env.max_visible_sats)
+        if valid_count > 0:
+            masks[user_id, 1:valid_count + 1] = True
+    return masks
+
+
+def evaluate_pdqn_policy(
+    algorithm: PDQNAlgorithm,
+    objective: str,
+    config: Dict,
+    episodes: int,
+    seed: int,
+    max_steps: Optional[int],
+) -> Dict:
+    env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
+    rewards: List[float] = []
+    summaries: List[Dict] = []
+
+    for episode_idx in range(episodes):
+        observations, _ = env.reset(seed=seed + episode_idx)
+        done = False
+        episode_reward = 0.0
+        while not done:
+            masks = pdqn_action_mask(env)
+            env_actions, _, _ = algorithm.act(observations, masks, epsilon=0.0)
+            observations, reward, terminated, truncated, _ = env.step(env_actions)
+            episode_reward += scalar_reward_value(reward)
+            done = terminated or truncated
+        rewards.append(episode_reward)
+        summaries.append(env.get_stats_summary())
+
+    return summarize_results("pdqn", rewards, summaries, is_system=False)
+
+
+def train_and_evaluate_pdqn_baseline(
+    config: Dict,
+    objective: str,
+    output_dir: Path,
+    episodes: int,
+    seed: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    device_name: str,
+) -> Dict:
+    device = resolve_device(device_name)
+    env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
+    obs_dim = int(env.user_obs_dim)
+    num_agents = int(env.num_users)
+    max_candidates = int(env.max_visible_sats)
+    handover_dim = max_candidates + 1
+    algo = PDQNAlgorithm(
+        PDQNConfig(
+            num_agents=num_agents,
+            obs_dim=obs_dim,
+            max_candidates=max_candidates,
+            batch_size=128,
+            warmup_steps=1_000,
+            replay_size=50_000,
+            epsilon_decay_steps=max(int(total_timesteps), 1),
+            device=device,
+        )
+    )
+    replay = MultiAgentReplayBuffer(
+        capacity=algo.config.replay_size,
+        num_agents=num_agents,
+        obs_dim=obs_dim,
+        action_feature_dim=handover_dim + 1,
+        mask_dim=handover_dim,
+        device=device,
+    )
+    training_records: List[Dict] = []
+    recent_episode_rewards: deque = deque(maxlen=10)
+    recent_q_losses: deque = deque(maxlen=100)
+    recent_param_losses: deque = deque(maxlen=100)
+    episode_reward = 0.0
+    episode_length = 0
+    episode_count = 0
+
+    observations, _ = env.reset(seed=seed)
+    for step_idx in range(max(int(total_timesteps), 0)):
+        masks = pdqn_action_mask(env)
+        if step_idx < algo.config.warmup_steps:
+            env_actions, action_features, _ = algo.random_actions(masks)
+        else:
+            env_actions, action_features, _ = algo.act(observations, masks)
+
+        next_observations, reward, terminated, truncated, _ = env.step(env_actions)
+        done = bool(terminated or truncated)
+        reward_value = scalar_reward_value(reward)
+        next_masks = pdqn_action_mask(env) if not done else np.zeros_like(masks)
+        replay.add(observations, action_features, reward_value, next_observations, done, masks, next_masks)
+
+        if len(replay) >= max(algo.config.batch_size, algo.config.warmup_steps):
+            stats = algo.update(replay)
+            if stats:
+                recent_q_losses.append(float(stats.get("q_loss", 0.0)))
+                recent_param_losses.append(float(stats.get("param_loss", 0.0)))
+
+        observations = next_observations
+        episode_reward += reward_value
+        episode_length += 1
+
+        if done:
+            episode_count += 1
+            recent_episode_rewards.append(episode_reward)
+            env_stats = env.get_stats_summary()
+            summary = summarize_env_stats(env_stats)
+            training_records.append(
+                {
+                    "update": episode_count,
+                    "total_steps": step_idx + 1,
+                    "episodes": episode_count,
+                    "mean_reward": episode_reward,
+                    "recent_mean_reward": float(np.mean(recent_episode_rewards)),
+                    "mean_length": float(episode_length),
+                    "q_loss": float(np.mean(recent_q_losses)) if recent_q_losses else 0.0,
+                    "param_loss": float(np.mean(recent_param_losses)) if recent_param_losses else 0.0,
+                    "epsilon": algo.current_epsilon(),
+                    "avg_delay": summary.get("avg_delay", 0.0),
+                    "effective_latency_score": summary.get("effective_latency_score", 0.0),
+                    "service_continuity_rate": summary.get("service_continuity_rate", 0.0),
+                    "task_completion_rate": summary.get("task_completion_rate", 0.0),
+                    "task_success_rate": summary.get("task_success_rate", 0.0),
+                    "avg_load_balance_score": summary.get("avg_load_balance_score", 0.0),
+                    "total_energy": env_stats.get("total_energy", 0.0),
+                }
+            )
+            observations, _ = env.reset(seed=seed + step_idx + 1)
+            episode_reward = 0.0
+            episode_length = 0
+
+    save_dir = output_dir / "learned_baselines" / "pdqn"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    history_path = save_dir / "training_history.json"
+    checkpoint_path = save_dir / "pdqn_model.pt"
+    algo.save(checkpoint_path)
+    with history_path.open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "config": {
+                    **config,
+                    "algorithm": "pdqn",
+                    "total_timesteps": int(total_timesteps),
+                    "device": device,
+                },
+                "training": training_records,
+                "evaluation": [],
+            },
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    result = evaluate_pdqn_policy(
+        algorithm=algo,
+        objective=objective,
+        config=config,
+        episodes=episodes,
+        seed=seed,
+        max_steps=max_steps,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint_path)
+    result["training_history"] = str(history_path)
+    return result
+
+
 def build_policy(name: str, objective: str, fixed_offload: float, joint_offload_grid: Sequence[float]) -> BasePolicy:
     if name in {"random", "min_distance"}:
         return SimpleHeuristicPolicy(name, fixed_offload)
@@ -2510,6 +2699,142 @@ def train_and_evaluate_no_han_mappo(
     if history_path.exists():
         result["training_history"] = str(history_path)
     return result
+
+
+def evaluate_han_offpolicy_checkpoint(
+    checkpoint: Path,
+    config_data: Dict,
+    episodes: int,
+    device: str,
+    max_steps: Optional[int],
+    trainer_cls,
+    method_name: str,
+) -> Dict:
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        save_path=checkpoint.parent,
+        load_path=checkpoint,
+    )
+    trainer = trainer_cls(config)
+    trainer.load_checkpoint(str(checkpoint))
+    rewards: List[float] = []
+    summaries: List[Dict] = []
+
+    for episode_idx in range(episodes):
+        observations, _, masks = trainer._reset_encoded_env(seed=int(config.seed) + episode_idx)
+        done = False
+        episode_reward = 0.0
+        while not done:
+            env_actions, _, _ = trainer._select_eval_action(observations, masks)
+            _, reward, terminated, truncated, _ = trainer.env.step(
+                env_actions,
+                return_observation=False,
+                return_info=False,
+            )
+            episode_reward += trainer._scalar_reward(reward)
+            done = terminated or truncated
+            if not done:
+                observations, _, masks = trainer._encode_graph_state()
+        rewards.append(episode_reward)
+        summaries.append(trainer.env.get_stats_summary())
+
+    return summarize_results(method_name, rewards, summaries, is_system=False)
+
+
+def train_and_evaluate_han_offpolicy_baseline(
+    config_data: Dict,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+    trainer_cls,
+    method_name: str,
+    algorithm_name: str,
+) -> Dict:
+    save_dir = output_dir / "learned_baselines" / method_name
+    save_dir.mkdir(parents=True, exist_ok=True)
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        save_path=save_dir,
+        exp_name=method_name,
+    )
+    config.algorithm = algorithm_name
+    trainer = trainer_cls(config)
+    trainer.train()
+    checkpoint = save_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = save_dir / "final_model.pt"
+    result = evaluate_han_offpolicy_checkpoint(
+        checkpoint=checkpoint,
+        config_data=asdict(config),
+        episodes=episodes,
+        device=resolve_device(device),
+        max_steps=max_steps,
+        trainer_cls=trainer_cls,
+        method_name=method_name,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint)
+    history_path = save_dir / "training_history.json"
+    if history_path.exists():
+        result["training_history"] = str(history_path)
+    return result
+
+
+def train_and_evaluate_han_maddpg_baseline(
+    config_data: Dict,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+) -> Dict:
+    return train_and_evaluate_han_offpolicy_baseline(
+        config_data=config_data,
+        output_dir=output_dir,
+        device=device,
+        episodes=episodes,
+        max_steps=max_steps,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        trainer_cls=HANMADDPGTrainer,
+        method_name="han_maddpg",
+        algorithm_name="maddpg",
+    )
+
+
+def train_and_evaluate_han_pdqn_baseline(
+    config_data: Dict,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+) -> Dict:
+    return train_and_evaluate_han_offpolicy_baseline(
+        config_data=config_data,
+        output_dir=output_dir,
+        device=device,
+        episodes=episodes,
+        max_steps=max_steps,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        trainer_cls=HANPDQNTrainer,
+        method_name="han_pdqn",
+        algorithm_name="pdqn",
+    )
 
 
 def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
@@ -3672,6 +3997,8 @@ def parse_args() -> argparse.Namespace:
                         help="Training steps for the DQN baseline. Defaults to --total-timesteps.")
     parser.add_argument("--maddpg-timesteps", type=int, default=None,
                         help="Training steps for the MADDPG baseline. Defaults to --total-timesteps.")
+    parser.add_argument("--pdqn-timesteps", type=int, default=None,
+                        help="Training steps for the PDQN baseline. Defaults to --total-timesteps.")
     parser.add_argument("--no-han-total-timesteps", type=int, default=None,
                         help="Training steps for the MAPPO(no-HAN) ablation. Defaults to --total-timesteps.")
     parser.add_argument("--skip-system-eval", action="store_true",
@@ -3805,6 +4132,18 @@ def main() -> None:
                 device_name=args.device,
             )
             result["source"] = "maddpg_train_eval"
+        elif baseline_name == "pdqn":
+            result = train_and_evaluate_pdqn_baseline(
+                config=config_data,
+                objective=objective,
+                output_dir=output_dir,
+                episodes=args.episodes,
+                seed=args.seed,
+                max_steps=args.max_steps,
+                total_timesteps=args.pdqn_timesteps or args.total_timesteps,
+                device_name=args.device,
+            )
+            result["source"] = "pdqn_train_eval"
         elif baseline_name == "mappo_no_han":
             result = train_and_evaluate_no_han_mappo(
                 config_data=config_data,
@@ -3817,6 +4156,28 @@ def main() -> None:
                 early_stop_patience=args.early_stop_patience,
             )
             result["source"] = "mappo_no_han_train_eval"
+        elif baseline_name == "han_maddpg":
+            result = train_and_evaluate_han_maddpg_baseline(
+                config_data=config_data,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.maddpg_timesteps or args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
+            )
+            result["source"] = "han_maddpg_train_eval"
+        elif baseline_name == "han_pdqn":
+            result = train_and_evaluate_han_pdqn_baseline(
+                config_data=config_data,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.pdqn_timesteps or args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
+            )
+            result["source"] = "han_pdqn_train_eval"
         else:
             policy = build_policy(
                 name=baseline_name,

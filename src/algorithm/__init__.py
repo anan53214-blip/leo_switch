@@ -29,9 +29,26 @@ from .buffer import (
     MultiAgentRolloutBuffer
 )
 
+from .replay_buffer import MultiAgentReplayBuffer
+
 from .mappo import (
     MAPPOConfig,
     MAPPO
+)
+
+from .maddpg import (
+    MADDPGConfig,
+    MADDPGActor,
+    HANCentralizedCritic,
+    MADDPGAlgorithm,
+)
+
+from .pdqn import (
+    PDQNConfig,
+    PDQNNetwork,
+    PDQNParameterNet,
+    PDQNParameterNets,
+    PDQNAlgorithm,
 )
 
 from .runner import (
@@ -42,8 +59,18 @@ from .runner import (
 __all__ = [
     'RolloutBuffer',
     'MultiAgentRolloutBuffer',
+    'MultiAgentReplayBuffer',
     'MAPPOConfig',
     'MAPPO',
+    'MADDPGConfig',
+    'MADDPGActor',
+    'HANCentralizedCritic',
+    'MADDPGAlgorithm',
+    'PDQNConfig',
+    'PDQNNetwork',
+    'PDQNParameterNet',
+    'PDQNParameterNets',
+    'PDQNAlgorithm',
     'RunnerConfig',
     'Runner',
 ]
