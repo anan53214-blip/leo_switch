@@ -138,10 +138,10 @@ def test_service_continuity_reward_scales_with_uninterrupted_step_time():
         env.close()
 
 
-def test_training_defaults_keep_exploration_and_use_smaller_batches():
+def test_training_defaults_use_balanced_update_budget():
     config = TrainConfig()
 
-    assert config.n_epochs == 10
-    assert config.batch_size == 64
+    assert config.n_epochs == 6
+    assert config.batch_size == 256
     assert config.entropy_schedule == "constant"
     assert config.reward_failed_handover_penalty == pytest.approx(0.3)

@@ -232,8 +232,8 @@ class TrainConfig:
     entropy_coef: float = 0.005            # Keep exploration from collapsing too early
     max_grad_norm: float = 0.5            # 梯度裁剪
     entropy_schedule: str = "constant"    # Entropy schedule: constant / linear
-    n_epochs: int = 10                    # PPO epochs per update
-    batch_size: int = 64                  # PPO mini-batch size
+    n_epochs: int = 6                     # PPO epochs per update
+    batch_size: int = 256                 # PPO mini-batch size
     maddpg_actor_lr: float = 5e-4
     maddpg_critic_lr: float = 1e-3
     pdqn_lr: float = 1e-3
@@ -1815,9 +1815,9 @@ def parse_args():
                         help='每次更新收集步数')
     parser.add_argument('--learning_rate', type=float, default=3e-4,
                         help='学习率')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=256,
                         help='批大小')
-    parser.add_argument('--n_epochs', type=int, default=10,
+    parser.add_argument('--n_epochs', type=int, default=6,
                         help='PPO epochs per update')
     parser.add_argument('--entropy_coef', type=float, default=0.005,
                         help='Entropy coefficient')
