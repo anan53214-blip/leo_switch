@@ -230,7 +230,7 @@ REWARD_COMPONENT_STEP_METRICS = [
     ("reward_delay", "Delay Reward", "Reward Term", 1.0),
     ("reward_energy", "Energy Reward", "Reward Term", 1.0),
     ("reward_qos", "QoS Reward", "Reward Term", 1.0),
-    ("reward_service_continuity", "Service Continuity Reward", "Reward Term", 1.0),
+    ("reward_service_continuity", "Service Interruption Penalty", "Penalty Term", 1.0),
     ("reward_handover", "Handover Reward", "Reward Term", 1.0),
     ("reward_load_balance", "Load Balance Reward", "Reward Term", 1.0),
     ("reward_enqueue", "Enqueue Reward", "Reward Term", 1.0),
@@ -240,6 +240,20 @@ REWARD_COMPONENT_STEP_METRICS = [
     ("penalty_blocked", "Blocked-Service Penalty", "Penalty Term", 1.0),
     ("penalty_queue_full", "Queue-Full Penalty", "Penalty Term", 1.0),
 ]
+
+LEGACY_SERVICE_CONTINUITY_REWARD_SPEC = (
+    "reward_service_continuity",
+    "Service Continuity Reward",
+    "Reward Term",
+    1.0,
+)
+
+SERVICE_INTERRUPTION_PENALTY_SPEC = (
+    "reward_service_continuity",
+    "Service Interruption Penalty",
+    "Penalty Term",
+    1.0,
+)
 
 RADAR_METRICS = [
     ("effective_latency_score", "Effective\nLatency", True),
@@ -532,25 +546,26 @@ def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndar
         payload = json.load(handle)
 
     training = payload.get("training", [])
-    if not training:
-        evaluation = extract_training_evaluation_records(payload, training)
-        if not evaluation:
-            return np.array([], dtype=float), np.array([], dtype=float), []
+    evaluation = extract_training_evaluation_records(payload, training)
+    if evaluation:
         steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
         rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
         valid_mask = np.isfinite(steps) & np.isfinite(rewards)
         order = np.argsort(steps[valid_mask])
         return steps[valid_mask][order], rewards[valid_mask][order], evaluation
 
+    if not training:
+        return np.array([], dtype=float), np.array([], dtype=float), []
+
     steps, rewards = extract_training_reward_curve(training)
     valid_mask = np.isfinite(steps) & np.isfinite(rewards)
     steps = steps[valid_mask]
     rewards = rewards[valid_mask]
     if len(steps) == 0:
-        return steps, rewards, extract_training_evaluation_records(payload, training)
+        return steps, rewards, evaluation
 
     order = np.argsort(steps)
-    return steps[order], rewards[order], extract_training_evaluation_records(payload, training)
+    return steps[order], rewards[order], evaluation
 
 
 def load_training_metric_curve_from_path(history_path: Optional[Path], metric_key: str) -> tuple[np.ndarray, np.ndarray]:
@@ -569,6 +584,69 @@ def load_training_metric_curve_from_path(history_path: Optional[Path], metric_ke
     evaluation_records.extend(payload.get("training_evaluation", []))
     evaluation_records.extend(payload.get("evaluation", []))
     return extract_training_metric_curve(evaluation_records, metric_key)
+
+
+def _collect_history_metric_values(payload: Dict, metric_key: str) -> List[float]:
+    values: List[float] = []
+    for section_name in ("training", "training_evaluation", "evaluation"):
+        for record in payload.get(section_name, []) or []:
+            if metric_key not in record:
+                continue
+            try:
+                value = float(record[metric_key])
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(value):
+                values.append(value)
+    return values
+
+
+def history_uses_service_interruption_penalty(payload: Dict) -> bool:
+    """Infer whether reward_service_continuity is the new interruption penalty."""
+    config = payload.get("config", {}) or {}
+    try:
+        service_weight = float(config.get("reward_service_continuity_weight", np.nan))
+        delay_weight = float(config.get("reward_delay_weight", np.nan))
+        deadline_weight = float(config.get("reward_deadline_penalty", np.nan))
+    except (TypeError, ValueError):
+        service_weight = delay_weight = deadline_weight = np.nan
+
+    if (
+        np.isfinite(service_weight)
+        and np.isfinite(delay_weight)
+        and np.isfinite(deadline_weight)
+        and service_weight <= 0.15 + 1e-9
+        and abs(delay_weight - 0.25) <= 1e-9
+    ):
+        return True
+
+    values = _collect_history_metric_values(payload, "reward_service_continuity")
+    if values:
+        if any(value < -1e-9 for value in values):
+            return True
+        if any(value > 1e-9 for value in values):
+            return False
+
+    return True
+
+
+def reward_component_step_metrics_for_history(history_path: Optional[Path]) -> List[tuple[str, str, str, float]]:
+    specs = list(REWARD_COMPONENT_STEP_METRICS)
+    if history_path is None or not history_path.exists():
+        return specs
+
+    try:
+        with history_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return specs
+
+    service_spec = (
+        SERVICE_INTERRUPTION_PENALTY_SPEC
+        if history_uses_service_interruption_penalty(payload)
+        else LEGACY_SERVICE_CONTINUITY_REWARD_SPEC
+    )
+    return [service_spec if spec[0] == "reward_service_continuity" else spec for spec in specs]
 
 
 def load_training_history(history_path: Path) -> Dict:
@@ -701,6 +779,9 @@ def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_st
         reward_failed_handover_penalty=float(
             config.get("reward_failed_handover_penalty", EnvConfig.reward_failed_handover_penalty)
         ),
+        reward_deadline_penalty=float(
+            config.get("reward_deadline_penalty", EnvConfig.reward_deadline_penalty)
+        ),
         seed=seed if seed is not None else config.get("seed"),
     )
 
@@ -763,6 +844,7 @@ def build_default_train_config(
         config["reward_handover_weight"] = 0.0
         config["reward_load_balance_weight"] = 0.0
         config["reward_qos_weight"] = 0.0
+        config["reward_service_continuity_weight"] = 0.0
     elif objective == "energy_only":
         config["exp_name"] = "han_mappo_energy_only"
         config["reward_delay_weight"] = 0.0
@@ -770,13 +852,16 @@ def build_default_train_config(
         config["reward_handover_weight"] = 0.0
         config["reward_load_balance_weight"] = 0.0
         config["reward_qos_weight"] = 0.0
+        config["reward_service_continuity_weight"] = 0.0
     else:
         config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
-        config["reward_delay_weight"] = 1.4
-        config["reward_energy_weight"] = 0.4
-        config["reward_handover_weight"] = 0.3
-        config["reward_load_balance_weight"] = 0.1
-        config["reward_qos_weight"] = 0.4
+        config["reward_delay_weight"] = 0.25
+        config["reward_energy_weight"] = 0.15
+        config["reward_handover_weight"] = 0.10
+        config["reward_load_balance_weight"] = 0.05
+        config["reward_qos_weight"] = 0.30
+        config["reward_service_continuity_weight"] = 0.15
+        config["reward_deadline_penalty"] = 0.30
     return config
 
 
@@ -3403,7 +3488,7 @@ def plot_reward_component_per_task_curves(history_path: Optional[Path], output_d
     if history_path is None or not history_path.exists():
         return None
 
-    metric_specs = [spec for spec in REWARD_COMPONENT_STEP_METRICS if spec[0] != "mean_reward"]
+    metric_specs = [spec for spec in reward_component_step_metrics_for_history(history_path) if spec[0] != "mean_reward"]
     ncols = 2
     nrows = int(np.ceil(len(metric_specs) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(14, 3.6 * nrows), dpi=220)
@@ -3465,7 +3550,7 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
         history_path,
         output_dir,
         window,
-        REWARD_COMPONENT_STEP_METRICS,
+        reward_component_step_metrics_for_history(history_path),
         "reward_components_vs_steps.pdf",
         "Reward Components vs. Steps",
     )

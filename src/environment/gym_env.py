@@ -59,19 +59,19 @@ class EnvConfig:
     min_effective_offload_ratio: float = 0.05  # Treat tiny noisy offload actions as local execution
     task_arrival_seed_offset: int = 7919
     
-    # 奖励权重（增大正向奖励系数，平衡奖惩信号）
-    reward_delay_weight: float = 1.4
-    reward_energy_weight: float = 0.4
-    reward_handover_weight: float = 0.3
-    reward_load_balance_weight: float = 0.1
-    reward_qos_weight: float = 0.4
-    reward_service_continuity_weight: float = 0.5
+    # 奖励权重（按归一化项平衡，避免单个项主导总 reward）
+    reward_delay_weight: float = 0.25
+    reward_energy_weight: float = 0.15
+    reward_handover_weight: float = 0.10
+    reward_load_balance_weight: float = 0.05
+    reward_qos_weight: float = 0.30
+    reward_service_continuity_weight: float = 0.15
     reward_enqueue_bonus: float = 0.02
     reward_invalid_action_penalty: float = 0.5
     reward_blocked_penalty: float = 1.0
     reward_queue_full_penalty: float = 0.3
     reward_failed_handover_penalty: float = 0.3
-    reward_deadline_penalty: float = 1.0
+    reward_deadline_penalty: float = 0.30
     reward_energy_reference: float = 10.0
     
     # 随机种子
@@ -370,15 +370,15 @@ class LEOSatelliteEnv(gym.Env):
         step_user_seconds: float,
         interruption_seconds: float,
     ) -> float:
-        """Reward uninterrupted service time at the same step granularity as the metric."""
+        """Penalize interrupted service time without rewarding ordinary uptime."""
         if step_user_seconds <= 0.0:
             return 0.0
-        continuity_score = 1.0 - np.clip(
+        interruption_ratio = np.clip(
             float(interruption_seconds) / float(step_user_seconds),
             0.0,
             1.0,
         )
-        return float(self.config.reward_service_continuity_weight * continuity_score)
+        return float(-self.config.reward_service_continuity_weight * interruption_ratio)
 
     @staticmethod
     def _summarize_stats(stats: Dict[str, float]) -> Dict[str, float]:

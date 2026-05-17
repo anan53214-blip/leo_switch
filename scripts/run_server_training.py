@@ -63,11 +63,13 @@ STANDARD_CONFIG = {
     # 环境
     'num_users':        20,              # 20 个用户（增加竞争）
     'max_steps':        2000,            # 每 episode 2000 步（更长的决策序列）
-    'reward_delay_weight': 1.4,
-    'reward_energy_weight': 0.4,
-    'reward_handover_weight': 0.3,
-    'reward_load_balance_weight': 0.1,
-    'reward_qos_weight': 0.4,
+    'reward_delay_weight': 0.25,
+    'reward_energy_weight': 0.15,
+    'reward_handover_weight': 0.10,
+    'reward_load_balance_weight': 0.05,
+    'reward_qos_weight': 0.30,
+    'reward_service_continuity_weight': 0.15,
+    'reward_deadline_penalty': 0.30,
 
     # HAN
     'han_hidden_dim':   64,

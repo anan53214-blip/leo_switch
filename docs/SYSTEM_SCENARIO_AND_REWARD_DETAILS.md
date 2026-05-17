@@ -97,13 +97,20 @@ action_i = (handover_action_i, offload_ratio_i)
 
 | 参数 | 当前默认值 |
 | --- | --- |
-| `reward_delay_weight` | `1.4` |
-| `reward_energy_weight` | `0.4` |
-| `reward_handover_weight` | `0.3` |
-| `reward_load_balance_weight` | `0.1` |
-| `reward_qos_weight` | `0.4` |
+| `reward_delay_weight` | `0.25` |
+| `reward_energy_weight` | `0.15` |
+| `reward_handover_weight` | `0.10` |
+| `reward_load_balance_weight` | `0.05` |
+| `reward_qos_weight` | `0.30` |
+| `reward_service_continuity_weight` | `0.15` |
+| `reward_deadline_penalty` | `0.30` |
 | `reward_enqueue_bonus` | `0.02` |
 | `reward_queue_full_penalty` | `0.3` |
+
+`reward_service_continuity` is kept as the legacy breakdown key, but it is now
+a signed service-interruption penalty: no interruption contributes `0`, and
+interrupted time contributes `-reward_service_continuity_weight *
+interruption_seconds / step_user_seconds`.
 
 ## 6. 关键统计指标
 

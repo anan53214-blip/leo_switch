@@ -36,6 +36,7 @@ import sys
 import time
 import argparse
 import logging
+import copy
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -194,13 +195,14 @@ class TrainConfig:
     max_steps: int = 2000                 # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
     min_effective_offload_ratio: float = 0.05
-    reward_delay_weight: float = 1.4
-    reward_energy_weight: float = 0.4
-    reward_handover_weight: float = 0.3
-    reward_load_balance_weight: float = 0.1
-    reward_qos_weight: float = 0.4
-    reward_service_continuity_weight: float = 0.5
+    reward_delay_weight: float = 0.25
+    reward_energy_weight: float = 0.15
+    reward_handover_weight: float = 0.10
+    reward_load_balance_weight: float = 0.05
+    reward_qos_weight: float = 0.30
+    reward_service_continuity_weight: float = 0.15
     reward_failed_handover_penalty: float = 0.3
+    reward_deadline_penalty: float = 0.30
     
     # ---------- 图参数 ----------
     max_visible_sats: int = 10            # 最大可见卫星数（候选集）
@@ -416,6 +418,7 @@ class HANMAPPOTrainer:
             reward_qos_weight=self.config.reward_qos_weight,
             reward_service_continuity_weight=self.config.reward_service_continuity_weight,
             reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
+            reward_deadline_penalty=self.config.reward_deadline_penalty,
             seed=self.config.seed
         )
         
@@ -440,6 +443,10 @@ class HANMAPPOTrainer:
         self.logger.info(f"  - 拼接后观测维度: {self.obs_dim} (HAN {self.han_out_dim} + rvt_warning 1 + task 4)")
         self.logger.info(f"  - 全局状态维度: {self.global_state_dim}")
     
+    def _create_eval_env(self) -> LEOSatelliteEnv:
+        """Create an isolated environment for evaluation episodes."""
+        return LEOSatelliteEnv(copy.deepcopy(self.env.config))
+
     def _init_graph_builder(self):
         """初始化图构建器"""
         self.logger.info("初始化图构建器...")
@@ -1559,25 +1566,36 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         eval_lengths = []
         eval_env_stats = self._empty_env_stats()
 
-        for ep in range(self.config.eval_episodes):
-            observations, _, masks = self._reset_encoded_env(seed=self.config.seed + 100_000 + ep)
-            episode_reward = 0.0
-            episode_length = 0
-            done = False
-            while not done:
-                env_actions, _, _ = self._select_eval_action(observations, masks)
-                _, rewards, terminated, truncated, _ = self.env.step(
-                    env_actions,
-                    return_observation=False,
-                    return_info=False,
-                )
-                done = bool(terminated or truncated)
-                episode_reward += self._scalar_reward(rewards)
-                episode_length += 1
-                observations, _, masks = self._encode_graph_state()
-            eval_rewards.append(episode_reward)
-            eval_lengths.append(episode_length)
-            self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
+        training_env = self.env
+        eval_env = self._create_eval_env()
+        try:
+            self.env = eval_env
+            for ep in range(self.config.eval_episodes):
+                observations, _, masks = self._reset_encoded_env(seed=self.config.seed + 100_000 + ep)
+                episode_reward = 0.0
+                episode_length = 0
+                done = False
+                while not done:
+                    env_actions, _, _ = self._select_eval_action(observations, masks)
+                    _, rewards, terminated, truncated, _ = self.env.step(
+                        env_actions,
+                        return_observation=False,
+                        return_info=False,
+                    )
+                    done = bool(terminated or truncated)
+                    episode_reward += self._scalar_reward(rewards)
+                    episode_length += 1
+                    if not done:
+                        observations, _, masks = self._encode_graph_state()
+                eval_rewards.append(episode_reward)
+                eval_lengths.append(episode_length)
+                self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
+        finally:
+            self.env = training_env
+            self._cached_han_user_embed = None
+            self._cached_sat_embed = None
+            if eval_env is not training_env and hasattr(eval_env, "close"):
+                eval_env.close()
 
         mean_reward = float(np.mean(eval_rewards)) if eval_rewards else 0.0
         std_reward = float(np.std(eval_rewards)) if eval_rewards else 0.0
@@ -1791,20 +1809,22 @@ def parse_args():
                         help='用户数量')
     parser.add_argument('--max_steps', type=int, default=2000,
                         help='每episode最大步数')
-    parser.add_argument('--reward_delay_weight', type=float, default=1.4,
+    parser.add_argument('--reward_delay_weight', type=float, default=0.25,
                         help='时延奖励权重')
-    parser.add_argument('--reward_energy_weight', type=float, default=0.4,
+    parser.add_argument('--reward_energy_weight', type=float, default=0.15,
                         help='能耗奖励权重')
-    parser.add_argument('--reward_handover_weight', type=float, default=0.3,
+    parser.add_argument('--reward_handover_weight', type=float, default=0.10,
                         help='切换奖励权重')
-    parser.add_argument('--reward_load_balance_weight', type=float, default=0.1,
+    parser.add_argument('--reward_load_balance_weight', type=float, default=0.05,
                         help='负载均衡奖励权重')
-    parser.add_argument('--reward_qos_weight', type=float, default=0.4,
+    parser.add_argument('--reward_qos_weight', type=float, default=0.30,
                         help='QoS reward weight')
-    parser.add_argument('--reward_service_continuity_weight', type=float, default=0.5,
-                        help='Service continuity reward weight')
+    parser.add_argument('--reward_service_continuity_weight', type=float, default=0.15,
+                        help='Service interruption penalty weight')
     parser.add_argument('--reward_failed_handover_penalty', type=float, default=0.3,
                         help='Failed handover penalty weight')
+    parser.add_argument('--reward_deadline_penalty', type=float, default=0.30,
+                        help='Deadline violation penalty weight')
     parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
                         help='Treat smaller offload ratios as local execution')
     
@@ -1892,6 +1912,7 @@ def main():
     config.reward_qos_weight = args.reward_qos_weight
     config.reward_service_continuity_weight = args.reward_service_continuity_weight
     config.reward_failed_handover_penalty = args.reward_failed_handover_penalty
+    config.reward_deadline_penalty = args.reward_deadline_penalty
     config.min_effective_offload_ratio = args.min_effective_offload_ratio
     config.total_timesteps = args.total_timesteps
     config.n_steps = args.n_steps

@@ -109,3 +109,187 @@ steps, CPU, seed 42. This is only a wiring smoke, not a paper-quality ranking.
 **Follow-up decision:** keep the implementation and rerun strict comparisons
 under current code for `han_mappo`, `mappo_no_han`, `maddpg`, `han_maddpg`,
 `pdqn`, and `han_pdqn`. Heuristic methods can be re-evaluated cheaply.
+
+## 2026-05-17 - All Methods 1200k Baseline Compare, Artifact Summary
+
+**Experiment directory:** `results/baseline_compare/20260516_221726_all_methods_1200k`
+
+**System run directory:** `results/full_train_latency_priority_20260516_221726`
+
+**Summary generation:** `scripts/generate_comparison_from_artifacts.py` rebuilt
+`comparison_summary.json`, `comparison_summary.csv`, `episode_metrics.csv`, and
+the PDF figures from existing trained artifacts. The summary metadata records
+`run_mode=artifact_plot_only`, `generated_at=from_existing_artifacts`,
+`objective=multi_objective`, `best_model_metric=effective_latency_score`,
+`compare_ranking_metric=effective_latency_score`, `episodes=5`,
+`max_steps=2000`, `seed=42`, `num_users=20`.
+
+**Code state:** post-HAN+MADDPG/HAN+PDQN implementation and post parameter
+speed-up defaults. MAPPO-family training used `n_epochs=6`, `batch_size=256`,
+constant `entropy_coef=0.005`, service-continuity reward weight `0.5`, failed
+handover penalty `0.3`, and `best_model_metric=effective_latency_score`.
+The 2026-05-16 `参数更新_加速` change reduced PPO update work from 10 epochs
+with 64 batch size to 6 epochs with 256 batch size.
+
+**Main result:**
+
+| Method | Mean Reward | Effective Latency | Avg Delay | Continuity | Task Success | Deadline Violation | Energy / Resolved Task |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Min-Distance | 1942.579 | 0.297771 | 2.107855 | 0.988042 | 0.936735 | 0.063255 | 2.068334 |
+| HAN+PDQN | 1940.673 | 0.296991 | 2.109846 | 0.987164 | 0.935717 | 0.064273 | 2.063540 |
+| MADDPG | 1932.651 | 0.294253 | 2.116899 | 0.982811 | 0.933305 | 0.066684 | 2.061306 |
+| MAPPO (no HAN) | 1787.248 | 0.273940 | 2.206264 | 0.986906 | 0.890150 | 0.109828 | 1.092343 |
+| HAN+MAPPO | 1785.752 | 0.273814 | 2.214800 | 0.988140 | 0.890972 | 0.109010 | 1.190327 |
+| HAN+MADDPG | 1774.701 | 0.244121 | 2.178774 | 0.841562 | 0.922027 | 0.077953 | 2.065456 |
+| PDQN | 1762.304 | 0.241604 | 2.268838 | 0.895503 | 0.881884 | 0.118080 | 1.929118 |
+| Full-Local | 1765.470 | 0.240937 | 2.294284 | 0.915235 | 0.867412 | 0.132556 | 1.917774 |
+| Joint Greedy | 1716.369 | 0.226832 | 2.318859 | 0.874955 | 0.860306 | 0.139658 | 1.878545 |
+| Random | 1231.728 | 0.104135 | 2.562058 | 0.451001 | 0.823164 | 0.176672 | 2.012683 |
+
+**Primary metric leaders:** Min-Distance won average delay, service
+availability, task success, and deadline violation. HAN+MAPPO only led service
+continuity, by a very small margin over Min-Distance.
+
+**Comparison with 2026-05-10 current-overlap methods:**
+
+| Method | Effective Latency Change | Delay Change | Task Success Change | Deadline Change | Energy / Resolved Task Change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| HAN+MAPPO | +0.28% | 2.218435 -> 2.214800 | 0.889879 -> 0.890972 | 0.110106 -> 0.109010 | 1.194593 -> 1.190327 |
+| MAPPO (no HAN) | +0.70% | 2.233144 -> 2.206264 | 0.890067 -> 0.890150 | 0.109919 -> 0.109828 | 1.245349 -> 1.092343 |
+| MADDPG | -0.96% | 2.113535 -> 2.116899 | 0.935781 -> 0.933305 | 0.064211 -> 0.066684 | 2.073609 -> 2.061306 |
+| Min-Distance | +0.30% | 2.113866 -> 2.107855 | 0.935773 -> 0.936735 | 0.064219 -> 0.063255 | 2.073682 -> 2.068334 |
+
+**Diagnosis:**
+
+The service-continuity reward and effective-latency checkpoint selection did
+not materially close the gap for HAN+MAPPO. HAN+MAPPO is still
+energy-efficient, but it remains task-success and deadline limited, and it is
+slightly behind MAPPO without HAN on the primary `effective_latency_score`.
+This means the HAN encoder has not yet produced a measurable advantage for the
+MAPPO path under this 20-user/1200k setup.
+
+The newly added off-policy learned baselines changed the ranking picture.
+HAN+PDQN is nearly tied with Min-Distance and beats MADDPG on the primary score,
+while standalone PDQN is weak. This suggests the HAN representation is useful
+for PDQN in this setting, but the same conclusion does not hold for MAPPO or
+MADDPG. HAN+MADDPG degraded badly on service continuity, with large failed
+handover and handover-cost penalties, so it should not be treated as a strong
+baseline yet.
+
+The speed-up change likely reduced MAPPO wall-clock cost without obvious
+metric damage compared with 2026-05-10, but it also did not unlock a meaningful
+quality gain. The best evidence is that MAPPO no-HAN improved effective latency
+by 0.70%, HAN+MAPPO improved by only 0.28%, and both remain far below
+Min-Distance/HAN+PDQN/MADDPG.
+
+**Data-quality notes:**
+
+The summary was generated after the fact from artifacts, not directly by the
+original train-compare run. `HAN+PDQN` has `summary.total_steps=1200000`, but
+its config reports `total_timesteps=400000` and its visible training records
+start at 802000 steps, which looks like a resumed or partially merged history.
+The final comparison metrics are checkpoint evaluations, but the training
+curve for HAN+PDQN should be interpreted cautiously.
+
+**Follow-up decision:** keep HAN+PDQN and the artifact-summary helper as useful
+evaluation additions. Do not claim HAN+MAPPO superiority from this run. Next
+work should focus on why MAPPO learns an energy-saving policy with low task
+success, and why HAN+MADDPG loses continuity. For paper-style ranking, rerun
+the top contenders with multiple seeds and ensure the summary is produced by a
+single uninterrupted comparison workflow.
+
+## 2026-05-17 - Reward Curve / Off-Policy Evaluation Bugfix
+
+**Context:** Follow-up debugging of
+`results/baseline_compare/20260516_221726_all_methods_1200k` after the reward
+curves appeared non-convergent for most methods.
+
+**Root causes found:**
+
+- `scripts/compare_system_baselines.py` plotted `training[*].mean_reward`
+  whenever training records existed, even if comparable
+  `evaluation[*].eval_mean_reward` records also existed. This mixed different
+  reward semantics across algorithms: rollout mean reward for MAPPO,
+  per-episode training reward for off-policy baselines, and deterministic
+  checkpoint evaluation reward in the final table.
+- `scripts/train.py` used the same `self.env` for `HAN+MADDPG` and `HAN+PDQN`
+  training and evaluation. `_evaluate()` reset and stepped that environment
+  during training, then the training loop continued with cached observations
+  from the pre-evaluation environment state. This could poison replay data and
+  explains records such as near-zero `mean_reward` with strong QoS metrics.
+- The apparent HAN+MAPPO reward jump from 795.113 in the 2026-05-10 run to
+  1785.752 in this run is mostly reward-definition drift, not algorithmic
+  improvement. The new run includes `reward_service_continuity=988.140`; adding
+  that term to the old reward scale accounts for almost all of the difference.
+
+**Code changes:**
+
+- `load_training_curve_from_path()` now prefers evaluation reward curves when
+  valid `eval_mean_reward` records exist, and falls back to training rewards
+  only when no evaluation curve is available.
+- `HANMADDPGTrainer._evaluate()` now evaluates in an isolated environment,
+  restores the training environment afterward, clears cached HAN embeddings,
+  and closes the temporary environment.
+
+**Verification:**
+
+- Added `tests/test_baseline_plotting.py` for evaluation-reward curve priority.
+- Added `tests/test_offpolicy_evaluation.py` for off-policy eval isolation.
+- Ran `pytest tests -q`: 73 passed, 4 skipped.
+
+**Follow-up decision:** regenerate comparison plots after this fix before using
+reward curves in analysis. Existing final table metrics from checkpoint
+evaluation remain useful, but the old reward curve PDF should be treated as
+misleading for convergence claims.
+
+## 2026-05-17 - Reward Function Rebalance
+
+**Context:** Follow-up to the abnormal reward scale diagnosis. The previous
+service-continuity reward granted a positive per-step uptime bonus, so a
+2000-step run could accumulate roughly `+1000` reward from normal continuity
+alone. That made reward magnitude weakly comparable across runs and allowed
+one component to dominate the learning signal.
+
+**Design change:** default reward weights were rebalanced around normalized
+components:
+
+| Component | Default weight |
+| --- | ---: |
+| Delay | 0.25 |
+| Energy | 0.15 |
+| Handover | 0.10 |
+| Load balance | 0.05 |
+| QoS / task success | 0.30 |
+| Service interruption | 0.15 |
+| Deadline violation | 0.30 |
+
+`reward_service_continuity` remains the backward-compatible breakdown key, but
+its semantics changed from a positive continuity bonus to a signed interruption
+penalty:
+
+`-reward_service_continuity_weight * interruption_seconds / step_user_seconds`.
+
+No-interruption steps now contribute `0`, so high service continuity is still
+measured by `service_continuity_rate` but no longer inflates episode reward by
+hundreds of points.
+
+**Code changes:**
+
+- Updated `EnvConfig`, `TrainConfig`, training CLI defaults, server-training
+  defaults, and baseline-comparison generated configs to the balanced weights.
+- Passed `reward_deadline_penalty` through all train/compare environment
+  builders so deadline weighting is not silently stuck at the environment
+  default.
+- Renamed the plotted reward component label from "Service Continuity Reward"
+  to "Service Interruption Penalty".
+- Added regression tests for the interruption-only continuity term, long-run
+  continuity bound, balanced defaults, and server-training default parity.
+
+**Expected metric effect:** new training runs will have much lower absolute
+mean reward than the 2026-05-16 run, especially because the old
+`reward_service_continuity=988.140` style contribution disappears. This is an
+intentional scale correction, not a performance regression by itself. Future
+comparisons should prioritize `effective_latency_score`, `avg_delay`,
+`task_success_rate`, `deadline_violation_rate`, `service_continuity_rate`, and
+the now-bounded reward breakdown rather than raw reward across old and new
+reward definitions.

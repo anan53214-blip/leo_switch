@@ -24,13 +24,14 @@ def test_task_success_rate_can_be_used_as_selection_metric():
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
-    config = EnvConfig(
-        num_users=1,
-        max_steps=5,
-        seed=7,
-        task_arrival_prob=0.0,
-        **overrides,
-    )
+    params = {
+        "num_users": 1,
+        "max_steps": 5,
+        "seed": 7,
+        "task_arrival_prob": 0.0,
+    }
+    params.update(overrides)
+    config = EnvConfig(**params)
     return LEOSatelliteEnv(config)
 
 
@@ -127,13 +128,24 @@ def test_info_contains_reward_breakdown_and_load_balance():
         env.close()
 
 
-def test_service_continuity_reward_scales_with_uninterrupted_step_time():
-    env = _build_single_user_env(reward_service_continuity_weight=0.5)
+def test_service_continuity_reward_penalizes_only_interruptions():
+    env = _build_single_user_env(reward_service_continuity_weight=0.15)
 
     try:
-        assert env._compute_service_continuity_reward(10.0, 0.0) == pytest.approx(0.5)
-        assert env._compute_service_continuity_reward(10.0, 2.0) == pytest.approx(0.4)
-        assert env._compute_service_continuity_reward(10.0, 10.0) == pytest.approx(0.0)
+        assert env._compute_service_continuity_reward(10.0, 0.0) == pytest.approx(0.0)
+        assert env._compute_service_continuity_reward(10.0, 2.0) == pytest.approx(-0.03)
+        assert env._compute_service_continuity_reward(10.0, 10.0) == pytest.approx(-0.15)
+    finally:
+        env.close()
+
+
+def test_service_continuity_term_stays_bounded_over_long_episodes():
+    env = _build_single_user_env(reward_service_continuity_weight=0.15, max_steps=2000)
+
+    try:
+        per_step = env._compute_service_continuity_reward(20.0, 0.24)
+        assert per_step == pytest.approx(-0.0018)
+        assert per_step * 2000 == pytest.approx(-3.6)
     finally:
         env.close()
 
@@ -145,3 +157,36 @@ def test_training_defaults_use_balanced_update_budget():
     assert config.batch_size == 256
     assert config.entropy_schedule == "constant"
     assert config.reward_failed_handover_penalty == pytest.approx(0.3)
+
+
+def test_reward_default_weights_are_balanced():
+    env_config = EnvConfig()
+    train_config = TrainConfig()
+
+    expected = {
+        "reward_delay_weight": 0.25,
+        "reward_energy_weight": 0.15,
+        "reward_handover_weight": 0.10,
+        "reward_load_balance_weight": 0.05,
+        "reward_qos_weight": 0.30,
+        "reward_service_continuity_weight": 0.15,
+        "reward_deadline_penalty": 0.30,
+    }
+
+    for key, value in expected.items():
+        assert getattr(env_config, key) == pytest.approx(value)
+        assert getattr(train_config, key) == pytest.approx(value)
+
+
+def test_server_training_defaults_use_balanced_reward_weights():
+    from scripts.run_server_training import STANDARD_CONFIG, build_training_config
+
+    config = build_training_config(STANDARD_CONFIG, algorithm="mappo")
+
+    assert config.reward_delay_weight == pytest.approx(0.25)
+    assert config.reward_energy_weight == pytest.approx(0.15)
+    assert config.reward_handover_weight == pytest.approx(0.10)
+    assert config.reward_load_balance_weight == pytest.approx(0.05)
+    assert config.reward_qos_weight == pytest.approx(0.30)
+    assert config.reward_service_continuity_weight == pytest.approx(0.15)
+    assert config.reward_deadline_penalty == pytest.approx(0.30)
