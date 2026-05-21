@@ -46,6 +46,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.user import UserState
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
+from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
 try:
@@ -1045,12 +1046,22 @@ def action_diagnostics(
     }
 
 
+def ensure_action_diagnostic_fields(method: Dict) -> Dict:
+    normalized = dict(method)
+    for key in ACTION_DIAGNOSTIC_KEYS:
+        try:
+            normalized[key] = float(normalized.get(key, 0.0))
+        except (TypeError, ValueError):
+            normalized[key] = 0.0
+    return normalized
+
+
 def selection_score(method: Dict, metric_name: str) -> float:
     return float(compute_model_selection_score(method, metric_name))
 
 
 def annotate_priority_metrics(methods: Sequence[Dict], metric_name: str) -> List[Dict]:
-    annotated = [dict(method) for method in methods]
+    annotated = [ensure_action_diagnostic_fields(method) for method in methods]
     for method in annotated:
         method["selection_metric"] = metric_name
         method["selection_score"] = selection_score(method, metric_name)
@@ -1898,35 +1909,25 @@ def clone_state_dict(module: nn.Module) -> Dict[str, torch.Tensor]:
 
 
 def evaluate_maddpg_policy(
-    actor: MADDPGActor,
+    algorithm: MADDPGAlgorithm,
     objective: str,
     config: Dict,
     episodes: int,
     seed: int,
     max_steps: Optional[int],
-    device: torch.device,
 ) -> Dict:
     env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
     rewards: List[float] = []
     summaries: List[Dict] = []
     action_batches: List[np.ndarray] = []
-    rng = np.random.default_rng(seed)
 
-    actor.eval()
     for episode_idx in range(episodes):
         observations, _ = env.reset(seed=seed + episode_idx)
         done = False
         episode_reward = 0.0
         while not done:
             masks = maddpg_action_mask(env)
-            env_actions, _, _ = select_maddpg_env_actions(
-                actor=actor,
-                observations=observations,
-                masks=masks,
-                noise_std=0.0,
-                rng=rng,
-                device=device,
-            )
+            env_actions, _, _ = algorithm.act(observations, masks, deterministic=True)
             action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             observations, reward, terminated, truncated, _ = env.step(env_actions)
             episode_reward += scalar_reward_value(reward)
@@ -1956,29 +1957,38 @@ def train_and_evaluate_maddpg_baseline(
     obs_dim = int(env.user_obs_dim)
     num_agents = int(env.num_users)
     handover_dim = int(env.max_visible_sats + 1)
-    action_feature_dim = handover_dim + 1
 
-    actor = MADDPGActor(obs_dim, handover_dim).to(device)
-    target_actor = MADDPGActor(obs_dim, handover_dim).to(device)
-    critic = MADDPGCritic(num_agents, obs_dim, action_feature_dim).to(device)
-    target_critic = MADDPGCritic(num_agents, obs_dim, action_feature_dim).to(device)
-    target_actor.load_state_dict(actor.state_dict())
-    target_critic.load_state_dict(critic.state_dict())
-
-    actor_optimizer = torch.optim.Adam(actor.parameters(), lr=5e-4)
-    critic_optimizer = torch.optim.Adam(critic.parameters(), lr=1e-3)
-    replay = deque(maxlen=50_000)
-    rng = np.random.default_rng(seed)
+    maddpg_config = MADDPGConfig(
+        num_agents=num_agents,
+        obs_dim=obs_dim,
+        max_candidates=handover_dim - 1,
+        actor_hidden_dims=(256, 128),
+        critic_hidden_dims=(512, 256, 128),
+        actor_lr=5e-4,
+        critic_lr=1e-3,
+        gamma=0.99,
+        tau=0.01,
+        noise_start=0.35,
+        noise_final=0.05,
+        noise_decay_steps=max(int(total_timesteps * 0.7), 1),
+        batch_size=128,
+        replay_size=50_000,
+        warmup_steps=min(1_000, max(64, total_timesteps // 20)),
+        grad_clip_norm=1.0,
+        seed=int(seed),
+        device=str(device),
+    )
+    algo = MADDPGAlgorithm(maddpg_config)
+    replay = MultiAgentReplayBuffer(
+        capacity=algo.config.replay_size,
+        num_agents=num_agents,
+        obs_dim=obs_dim,
+        action_feature_dim=algo.action_feature_dim,
+        mask_dim=algo.handover_dim,
+        device=str(device),
+    )
     random.seed(seed)
     torch.manual_seed(seed)
-
-    batch_size = 128
-    gamma = 0.99
-    tau = 0.01
-    warmup = min(1_000, max(64, total_timesteps // 20))
-    noise_start = 0.35
-    noise_final = 0.05
-    noise_decay_steps = max(total_timesteps * 0.7, 1)
     training_records: List[Dict] = []
     evaluation_records: List[Dict] = []
     recent_episode_rewards: deque = deque(maxlen=10)
@@ -1987,90 +1997,46 @@ def train_and_evaluate_maddpg_baseline(
     eval_interval_episodes = 10
     train_eval_episodes = min(3, max(1, int(episodes)))
     best_eval_reward = -float("inf")
-    best_actor_state = clone_state_dict(actor)
-    best_critic_state = clone_state_dict(critic)
-    best_target_actor_state = clone_state_dict(target_actor)
-    best_target_critic_state = clone_state_dict(target_critic)
+    best_actor_state = clone_state_dict(algo.actor)
+    best_critic_state = clone_state_dict(algo.critic)
+    best_target_actor_state = clone_state_dict(algo.target_actor)
+    best_target_critic_state = clone_state_dict(algo.target_critic)
     episode_reward = 0.0
     episode_length = 0
     episode_count = 0
 
     observations, _ = env.reset(seed=seed)
-    actor.train()
-    critic.train()
     for step_idx in range(max(int(total_timesteps), 0)):
-        progress = min(step_idx / noise_decay_steps, 1.0)
-        noise_std = noise_start + progress * (noise_final - noise_start)
+        noise_std = algo._noise_std()
         masks = maddpg_action_mask(env)
-        if step_idx < warmup:
-            env_actions, action_features, _ = random_maddpg_actions(masks, rng)
+        if step_idx < algo.config.warmup_steps:
+            env_actions, action_features, _ = algo.random_actions(masks)
         else:
-            env_actions, action_features, _ = select_maddpg_env_actions(
-                actor=actor,
-                observations=observations,
-                masks=masks,
-                noise_std=float(noise_std),
-                rng=rng,
-                device=device,
-            )
+            env_actions, action_features, _ = algo.act(observations, masks, deterministic=False)
 
         next_observations, reward, terminated, truncated, _ = env.step(env_actions)
         done = bool(terminated or truncated)
         reward_value = scalar_reward_value(reward)
         next_masks = maddpg_action_mask(env) if not done else np.zeros_like(masks)
-        replay.append(
-            (
-                observations.astype(np.float32, copy=True),
-                action_features.astype(np.float32, copy=True),
-                float(reward_value),
-                next_observations.astype(np.float32, copy=True),
-                bool(done),
-                masks.astype(bool, copy=True),
-                next_masks.astype(bool, copy=True),
-            )
+        replay.add(
+            observations.astype(np.float32, copy=True),
+            action_features.astype(np.float32, copy=True),
+            float(reward_value),
+            next_observations.astype(np.float32, copy=True),
+            bool(done),
+            masks.astype(bool, copy=True),
+            next_masks.astype(bool, copy=True),
         )
 
         observations = next_observations
         episode_reward += reward_value
         episode_length += 1
 
-        if len(replay) >= max(batch_size, warmup):
-            batch = random.sample(replay, batch_size)
-            obs_b = torch.tensor(np.stack([item[0] for item in batch]), dtype=torch.float32, device=device)
-            action_b = torch.tensor(np.stack([item[1] for item in batch]), dtype=torch.float32, device=device)
-            reward_b = torch.tensor([item[2] for item in batch], dtype=torch.float32, device=device)
-            next_obs_b = torch.tensor(np.stack([item[3] for item in batch]), dtype=torch.float32, device=device)
-            done_b = torch.tensor([item[4] for item in batch], dtype=torch.float32, device=device)
-            mask_b = torch.tensor(np.stack([item[5] for item in batch]), dtype=torch.bool, device=device)
-            next_mask_b = torch.tensor(np.stack([item[6] for item in batch]), dtype=torch.bool, device=device)
-
-            with torch.no_grad():
-                next_action_b = maddpg_actor_action_features(target_actor, next_obs_b, next_mask_b)
-                target_q = target_critic(next_obs_b, next_action_b)
-                target = reward_b + gamma * (1.0 - done_b) * target_q
-
-            q_values = critic(obs_b, action_b)
-            critic_loss = F.mse_loss(q_values, target)
-            critic_optimizer.zero_grad()
-            critic_loss.backward()
-            nn.utils.clip_grad_norm_(critic.parameters(), 1.0)
-            critic_optimizer.step()
-
-            for param in critic.parameters():
-                param.requires_grad_(False)
-            actor_action_b = maddpg_actor_action_features(actor, obs_b, mask_b)
-            actor_loss = -critic(obs_b, actor_action_b).mean()
-            actor_optimizer.zero_grad()
-            actor_loss.backward()
-            nn.utils.clip_grad_norm_(actor.parameters(), 1.0)
-            actor_optimizer.step()
-            for param in critic.parameters():
-                param.requires_grad_(True)
-
-            soft_update(actor, target_actor, tau)
-            soft_update(critic, target_critic, tau)
-            recent_actor_losses.append(float(actor_loss.detach().cpu().item()))
-            recent_critic_losses.append(float(critic_loss.detach().cpu().item()))
+        if len(replay) >= max(algo.config.batch_size, algo.config.warmup_steps):
+            stats = algo.update(replay)
+            if stats:
+                recent_actor_losses.append(float(stats.get("actor_loss", 0.0)))
+                recent_critic_losses.append(float(stats.get("critic_loss", 0.0)))
 
         if done:
             episode_count += 1
@@ -2088,13 +2054,12 @@ def train_and_evaluate_maddpg_baseline(
             }
             if episode_count % eval_interval_episodes == 0:
                 eval_result = evaluate_maddpg_policy(
-                    actor=actor,
+                    algorithm=algo,
                     objective=objective,
                     config=config,
                     episodes=train_eval_episodes,
                     seed=seed + 10_000,
                     max_steps=max_steps,
-                    device=device,
                 )
                 record["eval_mean_reward"] = float(eval_result.get("mean_reward", 0.0))
                 record["eval_std_reward"] = float(eval_result.get("std_reward", 0.0))
@@ -2108,12 +2073,10 @@ def train_and_evaluate_maddpg_baseline(
                 evaluation_records.append(eval_record)
                 if record["eval_mean_reward"] > best_eval_reward:
                     best_eval_reward = record["eval_mean_reward"]
-                    best_actor_state = clone_state_dict(actor)
-                    best_critic_state = clone_state_dict(critic)
-                    best_target_actor_state = clone_state_dict(target_actor)
-                    best_target_critic_state = clone_state_dict(target_critic)
-                actor.train()
-                critic.train()
+                    best_actor_state = clone_state_dict(algo.actor)
+                    best_critic_state = clone_state_dict(algo.critic)
+                    best_target_actor_state = clone_state_dict(algo.target_actor)
+                    best_target_critic_state = clone_state_dict(algo.target_critic)
             training_records.append(record)
             observations, _ = env.reset(seed=seed + step_idx + 1)
             episode_reward = 0.0
@@ -2130,7 +2093,7 @@ def train_and_evaluate_maddpg_baseline(
                 "mean_reward": episode_reward,
                 "recent_mean_reward": float(np.mean(recent_episode_rewards)),
                 "mean_length": float(episode_length),
-                "exploration_noise": float(noise_final),
+                "exploration_noise": float(algo.config.noise_final),
                 "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
                 "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
                 "partial_episode": True,
@@ -2138,13 +2101,12 @@ def train_and_evaluate_maddpg_baseline(
         )
 
     final_eval = evaluate_maddpg_policy(
-        actor=actor,
+        algorithm=algo,
         objective=objective,
         config=config,
         episodes=train_eval_episodes,
         seed=seed + 10_000,
         max_steps=max_steps,
-        device=device,
     )
     final_eval_record = {
         "update": episode_count,
@@ -2164,28 +2126,27 @@ def train_and_evaluate_maddpg_baseline(
         evaluation_records.append(final_eval_record)
     if final_eval_record["eval_mean_reward"] > best_eval_reward:
         best_eval_reward = final_eval_record["eval_mean_reward"]
-        best_actor_state = clone_state_dict(actor)
-        best_critic_state = clone_state_dict(critic)
-        best_target_actor_state = clone_state_dict(target_actor)
-        best_target_critic_state = clone_state_dict(target_critic)
+        best_actor_state = clone_state_dict(algo.actor)
+        best_critic_state = clone_state_dict(algo.critic)
+        best_target_actor_state = clone_state_dict(algo.target_actor)
+        best_target_critic_state = clone_state_dict(algo.target_critic)
 
-    final_actor_state = clone_state_dict(actor)
-    final_critic_state = clone_state_dict(critic)
-    final_target_actor_state = clone_state_dict(target_actor)
-    final_target_critic_state = clone_state_dict(target_critic)
-    actor.load_state_dict(best_actor_state)
-    critic.load_state_dict(best_critic_state)
-    target_actor.load_state_dict(best_target_actor_state)
-    target_critic.load_state_dict(best_target_critic_state)
+    final_actor_state = clone_state_dict(algo.actor)
+    final_critic_state = clone_state_dict(algo.critic)
+    final_target_actor_state = clone_state_dict(algo.target_actor)
+    final_target_critic_state = clone_state_dict(algo.target_critic)
+    algo.actor.load_state_dict(best_actor_state)
+    algo.critic.load_state_dict(best_critic_state)
+    algo.target_actor.load_state_dict(best_target_actor_state)
+    algo.target_critic.load_state_dict(best_target_critic_state)
 
     result = evaluate_maddpg_policy(
-        actor=actor,
+        algorithm=algo,
         objective=objective,
         config=config,
         episodes=episodes,
         seed=seed,
         max_steps=max_steps,
-        device=device,
     )
     result["trained_timesteps"] = int(total_timesteps)
     result["best_training_eval_reward"] = float(best_eval_reward)
@@ -2194,36 +2155,48 @@ def train_and_evaluate_maddpg_baseline(
     history_path = checkpoint_dir / "training_history.json"
     checkpoint_path = checkpoint_dir / "maddpg_model.pt"
     final_checkpoint_path = checkpoint_dir / "maddpg_final_model.pt"
-    torch.save(
-        {
-            "actor_state_dict": actor.state_dict(),
-            "critic_state_dict": critic.state_dict(),
-            "target_actor_state_dict": target_actor.state_dict(),
-            "target_critic_state_dict": target_critic.state_dict(),
-            "obs_dim": obs_dim,
-            "num_agents": num_agents,
-            "handover_dim": handover_dim,
-            "action_feature_dim": action_feature_dim,
-            "trained_timesteps": int(total_timesteps),
-            "best_training_eval_reward": float(best_eval_reward),
-            "training_history": str(history_path),
-        },
+
+    def save_maddpg_checkpoint(
+        path: Path,
+        actor_state: Dict[str, torch.Tensor],
+        critic_state: Dict[str, torch.Tensor],
+        target_actor_state: Dict[str, torch.Tensor],
+        target_critic_state: Dict[str, torch.Tensor],
+    ) -> None:
+        torch.save(
+            {
+                "config": asdict(algo.config),
+                "actor_state_dict": actor_state,
+                "critic_state_dict": critic_state,
+                "target_actor_state_dict": target_actor_state,
+                "target_critic_state_dict": target_critic_state,
+                "actor_optimizer_state_dict": algo.actor_optimizer.state_dict(),
+                "critic_optimizer_state_dict": algo.critic_optimizer.state_dict(),
+                "train_step": int(algo.train_step),
+                "obs_dim": obs_dim,
+                "num_agents": num_agents,
+                "handover_dim": handover_dim,
+                "action_feature_dim": algo.action_feature_dim,
+                "trained_timesteps": int(total_timesteps),
+                "best_training_eval_reward": float(best_eval_reward),
+                "training_history": str(history_path),
+            },
+            path,
+        )
+
+    save_maddpg_checkpoint(
         checkpoint_path,
+        best_actor_state,
+        best_critic_state,
+        best_target_actor_state,
+        best_target_critic_state,
     )
-    torch.save(
-        {
-            "actor_state_dict": final_actor_state,
-            "critic_state_dict": final_critic_state,
-            "target_actor_state_dict": final_target_actor_state,
-            "target_critic_state_dict": final_target_critic_state,
-            "obs_dim": obs_dim,
-            "num_agents": num_agents,
-            "handover_dim": handover_dim,
-            "action_feature_dim": action_feature_dim,
-            "trained_timesteps": int(total_timesteps),
-            "training_history": str(history_path),
-        },
+    save_maddpg_checkpoint(
         final_checkpoint_path,
+        final_actor_state,
+        final_critic_state,
+        final_target_actor_state,
+        final_target_critic_state,
     )
     with history_path.open("w", encoding="utf-8") as handle:
         json.dump(
@@ -2232,14 +2205,17 @@ def train_and_evaluate_maddpg_baseline(
                     "method": "maddpg",
                     "objective": objective,
                     "total_timesteps": int(total_timesteps),
-                    "seed": int(seed),
+                    "seed": algo.config.seed,
                     "max_steps": int(max_steps) if max_steps is not None else None,
-                    "actor_lr": 5e-4,
-                    "critic_lr": 1e-3,
-                    "gamma": gamma,
-                    "tau": tau,
-                    "noise_start": noise_start,
-                    "noise_final": noise_final,
+                    "actor_lr": algo.config.actor_lr,
+                    "critic_lr": algo.config.critic_lr,
+                    "gamma": algo.config.gamma,
+                    "tau": algo.config.tau,
+                    "noise_start": algo.config.noise_start,
+                    "noise_final": algo.config.noise_final,
+                    "noise_decay_steps": algo.config.noise_decay_steps,
+                    "warmup_steps": algo.config.warmup_steps,
+                    "batch_size": algo.config.batch_size,
                     "train_eval_interval_episodes": eval_interval_episodes,
                     "train_eval_episodes": train_eval_episodes,
                     "best_training_eval_reward": float(best_eval_reward),
@@ -2273,6 +2249,70 @@ def pdqn_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
         if valid_count > 0:
             masks[user_id, 1:valid_count + 1] = True
     return masks
+
+
+def pdqn_action_features_from_env_actions(
+    env_actions: np.ndarray,
+    masks: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    masks_np = np.asarray(masks, dtype=bool)
+    num_agents, handover_dim = masks_np.shape
+    actions = np.asarray(env_actions, dtype=np.float32).reshape(num_agents, 2).copy()
+    handover = np.clip(np.rint(actions[:, 0]).astype(np.int64), 0, handover_dim - 1)
+    for agent_id, action_id in enumerate(handover):
+        if not masks_np[agent_id, action_id]:
+            valid = np.flatnonzero(masks_np[agent_id])
+            handover[agent_id] = int(valid[0]) if len(valid) else 0
+    offload = np.clip(actions[:, 1], 0.0, 1.0).astype(np.float32)
+    features = np.zeros((num_agents, handover_dim + 1), dtype=np.float32)
+    features[np.arange(num_agents), handover] = 1.0
+    features[:, -1] = offload
+    env_actions = np.column_stack([handover, offload]).astype(np.float32)
+    return env_actions, features, handover
+
+
+def pdqn_safe_heuristic_actions(
+    env: LEOSatelliteEnv,
+    masks: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    masks_np = np.asarray(masks, dtype=bool)
+    actions = np.zeros((env.num_users, 2), dtype=np.float32)
+    rvt_threshold = float(getattr(env.config, "rvt_threshold_sec", 60.0))
+
+    for user_id, user in enumerate(env.user_manager.users):
+        visible_sats = list(env._get_visible_satellites(user))[: env.max_visible_sats]
+        keep_current = False
+        if user.serving_satellite >= 0:
+            vis = env._get_satellite_visibility(user, user.serving_satellite)
+            keep_current = bool(vis is not None and vis.is_visible and vis.rvt_seconds >= rvt_threshold)
+
+        handover = 0
+        if not keep_current and visible_sats:
+            target_idx = int(np.argmax([sat.elevation_deg for sat in visible_sats]))
+            candidate = target_idx + 1
+            if candidate < masks_np.shape[1] and masks_np[user_id, candidate]:
+                handover = candidate
+
+        task = env.user_tasks.get(user_id)
+        actions[user_id, 0] = float(handover)
+        actions[user_id, 1] = 0.5 if task is not None and (keep_current or handover > 0) else 0.0
+
+    return pdqn_action_features_from_env_actions(actions, masks_np)
+
+
+def pdqn_mixed_safe_random_actions(
+    env: LEOSatelliteEnv,
+    algorithm: PDQNAlgorithm,
+    masks: np.ndarray,
+    safe_probability: float = 0.7,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    safe_actions, safe_features, safe_handover = pdqn_safe_heuristic_actions(env, masks)
+    random_actions, random_features, random_handover = algorithm.random_actions(masks)
+    use_safe = algorithm.rng.random(env.num_users) < float(safe_probability)
+    env_actions = np.where(use_safe[:, None], safe_actions, random_actions).astype(np.float32)
+    action_features = np.where(use_safe[:, None], safe_features, random_features).astype(np.float32)
+    handover = np.where(use_safe, safe_handover, random_handover).astype(np.int64)
+    return env_actions, action_features, handover
 
 
 def evaluate_pdqn_policy(
@@ -2333,11 +2373,16 @@ def train_and_evaluate_pdqn_baseline(
             batch_size=128,
             warmup_steps=1_000,
             replay_size=50_000,
+            target_update_interval=int(config.get("target_update_interval", 500)),
+            epsilon_start=float(config.get("epsilon_start", 1.0)),
+            epsilon_final=float(config.get("epsilon_final", 0.02)),
             epsilon_decay_steps=max(
-                int(total_timesteps * float(config.get("epsilon_decay_fraction", 0.4))),
+                int(total_timesteps * float(config.get("epsilon_decay_fraction", 0.25))),
                 1_001,
                 1,
             ),
+            bc_loss_coef=float(config.get("bc_loss_coef", 0.001)),
+            seed=int(seed),
             device=device,
         )
     )
@@ -2361,9 +2406,24 @@ def train_and_evaluate_pdqn_baseline(
     for step_idx in range(max(int(total_timesteps), 0)):
         masks = pdqn_action_mask(env)
         if step_idx < algo.config.warmup_steps:
-            env_actions, action_features, _ = algo.random_actions(masks)
+            env_actions, action_features, _ = pdqn_mixed_safe_random_actions(
+                env,
+                algo,
+                masks,
+                safe_probability=0.7,
+            )
         else:
-            env_actions, action_features, _ = algo.act(observations, masks)
+            exploration_actions, _, _ = pdqn_mixed_safe_random_actions(
+                env,
+                algo,
+                masks,
+                safe_probability=0.7,
+            )
+            env_actions, action_features, _ = algo.act(
+                observations,
+                masks,
+                exploration_actions=exploration_actions,
+            )
 
         next_observations, reward, terminated, truncated, _ = env.step(env_actions)
         done = bool(terminated or truncated)
@@ -2427,6 +2487,16 @@ def train_and_evaluate_pdqn_baseline(
                     **config,
                     "algorithm": "pdqn",
                     "total_timesteps": int(total_timesteps),
+                    "batch_size": algo.config.batch_size,
+                    "warmup_steps": algo.config.warmup_steps,
+                    "replay_size": algo.config.replay_size,
+                    "target_update_interval": algo.config.target_update_interval,
+                    "epsilon_start": algo.config.epsilon_start,
+                    "epsilon_final": algo.config.epsilon_final,
+                    "epsilon_decay_steps": algo.config.epsilon_decay_steps,
+                    "epsilon_decay_fraction": float(config.get("epsilon_decay_fraction", 0.25)),
+                    "bc_loss_coef": algo.config.bc_loss_coef,
+                    "seed": algo.config.seed,
                     "device": device,
                 },
                 "training": training_records,
@@ -3063,7 +3133,13 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
 def save_results_json(output_dir: Path, payload: Dict) -> Path:
     path = output_dir / "comparison_summary.json"
     with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        payload_to_save = dict(payload)
+        if "methods" in payload_to_save:
+            payload_to_save["methods"] = [
+                ensure_action_diagnostic_fields(method)
+                for method in payload_to_save.get("methods", [])
+            ]
+        json.dump(payload_to_save, handle, ensure_ascii=False, indent=2)
     return path
 
 

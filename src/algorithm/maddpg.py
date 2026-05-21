@@ -30,6 +30,7 @@ class MADDPGConfig:
     replay_size: int = 50_000
     warmup_steps: int = 1_000
     grad_clip_norm: float = 1.0
+    seed: int | None = None
     device: str = "cpu"
 
 
@@ -148,7 +149,7 @@ class MADDPGAlgorithm:
         self.handover_dim = int(config.max_candidates) + 1
         self.action_feature_dim = self.handover_dim + 1
         self.train_step = 0
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(config.seed)
 
         self.actor = MADDPGActor(self.obs_dim, self.handover_dim, config.actor_hidden_dims).to(self.device)
         self.target_actor = MADDPGActor(self.obs_dim, self.handover_dim, config.actor_hidden_dims).to(self.device)

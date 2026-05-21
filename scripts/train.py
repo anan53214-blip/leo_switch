@@ -244,8 +244,9 @@ class TrainConfig:
     noise_start: float = 0.35
     noise_final: float = 0.05
     epsilon_start: float = 1.0
-    epsilon_final: float = 0.05
-    epsilon_decay_fraction: float = 0.4
+    epsilon_final: float = 0.02
+    epsilon_decay_fraction: float = 0.25
+    bc_loss_coef: float = 0.001
     target_update_interval: int = 500
     
     # ---------- 训练参数 ----------
@@ -781,25 +782,41 @@ class HANMAPPOTrainer:
             
             # 执行动作
             env_actions = self._process_actions(actions)
-            _, rewards, terminated, truncated, _ = self.env.step(
+            _, rewards, terminated, truncated, info = self.env.step(
                 env_actions,
                 return_observation=False,
-                return_info=False
+                return_info=True
             )
+            info = info or {}
             
             done = terminated or truncated
             
             # 处理奖励（可以是标量或数组）
-            if isinstance(rewards, (int, float)):
+            if hasattr(self.env, "last_user_rewards"):
+                agent_rewards = np.asarray(self.env.last_user_rewards, dtype=np.float32)
+            elif isinstance(info, dict) and "user_rewards" in info:
+                agent_rewards = np.asarray(info["user_rewards"], dtype=np.float32)
+            elif isinstance(rewards, (int, float)):
                 shared_reward = float(rewards)
-                agent_rewards = np.full(self.num_agents, shared_reward)
+                agent_rewards = np.full(self.num_agents, shared_reward, dtype=np.float32)
             elif isinstance(rewards, dict):
-                agent_rewards = np.array([rewards.get(f'user_{i}', 0) for i in range(self.num_agents)])
+                agent_rewards = np.array(
+                    [rewards.get(f'user_{i}', 0) for i in range(self.num_agents)],
+                    dtype=np.float32,
+                )
             else:
-                agent_rewards = np.array(rewards)
+                agent_rewards = np.asarray(rewards, dtype=np.float32)
+
+            if agent_rewards.shape != (self.num_agents,):
+                agent_rewards = np.resize(agent_rewards, self.num_agents).astype(np.float32)
 
             # 统计口径：使用每步全局平均奖励（避免多智能体重复求和导致量纲放大）
-            reward = float(np.mean(agent_rewards))
+            if isinstance(rewards, (int, float)):
+                reward = float(rewards)
+            elif isinstance(rewards, dict):
+                reward = float(np.mean(list(rewards.values()))) if rewards else 0.0
+            else:
+                reward = float(np.mean(np.asarray(rewards, dtype=np.float32)))
             
             # 追踪每步奖励
             step_rewards.append(reward)
@@ -1348,6 +1365,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             replay_size=self.config.replay_size,
             warmup_steps=self.config.warmup_steps,
             grad_clip_norm=self.config.max_grad_norm,
+            seed=self.config.seed,
             device=self.config.device,
         )
         self.algorithm = MADDPGAlgorithm(maddpg_config)
@@ -1394,6 +1412,65 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
 
     def _select_eval_action(self, observations: np.ndarray, masks: np.ndarray):
         return self.algorithm.act(observations, masks.astype(bool), deterministic=True)
+
+    def _action_features_from_env_actions(
+        self,
+        env_actions: np.ndarray,
+        masks: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        handover_dim = int(self.max_candidates) + 1
+        actions = np.asarray(env_actions, dtype=np.float32).reshape(self.num_agents, 2).copy()
+        masks_np = np.asarray(masks, dtype=bool)
+        handover = np.clip(np.rint(actions[:, 0]).astype(np.int64), 0, handover_dim - 1)
+        for agent_id, action_id in enumerate(handover):
+            if masks_np.shape == (self.num_agents, handover_dim) and not masks_np[agent_id, action_id]:
+                valid = np.flatnonzero(masks_np[agent_id])
+                handover[agent_id] = int(valid[0]) if len(valid) else 0
+        offload = np.clip(actions[:, 1], 0.0, 1.0).astype(np.float32)
+        features = np.zeros((self.num_agents, handover_dim + 1), dtype=np.float32)
+        features[np.arange(self.num_agents), handover] = 1.0
+        features[:, -1] = offload
+        env_actions = np.column_stack([handover, offload]).astype(np.float32)
+        return env_actions, features, handover
+
+    def _safe_heuristic_actions(self, masks: np.ndarray):
+        masks_np = np.asarray(masks, dtype=bool)
+        actions = np.zeros((self.num_agents, 2), dtype=np.float32)
+        rvt_threshold = float(getattr(self.env.config, 'rvt_threshold_sec', 60.0))
+
+        for uid, user in enumerate(self.env.user_manager.users):
+            visible_sats = list(self.env._get_visible_satellites(user))[: self.max_candidates]
+            keep_current = False
+            if user.serving_satellite >= 0:
+                vis = self.env._get_satellite_visibility(user, user.serving_satellite)
+                keep_current = bool(vis is not None and vis.is_visible and vis.rvt_seconds >= rvt_threshold)
+
+            handover = 0
+            if not keep_current and visible_sats:
+                target_idx = int(np.argmax([sat.elevation_deg for sat in visible_sats]))
+                candidate = target_idx + 1
+                if candidate < masks_np.shape[1] and masks_np[uid, candidate]:
+                    handover = candidate
+
+            task = self.env.user_tasks.get(uid)
+            has_service_target = keep_current or handover > 0
+            actions[uid, 0] = float(handover)
+            actions[uid, 1] = 0.5 if task is not None and has_service_target else 0.0
+
+        return self._action_features_from_env_actions(actions, masks_np)
+
+    def _mixed_safe_random_actions(self, masks: np.ndarray, safe_probability: float = 0.7):
+        masks_np = np.asarray(masks, dtype=bool)
+        safe_actions, safe_features, safe_handover = self._safe_heuristic_actions(masks_np)
+        random_actions, random_features, random_handover = self.algorithm.random_actions(masks_np)
+        rng = getattr(self.algorithm, "rng", None)
+        if rng is None:
+            rng = np.random.default_rng(self.config.seed + self.total_steps)
+        use_safe = rng.random(self.num_agents) < float(safe_probability)
+        env_actions = np.where(use_safe[:, None], safe_actions, random_actions).astype(np.float32)
+        action_features = np.where(use_safe[:, None], safe_features, random_features).astype(np.float32)
+        handover = np.where(use_safe, safe_handover, random_handover).astype(np.int64)
+        return env_actions, action_features, handover
 
     def _record_from_stats(
         self,
@@ -1726,8 +1803,35 @@ class HANPDQNTrainer(HANMADDPGTrainer):
 
     algorithm_name = "pdqn"
 
+    def _init_environment(self):
+        super()._init_environment()
+        self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5
+        self.global_state_dim = self.num_agents * self.obs_dim
+        self.logger.info(
+            f"  - HAN+PDQN observation dim: {self.obs_dim} "
+            f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim} + rvt/task 5)"
+        )
+
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        encoded_observations, satellite_embeddings, available_actions = super()._encode_graph_state()
+        raw_observations = np.asarray(self.env._get_observation(), dtype=np.float32)
+        if raw_observations.ndim == 1:
+            raw_observations = raw_observations.reshape(1, -1)
+        if raw_observations.shape != (self.num_agents, self.raw_obs_dim):
+            padded = np.zeros((self.num_agents, self.raw_obs_dim), dtype=np.float32)
+            copy_rows = min(raw_observations.shape[0], self.num_agents)
+            copy_cols = min(raw_observations.shape[1], self.raw_obs_dim)
+            padded[:copy_rows, :copy_cols] = raw_observations[:copy_rows, :copy_cols]
+            raw_observations = padded
+        light_features = encoded_observations[:, self.han_out_dim : self.han_out_dim + 5]
+        observations = np.concatenate(
+            [raw_observations, encoded_observations[:, : self.han_out_dim], light_features],
+            axis=1,
+        ).astype(np.float32, copy=False)
+        return observations, satellite_embeddings, available_actions
+
     def _epsilon_decay_steps(self) -> int:
-        fraction = float(getattr(self.config, "epsilon_decay_fraction", 0.4))
+        fraction = float(getattr(self.config, "epsilon_decay_fraction", 0.25))
         fraction = min(max(fraction, 0.05), 1.0)
         return max(int(self.config.total_timesteps * fraction), int(self.config.warmup_steps) + 1, 1)
 
@@ -1749,6 +1853,8 @@ class HANPDQNTrainer(HANMADDPGTrainer):
             epsilon_final=self.config.epsilon_final,
             epsilon_decay_steps=self._epsilon_decay_steps(),
             grad_clip_norm=self.config.max_grad_norm,
+            bc_loss_coef=self.config.bc_loss_coef,
+            seed=self.config.seed,
             device=self.config.device,
         )
         self.algorithm = PDQNAlgorithm(pdqn_config)
@@ -1760,8 +1866,14 @@ class HANPDQNTrainer(HANMADDPGTrainer):
 
     def _select_train_action(self, observations: np.ndarray, masks: np.ndarray, step_idx: int):
         if step_idx < self.config.warmup_steps:
-            return self.algorithm.random_actions(masks.astype(bool))
-        return self.algorithm.act(observations, masks.astype(bool), epsilon=self.algorithm.current_epsilon())
+            return self._mixed_safe_random_actions(masks.astype(bool), safe_probability=0.7)
+        exploration_actions, _, _ = self._mixed_safe_random_actions(masks.astype(bool), safe_probability=0.7)
+        return self.algorithm.act(
+            observations,
+            masks.astype(bool),
+            epsilon=self.algorithm.current_epsilon(),
+            exploration_actions=exploration_actions,
+        )
 
     def _select_eval_action(self, observations: np.ndarray, masks: np.ndarray):
         return self.algorithm.act(observations, masks.astype(bool), epsilon=0.0)
@@ -1779,11 +1891,15 @@ class HANPDQNTrainer(HANMADDPGTrainer):
         }
 
     def _load_algorithm_checkpoint(self, checkpoint: Dict[str, Any]):
-        self.algorithm.q_net.load_state_dict(checkpoint['q_net_state_dict'])
-        self.algorithm.target_q_net.load_state_dict(checkpoint.get('target_q_net_state_dict', checkpoint['q_net_state_dict']))
-        self.algorithm.param_nets.load_state_dict(checkpoint['param_nets_state_dict'])
+        self.algorithm.q_net.load_state_dict(checkpoint['q_net_state_dict'], strict=False)
+        self.algorithm.target_q_net.load_state_dict(
+            checkpoint.get('target_q_net_state_dict', checkpoint['q_net_state_dict']),
+            strict=False,
+        )
+        self.algorithm.param_nets.load_state_dict(checkpoint['param_nets_state_dict'], strict=False)
         self.algorithm.target_param_nets.load_state_dict(
-            checkpoint.get('target_param_nets_state_dict', checkpoint['param_nets_state_dict'])
+            checkpoint.get('target_param_nets_state_dict', checkpoint['param_nets_state_dict']),
+            strict=False,
         )
         self.algorithm.q_optimizer.load_state_dict(checkpoint['q_optimizer_state_dict'])
         self.algorithm.param_optimizer.load_state_dict(checkpoint['param_optimizer_state_dict'])
@@ -1854,6 +1970,8 @@ def parse_args():
                         help='Entropy coefficient')
     parser.add_argument('--entropy_schedule', type=str, default='constant', choices=['constant', 'linear'],
                         help='Entropy coefficient schedule')
+    parser.add_argument('--bc_loss_coef', type=float, default=0.001,
+                        help='PDQN behavior-cloning loss coefficient')
     
     # HAN参数
     parser.add_argument('--han_hidden_dim', type=int, default=64,
@@ -1932,6 +2050,7 @@ def main():
     config.n_epochs = args.n_epochs
     config.entropy_coef = args.entropy_coef
     config.entropy_schedule = args.entropy_schedule
+    config.bc_loss_coef = args.bc_loss_coef
     config.han_hidden_dim = args.han_hidden_dim
     config.han_num_heads = args.han_num_heads
     config.han_num_layers = args.han_num_layers

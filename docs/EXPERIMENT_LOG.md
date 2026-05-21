@@ -394,3 +394,38 @@ action-level diagnostics rather than relying on reward alone.
 
 - `conda run -n satellite.env python -m pytest tests\test_baseline_plotting.py tests\test_offpolicy_evaluation.py tests\test_env_metrics.py::test_step_exposes_per_agent_rewards_matching_scalar_mean -q`
   passed: `9 passed`.
+
+## 2026-05-22 - PDQN Fast Early-Convergence Patch
+
+**Intent:** Apply a small, low-runtime-cost acceleration pass for PDQN and
+HAN+PDQN before rerunning long comparisons. No long experiment was launched in
+this code pass.
+
+**Code changes made:**
+
+- PDQN exploration now decays faster by default:
+  `epsilon_decay_fraction=0.25` and `epsilon_final=0.02`.
+- PDQN warmup and epsilon exploration use a `70%` safe heuristic plus `30%`
+  random mix instead of pure random sampling. The safe heuristic keeps a stable
+  serving satellite when RVT is acceptable, otherwise switches to a high
+  elevation visible candidate, with a moderate offload ratio when a task exists.
+- HAN+PDQN observations now concatenate `raw_obs + HAN_embed + rvt/task`
+  features, so the policy is not forced to depend only on an untrained cached
+  HAN embedding.
+- PDQN parameter-network behavior-cloning loss was reduced to
+  `bc_loss_coef=0.001`.
+- PDQN Q and parameter networks now apply `LayerNorm(obs_dim)` to observation
+  features before the MLPs. PDQN checkpoint loading tolerates older checkpoints
+  that do not contain the new LayerNorm parameters.
+
+**Expected metric effect:**
+
+- Earlier training should spend less time on invalid/noisy handover-offload
+  combinations, and HAN+PDQN should recover useful raw environment signals
+  immediately. This should improve early reward and latency/task metrics
+  without materially increasing per-step runtime.
+
+**Verification:**
+
+- `C:\Users\19704\.conda\envs\satellite.env\python.exe -m pytest tests\test_offpolicy_evaluation.py tests\test_han_integration.py tests\test_baseline_plotting.py tests\test_env_metrics.py::test_step_exposes_per_agent_rewards_matching_scalar_mean tests\test_mappo_entropy.py -q`
+  passed: `24 passed`.

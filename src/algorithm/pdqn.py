@@ -24,17 +24,19 @@ class PDQNConfig:
     warmup_steps: int = 1_000
     target_update_interval: int = 500
     epsilon_start: float = 1.0
-    epsilon_final: float = 0.05
+    epsilon_final: float = 0.02
     epsilon_decay_steps: int = 100_000
     grad_clip_norm: float = 1.0
     param_loss_coef: float = 0.1
-    bc_loss_coef: float = 0.01
+    bc_loss_coef: float = 0.001
+    seed: int | None = None
     device: str = "cpu"
 
 
 class PDQNNetwork(nn.Module):
     def __init__(self, obs_dim: int, num_discrete_actions: int, hidden_dims: Sequence[int] = (256, 128)):
         super().__init__()
+        self.obs_norm = nn.LayerNorm(int(obs_dim))
         input_dim = int(obs_dim) + int(num_discrete_actions) + 1
         layers = []
         in_dim = input_dim
@@ -52,6 +54,7 @@ class PDQNNetwork(nn.Module):
     ) -> torch.Tensor:
         if continuous_param.dim() == 1:
             continuous_param = continuous_param.unsqueeze(-1)
+        obs = self.obs_norm(obs)
         x = torch.cat([obs, action_one_hot, continuous_param], dim=-1)
         return self.net(x).squeeze(-1)
 
@@ -59,6 +62,7 @@ class PDQNNetwork(nn.Module):
 class PDQNParameterNet(nn.Module):
     def __init__(self, obs_dim: int, hidden_dims: Sequence[int] = (128, 64)):
         super().__init__()
+        self.obs_norm = nn.LayerNorm(int(obs_dim))
         layers = []
         in_dim = int(obs_dim)
         for hidden_dim in hidden_dims:
@@ -68,6 +72,7 @@ class PDQNParameterNet(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        obs = self.obs_norm(obs)
         return torch.sigmoid(self.net(obs)).squeeze(-1)
 
 
@@ -112,7 +117,7 @@ class PDQNAlgorithm:
         self.handover_dim = int(config.max_candidates) + 1
         self.action_feature_dim = self.handover_dim + 1
         self.train_step = 0
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(config.seed)
 
         self.q_net = PDQNNetwork(self.obs_dim, self.handover_dim, config.q_hidden_dims).to(self.device)
         self.target_q_net = PDQNNetwork(self.obs_dim, self.handover_dim, config.q_hidden_dims).to(self.device)
@@ -165,6 +170,7 @@ class PDQNAlgorithm:
         observations: np.ndarray,
         masks: np.ndarray,
         epsilon: float | None = None,
+        exploration_actions: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if epsilon is None:
             epsilon = self.current_epsilon()
@@ -186,10 +192,19 @@ class PDQNAlgorithm:
 
         if float(epsilon) > 0.0:
             explore = self.rng.random(len(handover)) < float(epsilon)
+            if exploration_actions is not None:
+                exploration = np.asarray(exploration_actions, dtype=np.float32).reshape(len(handover), 2)
+            else:
+                exploration = None
             for agent_id in np.flatnonzero(explore):
                 valid = np.flatnonzero(masks_np[agent_id])
-                handover[agent_id] = int(self.rng.choice(valid)) if len(valid) else 0
-                offload[agent_id] = float(self.rng.random())
+                if exploration is not None:
+                    candidate = int(np.clip(round(float(exploration[agent_id, 0])), 0, self.handover_dim - 1))
+                    handover[agent_id] = candidate if masks_np[agent_id, candidate] else (int(valid[0]) if len(valid) else 0)
+                    offload[agent_id] = float(exploration[agent_id, 1])
+                else:
+                    handover[agent_id] = int(self.rng.choice(valid)) if len(valid) else 0
+                    offload[agent_id] = float(self.rng.random())
 
         offload = np.clip(offload, 0.0, 1.0).astype(np.float32)
         action_features = _one_hot_action_features(handover, offload, self.handover_dim)
@@ -289,10 +304,10 @@ class PDQNAlgorithm:
 
     def load(self, path) -> None:
         checkpoint = torch.load(Path(path), map_location=self.device)
-        self.q_net.load_state_dict(checkpoint["q_net_state_dict"])
-        self.target_q_net.load_state_dict(checkpoint["target_q_net_state_dict"])
-        self.param_nets.load_state_dict(checkpoint["param_nets_state_dict"])
-        self.target_param_nets.load_state_dict(checkpoint["target_param_nets_state_dict"])
+        self.q_net.load_state_dict(checkpoint["q_net_state_dict"], strict=False)
+        self.target_q_net.load_state_dict(checkpoint["target_q_net_state_dict"], strict=False)
+        self.param_nets.load_state_dict(checkpoint["param_nets_state_dict"], strict=False)
+        self.target_param_nets.load_state_dict(checkpoint["target_param_nets_state_dict"], strict=False)
         self.q_optimizer.load_state_dict(checkpoint["q_optimizer_state_dict"])
         self.param_optimizer.load_state_dict(checkpoint["param_optimizer_state_dict"])
         self.train_step = int(checkpoint.get("train_step", 0))

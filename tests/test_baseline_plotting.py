@@ -5,8 +5,11 @@ import pytest
 
 from scripts.compare_system_baselines import (
     action_diagnostics,
+    annotate_priority_metrics,
     load_training_curve_from_path,
     reward_component_step_metrics_for_history,
+    save_results_csv,
+    save_results_json,
 )
 
 
@@ -93,3 +96,38 @@ def test_reward_component_plot_uses_interruption_penalty_label_for_new_artifacts
 
     assert service_spec[1] == "Service Interruption Penalty"
     assert service_spec[2] == "Penalty Term"
+
+
+def test_comparison_summary_outputs_action_diagnostics_for_legacy_methods(tmp_path):
+    methods = annotate_priority_metrics(
+        [
+            {
+                "method": "legacy_method",
+                "display_name": "Legacy Method",
+                "is_system": False,
+                "episodes": 1,
+                "mean_reward": 1.0,
+                "std_reward": 0.0,
+                "avg_delay": 1.0,
+                "service_continuity_rate": 1.0,
+                "task_completion_rate": 1.0,
+                "avg_load_balance_score": 0.0,
+                "total_energy": 1.0,
+                "resolved_tasks": 1.0,
+            }
+        ],
+        "latency_priority_score",
+    )
+
+    json_path = save_results_json(tmp_path, {"methods": methods})
+    csv_path = save_results_csv(tmp_path, methods)
+
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    method = payload["methods"][0]
+    assert method["handover_action_rate"] == pytest.approx(0.0)
+    assert method["local_compute_rate"] == pytest.approx(0.0)
+    assert method["mean_offload_ratio"] == pytest.approx(0.0)
+
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "handover_action_rate" in csv_text.splitlines()[0]
+    assert ",0.0,0.0,0.0," in csv_text
