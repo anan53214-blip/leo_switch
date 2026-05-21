@@ -293,3 +293,104 @@ comparisons should prioritize `effective_latency_score`, `avg_delay`,
 `task_success_rate`, `deadline_violation_rate`, `service_continuity_rate`, and
 the now-bounded reward breakdown rather than raw reward across old and new
 reward definitions.
+
+## 2026-05-21 - 1200k Latency-Priority Result Review
+
+**Run artifacts reviewed:**
+
+- Training: `results/full_train_latency_priority_20260517_225631`
+- Baseline comparison:
+  `results/baseline_compare/20260517_225631_all_methods_1200k`
+
+**Configuration / selection metric:**
+
+- Objective: `multi_objective`
+- Total timesteps: `1,200,000`
+- Best-model and comparison ranking metric: `effective_latency_score`
+- Primary comparison metrics: average delay, service continuity, service
+  availability, task success, deadline violation.
+
+**Key observed metrics:**
+
+- HAN+MAPPO training history reached its best eval score at about 301k steps:
+  `effective_latency_score=0.2729`, `avg_delay=2.2260`,
+  `service_continuity_rate=0.9880`, `task_success_rate=0.8911`.
+- The final HAN+MAPPO eval at 1.2M steps was lower but still usable:
+  `effective_latency_score=0.2228`, `avg_delay=2.3858`,
+  `service_continuity_rate=0.9148`, `task_success_rate=0.8247`.
+- In the generated comparison summary, checkpoint-evaluated HAN+MAPPO fell to
+  `effective_latency_score=0.1261`, `avg_delay=2.4903`,
+  `service_continuity_rate=0.5415`, `task_success_rate=0.8128`.
+- Comparison leaders were Min-Distance on latency score
+  (`0.2978`), delay (`2.1079`), task success (`0.9366`), and deadline violation
+  (`0.0633`); MAPPO without HAN led service continuity (`0.9883`) and service
+  availability (`0.9909`).
+
+**Diagnosis:**
+
+- The training itself did learn useful policies early, but HAN+MAPPO was not
+  stable across the full 1.2M schedule. Evaluation quality oscillated sharply
+  after 300k steps, with weak eval windows near 401k, 700k, 901k, and 1101k.
+- The comparison artifact is suspicious for final ranking because the system
+  checkpoint evaluation is far worse than the best and final evaluations stored
+  in the training history, while episode-to-episode variance inside the
+  comparison is very small. This points to a checkpoint/evaluation-path issue
+  or a policy loading/eval-mode mismatch that should be investigated before
+  using the table as a publication result.
+- `Full-Local`, `MADDPG`, and `HAN+MADDPG` have identical comparison rows,
+  which is another warning that at least part of the comparison table may be
+  reusing fallback behavior or not evaluating distinct trained policies.
+
+**Follow-up decision:**
+
+- Do not present this comparison as a clean win/loss result yet. First verify
+  the HAN+MAPPO checkpoint chosen by `best_model.pt`, evaluate `best_model.pt`
+  and `final_model.pt` through the same comparison path, and inspect why
+  MADDPG/HAN+MADDPG collapse to the same metrics as Full-Local.
+
+**Plotting correction made during review:**
+
+- `paper_baseline_dashboard.pdf` and `reward_curve_vs_baselines.pdf` were
+  regenerated from existing artifacts after fixing the reward-curve loader.
+  When dense `training` records exist, the plot now uses raw training rewards
+  as the translucent shadow and the window-5 moving average as the solid line;
+  sparse `evaluation` records are retained only as checkpoint markers.
+- The previous dashboard used sparse evaluation rewards as the curve for
+  methods that had evaluation records, which exaggerated isolated evaluation
+  collapses into large triangular swings.
+
+## 2026-05-21 - Off-Policy Baseline Repair Pass
+
+**Problem diagnosed:** PDQN/HAN+PDQN were trained from a scalar mean reward even
+though the environment has per-user actions. That turns heterogeneous user
+outcomes into the same target for every agent and weakens credit assignment.
+The PDQN exploration schedule also decayed across the full run, so a 1.2M-step
+run was still heavily exploratory halfway through training. MADDPG/HAN+MADDPG
+comparison rows collapsed to Full-Local behavior, so the comparison table needs
+action-level diagnostics rather than relying on reward alone.
+
+**Code changes made:**
+
+- `LEOSatelliteEnv` now exposes `last_user_rewards` and `info["user_rewards"]`.
+  The scalar environment reward remains the mean of this vector, preserving the
+  existing Gym API while allowing off-policy algorithms to train from user-level
+  targets.
+- `MultiAgentReplayBuffer` now stores either scalar rewards or per-agent reward
+  vectors. PDQN consumes per-agent rewards directly; MADDPG defensively averages
+  vectors back to a centralized joint reward.
+- PDQN target updates now use Double-DQN style action selection and evaluate
+  the selected next action with the target networks. The parameter-network loss
+  now optimizes the best valid discrete action instead of averaging all valid
+  action Q-values.
+- HAN+PDQN and raw PDQN replay insertion now use per-user rewards from the
+  environment. PDQN epsilon decay defaults to the first 40% of training, with a
+  lower bound past warmup, instead of stretching forced exploration across the
+  entire run.
+- Baseline/system evaluation summaries now include
+  `handover_action_rate`, `local_compute_rate`, and `mean_offload_ratio` so
+  Full-Local collapse and zero-offload policies are visible in the CSV.
+
+**Verification:**
+
+- `conda run -n satellite.env python -m pytest tests\test_baseline_plotting.py tests\test_offpolicy_evaluation.py tests\test_env_metrics.py::test_step_exposes_per_agent_rewards_matching_scalar_mean -q`
+  passed: `9 passed`.

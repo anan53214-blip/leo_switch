@@ -245,6 +245,7 @@ class TrainConfig:
     noise_final: float = 0.05
     epsilon_start: float = 1.0
     epsilon_final: float = 0.05
+    epsilon_decay_fraction: float = 0.4
     target_update_interval: int = 500
     
     # ---------- 训练参数 ----------
@@ -1375,6 +1376,11 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             return float(np.mean(list(rewards.values()))) if rewards else 0.0
         return float(np.mean(np.asarray(rewards, dtype=float)))
 
+    def _replay_reward(self, reward_value: float):
+        if self.algorithm_name == "pdqn" and hasattr(self.env, "last_user_rewards"):
+            return np.asarray(self.env.last_user_rewards, dtype=np.float32)
+        return float(reward_value)
+
     def _reset_encoded_env(self, seed: Optional[int] = None):
         self._cached_han_user_embed = None
         self._cached_sat_embed = None
@@ -1495,7 +1501,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             self.buffer.add(
                 observations,
                 action_features,
-                reward_value,
+                self._replay_reward(reward_value),
                 next_observations,
                 done,
                 masks.astype(bool),
@@ -1720,6 +1726,11 @@ class HANPDQNTrainer(HANMADDPGTrainer):
 
     algorithm_name = "pdqn"
 
+    def _epsilon_decay_steps(self) -> int:
+        fraction = float(getattr(self.config, "epsilon_decay_fraction", 0.4))
+        fraction = min(max(fraction, 0.05), 1.0)
+        return max(int(self.config.total_timesteps * fraction), int(self.config.warmup_steps) + 1, 1)
+
     def _init_mappo(self):
         self.logger.info("初始化 HAN+PDQN...")
         pdqn_config = PDQNConfig(
@@ -1736,7 +1747,7 @@ class HANPDQNTrainer(HANMADDPGTrainer):
             target_update_interval=self.config.target_update_interval,
             epsilon_start=self.config.epsilon_start,
             epsilon_final=self.config.epsilon_final,
-            epsilon_decay_steps=max(int(self.config.total_timesteps), 1),
+            epsilon_decay_steps=self._epsilon_decay_steps(),
             grad_clip_norm=self.config.max_grad_norm,
             device=self.config.device,
         )

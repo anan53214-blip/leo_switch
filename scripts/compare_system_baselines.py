@@ -159,6 +159,12 @@ SUMMARY_METRIC_KEYS = [
     "effective_latency_score",
 ]
 
+ACTION_DIAGNOSTIC_KEYS = [
+    "handover_action_rate",
+    "local_compute_rate",
+    "mean_offload_ratio",
+]
+
 REWARD_BREAKDOWN_KEYS = [
     "reward_delay",
     "reward_energy",
@@ -322,7 +328,7 @@ LEARNED_BASELINE_COLORS = {
     "maddpg": "#AF7AA1",
     "pdqn": "#EDC948",
     "mappo_no_han": "#59A14F",
-    "han_maddpg": "#B07AA1",
+    "han_maddpg": "#17BECF",
     "han_pdqn": "#F28E2B",
 }
 
@@ -547,6 +553,16 @@ def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndar
 
     training = payload.get("training", [])
     evaluation = extract_training_evaluation_records(payload, training)
+
+    if training:
+        steps, rewards = extract_training_reward_curve(training)
+        valid_mask = np.isfinite(steps) & np.isfinite(rewards)
+        steps = steps[valid_mask]
+        rewards = rewards[valid_mask]
+        if len(steps) > 0:
+            order = np.argsort(steps)
+            return steps[order], rewards[order], evaluation
+
     if evaluation:
         steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
         rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
@@ -554,18 +570,7 @@ def load_training_curve_from_path(history_path: Optional[Path]) -> tuple[np.ndar
         order = np.argsort(steps[valid_mask])
         return steps[valid_mask][order], rewards[valid_mask][order], evaluation
 
-    if not training:
-        return np.array([], dtype=float), np.array([], dtype=float), []
-
-    steps, rewards = extract_training_reward_curve(training)
-    valid_mask = np.isfinite(steps) & np.isfinite(rewards)
-    steps = steps[valid_mask]
-    rewards = rewards[valid_mask]
-    if len(steps) == 0:
-        return steps, rewards, evaluation
-
-    order = np.argsort(steps)
-    return steps[order], rewards[order], evaluation
+    return np.array([], dtype=float), np.array([], dtype=float), evaluation
 
 
 def load_training_metric_curve_from_path(history_path: Optional[Path], metric_key: str) -> tuple[np.ndarray, np.ndarray]:
@@ -1018,6 +1023,26 @@ def summarize_results(
     if extra:
         result.update(extra)
     return result
+
+
+def action_diagnostics(
+    action_batches: Sequence[np.ndarray],
+    min_effective_offload_ratio: float = EnvConfig.min_effective_offload_ratio,
+) -> Dict[str, float]:
+    if not action_batches:
+        return {key: 0.0 for key in ACTION_DIAGNOSTIC_KEYS}
+
+    actions = np.concatenate([np.asarray(batch, dtype=np.float32).reshape(-1, 2) for batch in action_batches], axis=0)
+    if actions.size == 0:
+        return {key: 0.0 for key in ACTION_DIAGNOSTIC_KEYS}
+
+    handover = actions[:, 0]
+    offload = np.clip(actions[:, 1], 0.0, 1.0)
+    return {
+        "handover_action_rate": float(np.mean(handover > 0.0)),
+        "local_compute_rate": float(np.mean(offload < float(min_effective_offload_ratio))),
+        "mean_offload_ratio": float(np.mean(offload)),
+    }
 
 
 def selection_score(method: Dict, metric_name: str) -> float:
@@ -1493,6 +1518,7 @@ def evaluate_dqn_policy(
     env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
     rng = np.random.default_rng(seed)
 
     q_net.eval()
@@ -1504,13 +1530,18 @@ def evaluate_dqn_policy(
             masks = dqn_action_mask(env, offload_bins)
             action_indices = select_dqn_indices(q_net, observations, masks, 0.0, rng, device)
             env_actions = dqn_indices_to_env_actions(action_indices, offload_bins)
+            action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             observations, reward, terminated, truncated, _ = env.step(env_actions)
             episode_reward += float(reward)
             done = terminated or truncated
         rewards.append(episode_reward)
         summaries.append(env.get_stats_summary())
 
-    return summarize_results("dqn", rewards, summaries, is_system=False)
+    extra = action_diagnostics(
+        action_batches,
+        float(config.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+    )
+    return summarize_results("dqn", rewards, summaries, extra=extra, is_system=False)
 
 
 def train_and_evaluate_dqn_baseline(
@@ -1878,6 +1909,7 @@ def evaluate_maddpg_policy(
     env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
     rng = np.random.default_rng(seed)
 
     actor.eval()
@@ -1895,13 +1927,18 @@ def evaluate_maddpg_policy(
                 rng=rng,
                 device=device,
             )
+            action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             observations, reward, terminated, truncated, _ = env.step(env_actions)
             episode_reward += scalar_reward_value(reward)
             done = terminated or truncated
         rewards.append(episode_reward)
         summaries.append(env.get_stats_summary())
 
-    return summarize_results("maddpg", rewards, summaries, is_system=False)
+    extra = action_diagnostics(
+        action_batches,
+        float(config.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+    )
+    return summarize_results("maddpg", rewards, summaries, extra=extra, is_system=False)
 
 
 def train_and_evaluate_maddpg_baseline(
@@ -2249,6 +2286,7 @@ def evaluate_pdqn_policy(
     env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
 
     for episode_idx in range(episodes):
         observations, _ = env.reset(seed=seed + episode_idx)
@@ -2257,13 +2295,18 @@ def evaluate_pdqn_policy(
         while not done:
             masks = pdqn_action_mask(env)
             env_actions, _, _ = algorithm.act(observations, masks, epsilon=0.0)
+            action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             observations, reward, terminated, truncated, _ = env.step(env_actions)
             episode_reward += scalar_reward_value(reward)
             done = terminated or truncated
         rewards.append(episode_reward)
         summaries.append(env.get_stats_summary())
 
-    return summarize_results("pdqn", rewards, summaries, is_system=False)
+    extra = action_diagnostics(
+        action_batches,
+        float(config.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+    )
+    return summarize_results("pdqn", rewards, summaries, extra=extra, is_system=False)
 
 
 def train_and_evaluate_pdqn_baseline(
@@ -2290,7 +2333,11 @@ def train_and_evaluate_pdqn_baseline(
             batch_size=128,
             warmup_steps=1_000,
             replay_size=50_000,
-            epsilon_decay_steps=max(int(total_timesteps), 1),
+            epsilon_decay_steps=max(
+                int(total_timesteps * float(config.get("epsilon_decay_fraction", 0.4))),
+                1_001,
+                1,
+            ),
             device=device,
         )
     )
@@ -2322,7 +2369,12 @@ def train_and_evaluate_pdqn_baseline(
         done = bool(terminated or truncated)
         reward_value = scalar_reward_value(reward)
         next_masks = pdqn_action_mask(env) if not done else np.zeros_like(masks)
-        replay.add(observations, action_features, reward_value, next_observations, done, masks, next_masks)
+        replay_reward = (
+            np.asarray(env.last_user_rewards, dtype=np.float32)
+            if hasattr(env, "last_user_rewards")
+            else reward_value
+        )
+        replay.add(observations, action_features, replay_reward, next_observations, done, masks, next_masks)
 
         if len(replay) >= max(algo.config.batch_size, algo.config.warmup_steps):
             stats = algo.update(replay)
@@ -2420,6 +2472,7 @@ def evaluate_policy(
     env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
 
     for episode_idx in range(episodes):
         policy.begin_episode(env)
@@ -2429,6 +2482,7 @@ def evaluate_policy(
 
         while not done:
             actions = policy.select_actions(env)
+            action_batches.append(np.asarray(actions, dtype=np.float32).copy())
             _, reward, terminated, truncated, _ = env.step(
                 actions,
                 return_observation=False,
@@ -2443,6 +2497,12 @@ def evaluate_policy(
     extra = {}
     if isinstance(policy, SimpleHeuristicPolicy):
         extra["selected_offload"] = policy.offload_ratio
+    extra.update(
+        action_diagnostics(
+            action_batches,
+            float(config.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+        )
+    )
     return summarize_results(policy.name, rewards, summaries, extra=extra, is_system=False)
 
 
@@ -2639,6 +2699,7 @@ def evaluate_system_checkpoint(
 
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
 
     for episode_idx in range(episodes):
         trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
@@ -2656,6 +2717,7 @@ def evaluate_system_checkpoint(
                 )
 
             env_actions = trainer._process_actions(actions)
+            action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             _, reward, terminated, truncated, _ = trainer.env.step(
                 env_actions,
                 return_observation=False,
@@ -2671,7 +2733,11 @@ def evaluate_system_checkpoint(
         summaries.append(trainer.env.get_stats_summary())
 
     method_name = str(config_data.get("exp_name", checkpoint.parent.name or "system"))
-    return summarize_results(method_name, rewards, summaries, is_system=True)
+    extra = action_diagnostics(
+        action_batches,
+        float(config_data.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+    )
+    return summarize_results(method_name, rewards, summaries, extra=extra, is_system=True)
 
 
 def evaluate_mappo_checkpoint_with_trainer(
@@ -2706,6 +2772,7 @@ def evaluate_mappo_checkpoint_with_trainer(
 
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
 
     for episode_idx in range(episodes):
         trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
@@ -2723,6 +2790,7 @@ def evaluate_mappo_checkpoint_with_trainer(
                 )
 
             env_actions = trainer._process_actions(actions)
+            action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             _, reward, terminated, truncated, _ = trainer.env.step(
                 env_actions,
                 return_observation=False,
@@ -2737,7 +2805,11 @@ def evaluate_mappo_checkpoint_with_trainer(
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
 
-    return summarize_results(method_name, rewards, summaries, is_system=is_system)
+    extra = action_diagnostics(
+        action_batches,
+        float(config_data.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+    )
+    return summarize_results(method_name, rewards, summaries, extra=extra, is_system=is_system)
 
 
 def train_and_evaluate_no_han_mappo(
@@ -2807,6 +2879,7 @@ def evaluate_han_offpolicy_checkpoint(
     trainer.load_checkpoint(str(checkpoint))
     rewards: List[float] = []
     summaries: List[Dict] = []
+    action_batches: List[np.ndarray] = []
 
     for episode_idx in range(episodes):
         observations, _, masks = trainer._reset_encoded_env(seed=int(config.seed) + episode_idx)
@@ -2814,6 +2887,7 @@ def evaluate_han_offpolicy_checkpoint(
         episode_reward = 0.0
         while not done:
             env_actions, _, _ = trainer._select_eval_action(observations, masks)
+            action_batches.append(np.asarray(env_actions, dtype=np.float32).copy())
             _, reward, terminated, truncated, _ = trainer.env.step(
                 env_actions,
                 return_observation=False,
@@ -2826,7 +2900,11 @@ def evaluate_han_offpolicy_checkpoint(
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
 
-    return summarize_results(method_name, rewards, summaries, is_system=False)
+    extra = action_diagnostics(
+        action_batches,
+        float(config_data.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)),
+    )
+    return summarize_results(method_name, rewards, summaries, extra=extra, is_system=False)
 
 
 def train_and_evaluate_han_offpolicy_baseline(
@@ -3015,6 +3093,7 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "effective_latency_score",
         "avg_load_balance_score",
         "energy_per_resolved_task",
+        *ACTION_DIAGNOSTIC_KEYS,
         *REWARD_BREAKDOWN_KEYS,
         "selection_metric",
         "selection_score",

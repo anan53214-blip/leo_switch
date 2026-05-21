@@ -1,21 +1,19 @@
-"""
-Gymnasium环境测试
-验证强化学习环境的正确性
+﻿"""
+Gymnasium鐜娴嬭瘯
+楠岃瘉寮哄寲瀛︿範鐜鐨勬纭€?
 """
 
-import sys
 import numpy as np
 import pytest
 
-sys.path.insert(0, 'd:\\python_code\\LEO_switch')
 
-# 检查gymnasium是否安装
+# 妫€鏌ymnasium鏄惁瀹夎
 try:
     import gymnasium as gym
     GYM_AVAILABLE = True
 except ImportError:
     GYM_AVAILABLE = False
-    print("警告: gymnasium未安装，请运行: pip install gymnasium")
+    print("璀﹀憡: gymnasium鏈畨瑁咃紝璇疯繍琛? pip install gymnasium")
 
 
 def test_default_env_config_uses_20_user_competitive_scenario():
@@ -40,9 +38,9 @@ def env():
 
 
 def test_env_creation():
-    """测试环境创建"""
+    """娴嬭瘯鐜鍒涘缓"""
     print("=" * 60)
-    print("测试1: 环境创建")
+    print("娴嬭瘯1: 鐜鍒涘缓")
     print("=" * 60)
     
     from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
@@ -55,43 +53,43 @@ def test_env_creation():
     
     env = LEOSatelliteEnv(config)
     
-    print(f"\n环境配置:")
-    print(f"  卫星数量: {env.num_satellites}")
-    print(f"  用户数量: {env.num_users}")
-    print(f"  最大步数: {env.config.max_steps}")
+    print(f"\n鐜閰嶇疆:")
+    print(f"  鍗槦鏁伴噺: {env.num_satellites}")
+    print(f"  鐢ㄦ埛鏁伴噺: {env.num_users}")
+    print(f"  鏈€澶ф鏁? {env.config.max_steps}")
     
-    print(f"\n观测空间: {env.observation_space.shape}")
-    print(f"动作空间: {env.action_space.shape}")
+    print(f"\n瑙傛祴绌洪棿: {env.observation_space.shape}")
+    print(f"鍔ㄤ綔绌洪棿: {env.action_space.shape}")
     
-    print("\n✓ 环境创建成功")
+    print("\n鉁?鐜鍒涘缓鎴愬姛")
 
 
 def test_env_reset(env):
-    """测试环境重置"""
+    """娴嬭瘯鐜閲嶇疆"""
     print("\n" + "=" * 60)
-    print("测试2: 环境重置")
+    print("娴嬭瘯2: 鐜閲嶇疆")
     print("=" * 60)
     
     obs, info = env.reset(seed=42)
     
-    print(f"\n初始观测形状: {obs.shape}")
-    print(f"初始信息: {info}")
+    print(f"\n鍒濆瑙傛祴褰㈢姸: {obs.shape}")
+    print(f"鍒濆淇℃伅: {info}")
     
-    # 检查用户初始连接状态
+    # 妫€鏌ョ敤鎴峰垵濮嬭繛鎺ョ姸鎬?
     connected = sum(1 for u in env.user_manager.users 
                    if u.serving_satellite >= 0)
-    print(f"\n初始连接用户数: {connected}/{env.num_users}")
+    print(f"\n鍒濆杩炴帴鐢ㄦ埛鏁? {connected}/{env.num_users}")
     
-    # 检查观测值范围
-    print(f"\n观测值范围: [{obs.min():.4f}, {obs.max():.4f}]")
+    # 妫€鏌ヨ娴嬪€艰寖鍥?
+    print(f"\n瑙傛祴鍊艰寖鍥? [{obs.min():.4f}, {obs.max():.4f}]")
     
-    print("\n✓ 环境重置成功")
+    print("\n鉁?鐜閲嶇疆鎴愬姛")
 
 
 def test_random_actions(env):
-    """测试随机动作"""
+    """娴嬭瘯闅忔満鍔ㄤ綔"""
     print("\n" + "=" * 60)
-    print("测试3: 随机动作执行")
+    print("娴嬭瘯3: 闅忔満鍔ㄤ綔鎵ц")
     print("=" * 60)
     
     obs, _ = env.reset(seed=42)
@@ -99,16 +97,16 @@ def test_random_actions(env):
     total_reward = 0
     num_steps = 10
     
-    print(f"\n执行 {num_steps} 步随机动作:")
+    print(f"\n鎵ц {num_steps} 姝ラ殢鏈哄姩浣?")
     print("-" * 60)
     
     for step in range(num_steps):
-        # 生成随机动作
+        # 鐢熸垚闅忔満鍔ㄤ綔
         actions = np.random.rand(env.num_users, 2)
-        actions[:, 0] *= env.handover_action_dim  # 切换动作
-        actions[:, 1] = np.clip(actions[:, 1], 0, 1)  # 卸载比例
+        actions[:, 0] *= env.handover_action_dim  # 鍒囨崲鍔ㄤ綔
+        actions[:, 1] = np.clip(actions[:, 1], 0, 1)  # 鍗歌浇姣斾緥
         
-        # 执行动作
+        # 鎵ц鍔ㄤ綔
         obs, reward, terminated, truncated, info = env.step(actions)
         total_reward += reward
         
@@ -120,81 +118,81 @@ def test_random_actions(env):
             break
     
     print("-" * 60)
-    print(f"总奖励: {total_reward:.4f}")
-    print(f"平均奖励: {total_reward/num_steps:.4f}")
+    print(f"鎬诲鍔? {total_reward:.4f}")
+    print(f"骞冲潎濂栧姳: {total_reward/num_steps:.4f}")
     
-    print("\n✓ 随机动作执行成功")
+    print("\n鉁?闅忔満鍔ㄤ綔鎵ц鎴愬姛")
 
 
 def test_specific_actions(env):
-    """测试特定动作"""
+    """娴嬭瘯鐗瑰畾鍔ㄤ綔"""
     print("\n" + "=" * 60)
-    print("测试4: 特定动作测试")
+    print("娴嬭瘯4: 鐗瑰畾鍔ㄤ綔娴嬭瘯")
     print("=" * 60)
     
     obs, _ = env.reset(seed=42)
     
-    # 测试不同卸载比例
+    # 娴嬭瘯涓嶅悓鍗歌浇姣斾緥
     offload_ratios = [0.0, 0.5, 1.0]
     
-    print("\n测试不同卸载比例:")
+    print("\n娴嬭瘯涓嶅悓鍗歌浇姣斾緥:")
     print("-" * 50)
     
     for ratio in offload_ratios:
         obs, _ = env.reset(seed=42)
         
-        # 所有用户使用相同卸载比例，不切换
+        # 鎵€鏈夌敤鎴蜂娇鐢ㄧ浉鍚屽嵏杞芥瘮渚嬶紝涓嶅垏鎹?
         actions = np.zeros((env.num_users, 2))
-        actions[:, 0] = 0  # 不切换
-        actions[:, 1] = ratio  # 卸载比例
+        actions[:, 0] = 0  # 涓嶅垏鎹?
+        actions[:, 1] = ratio  # 鍗歌浇姣斾緥
         
         obs, reward, _, _, info = env.step(actions)
         
-        print(f"λ={ratio:.1f}: reward={reward:.4f}, "
+        print(f"位={ratio:.1f}: reward={reward:.4f}, "
               f"tasks={info['stats']['completed_tasks']}/{info['stats']['total_tasks']}")
     
     print("-" * 50)
-    print("\n✓ 特定动作测试成功")
+    print("\n鉁?鐗瑰畾鍔ㄤ綔娴嬭瘯鎴愬姛")
 
 
 def test_handover_actions(env):
-    """测试切换动作"""
+    """娴嬭瘯鍒囨崲鍔ㄤ綔"""
     print("\n" + "=" * 60)
-    print("测试5: 切换动作测试")
+    print("娴嬭瘯5: 鍒囨崲鍔ㄤ綔娴嬭瘯")
     print("=" * 60)
     
     obs, _ = env.reset(seed=42)
     
-    # 获取用户0的可见卫星
+    # 鑾峰彇鐢ㄦ埛0鐨勫彲瑙佸崼鏄?
     user = env.user_manager.users[0]
     visible_sats = env._get_visible_satellites(user)
     
-    print(f"\n用户0的可见卫星:")
+    print(f"\n鐢ㄦ埛0鐨勫彲瑙佸崼鏄?")
     for i, sat in enumerate(visible_sats[:5]):
-        print(f"  {i+1}. 卫星{sat.sat_id}: 仰角={sat.elevation_deg:.1f}°, "
-              f"距离={sat.distance_km:.1f}km, RVT={sat.rvt_seconds:.0f}s")
+        print(f"  {i+1}. 鍗槦{sat.sat_id}: 浠拌={sat.elevation_deg:.1f}掳, "
+              f"璺濈={sat.distance_km:.1f}km, RVT={sat.rvt_seconds:.0f}s")
     
-    # 执行切换到第一个可见卫星
+    # 鎵ц鍒囨崲鍒扮涓€涓彲瑙佸崼鏄?
     actions = np.zeros((env.num_users, 2))
-    actions[0, 0] = 1  # 用户0切换到第1个可见卫星
-    actions[:, 1] = 0.5  # 卸载比例
+    actions[0, 0] = 1  # 鐢ㄦ埛0鍒囨崲鍒扮1涓彲瑙佸崼鏄?
+    actions[:, 1] = 0.5  # 鍗歌浇姣斾緥
     
     obs, reward, _, _, info = env.step(actions)
     
-    print(f"\n切换后:")
-    print(f"  用户0服务卫星: {env.user_manager.users[0].serving_satellite}")
-    print(f"  切换统计: {info['stats']['successful_handovers']}/{info['stats']['total_handovers']}")
+    print(f"\n鍒囨崲鍚?")
+    print(f"  鐢ㄦ埛0鏈嶅姟鍗槦: {env.user_manager.users[0].serving_satellite}")
+    print(f"  鍒囨崲缁熻: {info['stats']['successful_handovers']}/{info['stats']['total_handovers']}")
     
-    print("\n✓ 切换动作测试成功")
+    print("\n鉁?鍒囨崲鍔ㄤ綔娴嬭瘯鎴愬姛")
 
 
 def test_episode_run(env):
-    """测试完整episode"""
+    """娴嬭瘯瀹屾暣episode"""
     print("\n" + "=" * 60)
-    print("测试6: 完整Episode运行")
+    print("娴嬭瘯6: 瀹屾暣Episode杩愯")
     print("=" * 60)
     
-    # 使用较短的episode
+    # 浣跨敤杈冪煭鐨別pisode
     env.config.max_steps = 50
     
     obs, _ = env.reset(seed=42)
@@ -203,7 +201,7 @@ def test_episode_run(env):
     step = 0
     
     while True:
-        # 简单策略：不切换，50%卸载
+        # 绠€鍗曠瓥鐣ワ細涓嶅垏鎹紝50%鍗歌浇
         actions = np.zeros((env.num_users, 2))
         actions[:, 0] = 0
         actions[:, 1] = 0.5
@@ -215,91 +213,58 @@ def test_episode_run(env):
         if terminated or truncated:
             break
     
-    print(f"\nEpisode完成:")
-    print(f"  总步数: {step}")
-    print(f"  总奖励: {total_reward:.4f}")
-    print(f"  平均奖励: {total_reward/step:.4f}")
-    print(f"\n最终统计:")
+    print(f"\nEpisode瀹屾垚:")
+    print(f"  鎬绘鏁? {step}")
+    print(f"  鎬诲鍔? {total_reward:.4f}")
+    print(f"  骞冲潎濂栧姳: {total_reward/step:.4f}")
+    print(f"\n鏈€缁堢粺璁?")
     for key, value in info['stats'].items():
         print(f"  {key}: {value}")
     
-    print("\n✓ 完整Episode运行成功")
+    print("\n鉁?瀹屾暣Episode杩愯鎴愬姛")
 
 
 def test_graph_state(env):
-    """测试图状态获取"""
+    """娴嬭瘯鍥剧姸鎬佽幏鍙?""
     print("\n" + "=" * 60)
-    print("测试7: 图状态获取 (用于GNN)")
+    print("娴嬭瘯7: 鍥剧姸鎬佽幏鍙?(鐢ㄤ簬GNN)")
     print("=" * 60)
     
     obs, _ = env.reset(seed=42)
     
-    # 获取图状态
+    # 鑾峰彇鍥剧姸鎬?
     graph_state = env.get_state_for_graph()
     
-    print(f"\n图状态信息:")
-    print(f"  卫星节点数: {len(graph_state['satellites'])}")
-    print(f"  用户节点数: {len(graph_state['users'])}")
-    print(f"  边数量: {len(graph_state['edges'])}")
+    print(f"\n鍥剧姸鎬佷俊鎭?")
+    print(f"  鍗槦鑺傜偣鏁? {len(graph_state['satellites'])}")
+    print(f"  鐢ㄦ埛鑺傜偣鏁? {len(graph_state['users'])}")
+    print(f"  杈规暟閲? {len(graph_state['edges'])}")
     
-    # 显示一些边信息
-    print(f"\n部分用户-卫星边:")
+    # 鏄剧ず涓€浜涜竟淇℃伅
+    print(f"\n閮ㄥ垎鐢ㄦ埛-鍗槦杈?")
     for edge in graph_state['edges'][:5]:
-        print(f"  用户{edge['user_id']} → 卫星{edge['satellite_id']}: "
-              f"距离={edge['distance']:.1f}km, 仰角={edge['elevation']:.1f}°")
+        print(f"  鐢ㄦ埛{edge['user_id']} 鈫?鍗槦{edge['satellite_id']}: "
+              f"璺濈={edge['distance']:.1f}km, 浠拌={edge['elevation']:.1f}掳")
     
-    print("\n✓ 图状态获取成功")
+    print("\n鉁?鍥剧姸鎬佽幏鍙栨垚鍔?)
 
 
 def test_render(env):
-    """测试渲染"""
+    """娴嬭瘯娓叉煋"""
     print("\n" + "=" * 60)
-    print("测试8: 环境渲染")
+    print("娴嬭瘯8: 鐜娓叉煋")
     print("=" * 60)
     
     env.render_mode = "human"
     obs, _ = env.reset(seed=42)
     
-    # 执行几步并渲染
+    # 鎵ц鍑犳骞舵覆鏌?
     for _ in range(3):
         actions = np.random.rand(env.num_users, 2)
         actions[:, 0] *= env.handover_action_dim
         obs, reward, _, _, _ = env.step(actions)
         env.render()
     
-    print("\n✓ 环境渲染测试成功")
+    print("\n鉁?鐜娓叉煋娴嬭瘯鎴愬姛")
 
 
-def main():
-    """运行所有测试"""
-    if not GYM_AVAILABLE:
-        print("\n请先安装gymnasium: pip install gymnasium")
-        return
-    
-    print("\n" + "#" * 60)
-    print("#          Gymnasium环境测试")
-    print("#" * 60)
-    
-    test_env_creation()
-
-    from src.environment.gym_env import LEOSatelliteEnv, EnvConfig
-
-    env = LEOSatelliteEnv(EnvConfig(num_users=5, max_steps=100, seed=42))
-    try:
-        test_env_reset(env)
-        test_random_actions(env)
-        test_specific_actions(env)
-        test_handover_actions(env)
-        test_episode_run(env)
-        test_graph_state(env)
-        test_render(env)
-    finally:
-        env.close()
-    
-    print("\n" + "=" * 60)
-    print("         所有测试通过! ✓")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    main()

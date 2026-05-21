@@ -231,6 +231,7 @@ class LEOSatelliteEnv(gym.Env):
         self.current_time = 0.0
         self.episode_rewards = []
         self.pending_rewards: Dict[int, float] = {}
+        self.last_user_rewards = np.zeros(self.config.num_users, dtype=np.float32)
         self._offload_task_meta: Dict[Tuple[int, int], Dict[str, float]] = {}
         
         # RVT估算用的仰角历史
@@ -534,6 +535,7 @@ class LEOSatelliteEnv(gym.Env):
         self.current_time = 0.0
         self.episode_rewards = []
         self.pending_rewards: Dict[int, float] = {}  # 待发放奖励池（用户ID -> 累积奖励）
+        self.last_user_rewards = np.zeros(self.config.num_users, dtype=np.float32)
         self._offload_task_meta = {}
         self._prev_elevations = {}  # 重置RVT仰角历史
         self._invalidate_visibility_cache()
@@ -639,6 +641,9 @@ class LEOSatelliteEnv(gym.Env):
             interruption_seconds=interruption_seconds,
         )
         total_reward += reward_service_continuity
+        self.last_user_rewards = (
+            np.asarray(user_rewards, dtype=np.float32) + float(reward_service_continuity)
+        )
         self._record_reward_terms(reward_service_continuity=reward_service_continuity)
         self.episode_rewards.append(total_reward)
         
@@ -1360,6 +1365,7 @@ class LEOSatelliteEnv(gym.Env):
             'stats': stats_summary,
             'load_balance_score': self._last_load_balance_score,
             'mean_reward': np.mean(self.episode_rewards) if self.episode_rewards else 0.0,
+            'user_rewards': self.last_user_rewards.copy(),
         }
 
     def get_stats_summary(self) -> Dict[str, float]:

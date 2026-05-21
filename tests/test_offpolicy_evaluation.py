@@ -2,7 +2,11 @@ import logging
 from types import SimpleNamespace
 
 import numpy as np
+import torch
 
+from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
+from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
+from src.algorithm.replay_buffer import MultiAgentReplayBuffer
 from scripts.train import HANMADDPGTrainer
 
 
@@ -97,3 +101,109 @@ def test_han_offpolicy_evaluation_does_not_reset_training_env():
     assert eval_env.reset_calls == 1
     assert eval_env.step_calls == 1
     assert eval_env.closed
+
+
+def test_replay_buffer_preserves_per_agent_rewards():
+    buffer = MultiAgentReplayBuffer(
+        capacity=4,
+        num_agents=2,
+        obs_dim=3,
+        action_feature_dim=4,
+        mask_dim=3,
+        device="cpu",
+    )
+
+    buffer.add(
+        obs=np.zeros((2, 3), dtype=np.float32),
+        action_features=np.zeros((2, 4), dtype=np.float32),
+        reward=np.array([1.0, -2.0], dtype=np.float32),
+        next_obs=np.ones((2, 3), dtype=np.float32),
+        done=False,
+        masks=np.ones((2, 3), dtype=bool),
+        next_masks=np.ones((2, 3), dtype=bool),
+    )
+
+    batch = buffer.sample(1)
+
+    assert batch["rewards"].shape == torch.Size([1, 2])
+    assert torch.allclose(batch["rewards"], torch.tensor([[1.0, -2.0]]))
+
+
+def test_pdqn_update_accepts_per_agent_rewards():
+    buffer = MultiAgentReplayBuffer(
+        capacity=8,
+        num_agents=2,
+        obs_dim=3,
+        action_feature_dim=4,
+        mask_dim=3,
+        device="cpu",
+    )
+    for idx in range(4):
+        action_features = np.zeros((2, 4), dtype=np.float32)
+        action_features[:, 0] = 1.0
+        buffer.add(
+            obs=np.full((2, 3), idx, dtype=np.float32),
+            action_features=action_features,
+            reward=np.array([1.0, -1.0], dtype=np.float32),
+            next_obs=np.full((2, 3), idx + 1, dtype=np.float32),
+            done=False,
+            masks=np.ones((2, 3), dtype=bool),
+            next_masks=np.ones((2, 3), dtype=bool),
+        )
+
+    algorithm = PDQNAlgorithm(
+        PDQNConfig(
+            num_agents=2,
+            obs_dim=3,
+            max_candidates=2,
+            batch_size=4,
+            replay_size=8,
+            device="cpu",
+        )
+    )
+
+    stats = algorithm.update(buffer)
+
+    assert "q_loss" in stats
+    assert "param_loss" in stats
+
+
+def test_maddpg_update_averages_per_agent_rewards_for_central_critic():
+    buffer = MultiAgentReplayBuffer(
+        capacity=8,
+        num_agents=2,
+        obs_dim=3,
+        action_feature_dim=4,
+        mask_dim=3,
+        device="cpu",
+    )
+    for idx in range(4):
+        action_features = np.zeros((2, 4), dtype=np.float32)
+        action_features[:, 0] = 1.0
+        buffer.add(
+            obs=np.full((2, 3), idx, dtype=np.float32),
+            action_features=action_features,
+            reward=np.array([2.0, -1.0], dtype=np.float32),
+            next_obs=np.full((2, 3), idx + 1, dtype=np.float32),
+            done=False,
+            masks=np.ones((2, 3), dtype=bool),
+            next_masks=np.ones((2, 3), dtype=bool),
+        )
+
+    algorithm = MADDPGAlgorithm(
+        MADDPGConfig(
+            num_agents=2,
+            obs_dim=3,
+            max_candidates=2,
+            actor_hidden_dims=(8,),
+            critic_hidden_dims=(16,),
+            batch_size=4,
+            replay_size=8,
+            device="cpu",
+        )
+    )
+
+    stats = algorithm.update(buffer)
+
+    assert "actor_loss" in stats
+    assert "critic_loss" in stats

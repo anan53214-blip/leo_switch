@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import pytest
 
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
@@ -231,6 +232,21 @@ def test_task_arrivals_use_independent_rng_from_handover_outcomes():
     finally:
         env_a.close()
         env_b.close()
+
+
+def test_step_exposes_per_agent_rewards_matching_scalar_mean():
+    env = _build_single_user_env(num_users=2, task_arrival_prob=0.0)
+
+    try:
+        env.reset(seed=11)
+        _, reward, _, _, info = env.step(np.zeros((2, 2), dtype=np.float32))
+
+        assert env.last_user_rewards.shape == (2,)
+        assert "user_rewards" in info
+        assert np.allclose(info["user_rewards"], env.last_user_rewards)
+        assert float(np.mean(env.last_user_rewards)) == pytest.approx(reward)
+    finally:
+        env.close()
 
 
 def test_effective_latency_score_penalizes_low_service_coverage():

@@ -1,14 +1,16 @@
 import json
 
 import numpy as np
+import pytest
 
 from scripts.compare_system_baselines import (
+    action_diagnostics,
     load_training_curve_from_path,
     reward_component_step_metrics_for_history,
 )
 
 
-def test_reward_curve_prefers_evaluation_rewards_when_available(tmp_path):
+def test_reward_curve_uses_raw_training_rewards_and_returns_eval_markers(tmp_path):
     history_path = tmp_path / "training_history.json"
     history_path.write_text(
         json.dumps(
@@ -29,8 +31,22 @@ def test_reward_curve_prefers_evaluation_rewards_when_available(tmp_path):
     steps, rewards, evaluation = load_training_curve_from_path(history_path)
 
     assert np.array_equal(steps, np.array([100.0, 200.0]))
-    assert np.array_equal(rewards, np.array([10.0, 20.0]))
+    assert np.array_equal(rewards, np.array([1.0, 2.0]))
     assert [record["eval_mean_reward"] for record in evaluation] == [10.0, 20.0]
+
+
+def test_action_diagnostics_reports_degenerate_local_policy():
+    diagnostics = action_diagnostics(
+        [
+            np.array([[0.0, 0.0], [1.0, 0.2]], dtype=np.float32),
+            np.array([[0.0, 0.04]], dtype=np.float32),
+        ],
+        min_effective_offload_ratio=0.05,
+    )
+
+    assert diagnostics["handover_action_rate"] == pytest.approx(1 / 3)
+    assert diagnostics["local_compute_rate"] == pytest.approx(2 / 3)
+    assert diagnostics["mean_offload_ratio"] == pytest.approx(0.08)
 
 
 def test_reward_component_plot_keeps_legacy_continuity_label_for_old_artifacts(tmp_path):

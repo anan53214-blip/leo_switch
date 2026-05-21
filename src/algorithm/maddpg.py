@@ -228,6 +228,8 @@ class MADDPGAlgorithm:
         done_b = batch["dones"]
         mask_b = batch["masks"]
         next_mask_b = batch["next_masks"]
+        if reward_b.dim() == 2:
+            reward_b = reward_b.mean(dim=1)
 
         with torch.no_grad():
             next_action_b = maddpg_actor_action_features(self.target_actor, next_obs_b, next_mask_b)

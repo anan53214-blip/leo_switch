@@ -207,7 +207,11 @@ class PDQNAlgorithm:
         obs = batch["obs"].reshape(batch_size * num_agents, self.obs_dim)
         next_obs = batch["next_obs"].reshape(batch_size * num_agents, self.obs_dim)
         actions = batch["actions"].reshape(batch_size * num_agents, self.action_feature_dim)
-        rewards = batch["rewards"].view(batch_size, 1).expand(batch_size, num_agents).reshape(-1)
+        reward_batch = batch["rewards"]
+        if reward_batch.dim() == 1:
+            rewards = reward_batch.view(batch_size, 1).expand(batch_size, num_agents).reshape(-1)
+        else:
+            rewards = reward_batch.reshape(batch_size * num_agents)
         dones = batch["dones"].view(batch_size, 1).expand(batch_size, num_agents).reshape(-1)
         masks = batch["masks"].reshape(batch_size * num_agents, self.handover_dim)
         next_masks = batch["next_masks"].reshape(batch_size * num_agents, self.handover_dim)
@@ -217,13 +221,17 @@ class PDQNAlgorithm:
         offload = actions[:, -1]
 
         with torch.no_grad():
-            next_q_values, _ = self._all_action_q(self.target_q_net, self.target_param_nets, next_obs)
+            online_next_q, _ = self._all_action_q(self.q_net, self.param_nets, next_obs)
             safe_next_masks = next_masks.bool().clone()
             empty_rows = ~safe_next_masks.any(dim=-1)
             if torch.any(empty_rows):
                 safe_next_masks[empty_rows, 0] = True
-            masked_next_q = next_q_values.masked_fill(~safe_next_masks, -1e9)
-            max_next_q = masked_next_q.max(dim=-1).values
+            online_next_q = online_next_q.masked_fill(~safe_next_masks, -1e9)
+            next_actions = online_next_q.argmax(dim=-1)
+            target_params = self.target_param_nets(next_obs)
+            next_action_one_hot = F.one_hot(next_actions, num_classes=self.handover_dim).to(next_obs.dtype)
+            next_offload = target_params.gather(1, next_actions.unsqueeze(-1)).squeeze(-1)
+            max_next_q = self.target_q_net(next_obs, next_action_one_hot, next_offload)
             target = rewards + self.config.gamma * (1.0 - dones) * max_next_q
 
         q_values = self.q_net(obs, action_one_hot, offload)
@@ -237,9 +245,12 @@ class PDQNAlgorithm:
             param.requires_grad_(False)
         all_q, params = self._all_action_q(self.q_net, self.param_nets, obs)
         valid_mask = masks.bool()
-        masked_q_sum = (all_q * valid_mask.to(all_q.dtype)).sum()
-        valid_count = valid_mask.to(all_q.dtype).sum().clamp_min(1.0)
-        q_objective = masked_q_sum / valid_count
+        safe_masks = valid_mask.clone()
+        empty_rows = ~safe_masks.any(dim=-1)
+        if torch.any(empty_rows):
+            safe_masks[empty_rows, 0] = True
+        selected_q = all_q.masked_fill(~safe_masks, -1e9).max(dim=-1).values
+        q_objective = selected_q.mean()
         selected_params = params.gather(1, action_indices.unsqueeze(-1)).squeeze(-1)
         bc_loss = F.mse_loss(selected_params, offload)
         param_loss = -self.config.param_loss_coef * q_objective + self.config.bc_loss_coef * bc_loss

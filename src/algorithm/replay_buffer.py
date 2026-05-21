@@ -19,12 +19,22 @@ class MultiAgentReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
+    def _normalize_reward(self, reward) -> np.ndarray:
+        reward_array = np.asarray(reward, dtype=np.float32)
+        if reward_array.ndim == 0:
+            return np.full(self.num_agents, float(reward_array), dtype=np.float32)
+        if reward_array.shape != (self.num_agents,):
+            raise ValueError(
+                f"Expected scalar reward or shape ({self.num_agents},), got {reward_array.shape}"
+            )
+        return reward_array.copy()
+
     def add(self, obs, action_features, reward, next_obs, done, masks, next_masks):
         self.buffer.append(
             (
                 np.asarray(obs, dtype=np.float32).copy(),
                 np.asarray(action_features, dtype=np.float32).copy(),
-                float(reward),
+                self._normalize_reward(reward),
                 np.asarray(next_obs, dtype=np.float32).copy(),
                 bool(done),
                 np.asarray(masks, dtype=bool).copy(),
@@ -39,7 +49,7 @@ class MultiAgentReplayBuffer:
         return {
             "obs": torch.tensor(np.stack([item[0] for item in batch]), dtype=torch.float32, device=self.device),
             "actions": torch.tensor(np.stack([item[1] for item in batch]), dtype=torch.float32, device=self.device),
-            "rewards": torch.tensor([item[2] for item in batch], dtype=torch.float32, device=self.device),
+            "rewards": torch.tensor(np.stack([item[2] for item in batch]), dtype=torch.float32, device=self.device),
             "next_obs": torch.tensor(np.stack([item[3] for item in batch]), dtype=torch.float32, device=self.device),
             "dones": torch.tensor([item[4] for item in batch], dtype=torch.float32, device=self.device),
             "masks": torch.tensor(np.stack([item[5] for item in batch]), dtype=torch.bool, device=self.device),
