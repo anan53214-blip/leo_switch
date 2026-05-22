@@ -193,7 +193,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-interval", type=int, default=100_000)
     parser.add_argument("--eval-episodes", type=int, default=3)
     parser.add_argument("--save-interval", type=int, default=200_000)
-    parser.add_argument("--graph-update-interval", type=int, default=100)
+    parser.add_argument(
+        "--graph-update-interval",
+        "--graph_update_interval",
+        dest="graph_update_interval",
+        type=int,
+        default=100,
+    )
     parser.add_argument("--compare-episodes", type=int, default=5)
     parser.add_argument("--baselines", nargs="+", default=list(DEFAULT_BASELINES))
     parser.add_argument("--best-model-metric", type=str, default="effective_latency_score")
