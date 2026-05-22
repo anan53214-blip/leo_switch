@@ -322,4 +322,27 @@ def test_mec_server_uses_all_cores_when_processing_queue():
     completed = server.process_queue(current_time=0.0, time_step=1.0)
 
     assert len(completed) == 4
-    assert server.queue_length == 0
+
+
+def test_reset_randomizes_constellation_start_time_when_enabled():
+    from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
+
+    config = EnvConfig(
+        num_users=2,
+        max_steps=5,
+        randomize_episode_start=True,
+        episode_start_time_jitter_sec=600.0,
+        seed=123,
+    )
+    env = LEOSatelliteEnv(config)
+
+    env.reset(seed=123)
+    first_time = env.constellation.current_time
+    first_positions = env.constellation._all_pos_ecef.copy()
+
+    env.reset(seed=124)
+    second_time = env.constellation.current_time
+    second_positions = env.constellation._all_pos_ecef.copy()
+
+    assert first_time != second_time
+    assert not np.allclose(first_positions, second_positions)

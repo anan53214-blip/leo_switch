@@ -83,7 +83,7 @@ class HANConfig:
     
     # 边特征
     use_edge_features: bool = True     # 是否使用边特征
-    user_sat_edge_dim: int = 6         # 用户-卫星边特征维度
+    user_sat_edge_dim: int = 5         # 用户-卫星边特征维度
     isl_edge_dim: int = 3              # 星间链路边特征维度
     
     # 正则化
@@ -91,9 +91,11 @@ class HANConfig:
     
     # 元路径配置
     metapaths: List[str] = field(default_factory=lambda: [
-        'user-satellite-user',
-        'satellite-user-satellite',
-        'satellite-satellite-satellite'
+        'user-visible-satellite-user',
+        'user-serving-satellite-user',
+        'user-nearby-user',
+        'satellite-visible-user-satellite',
+        'satellite-isl-satellite'
     ])
 
 
@@ -262,15 +264,22 @@ class HeterogeneousAttentionNetwork(nn.Module):
         # ---------- 元路径编码器 ----------
         # 定义元路径结构
         self.metapath_structures = {
-            'user-satellite-user': [
-                ('user', 'connect', 'satellite'),
-                ('satellite', 'serve', 'user')
+            'user-visible-satellite-user': [
+                ('user', 'visible', 'satellite'),
+                ('satellite', 'visible_rev', 'user')
             ],
-            'satellite-user-satellite': [
-                ('satellite', 'serve', 'user'),
-                ('user', 'connect', 'satellite')
+            'user-serving-satellite-user': [
+                ('user', 'serving', 'satellite'),
+                ('satellite', 'serving_rev', 'user')
             ],
-            'satellite-satellite-satellite': [
+            'user-nearby-user': [
+                ('user', 'nearby', 'user')
+            ],
+            'satellite-visible-user-satellite': [
+                ('satellite', 'visible_rev', 'user'),
+                ('user', 'visible', 'satellite')
+            ],
+            'satellite-isl-satellite': [
                 ('satellite', 'isl', 'satellite'),
                 ('satellite', 'isl', 'satellite')
             ]
@@ -281,11 +290,12 @@ class HeterogeneousAttentionNetwork(nn.Module):
             'satellite': config.hidden_dim,
             'user': config.hidden_dim
         }
-        
+
         # 边维度映射
         edge_dims = {
             'user-satellite': config.user_sat_edge_dim,
             'satellite-user': config.user_sat_edge_dim,
+            'user-user': 1,  # nearby user edge dim
             'satellite-satellite': config.isl_edge_dim
         }
         

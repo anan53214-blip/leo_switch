@@ -62,7 +62,9 @@ STANDARD_CONFIG = {
 
     # 环境
     'num_users':        20,              # 20 个用户（增加竞争）
-    'max_steps':        2000,            # 每 episode 2000 步（更长的决策序列）
+    'max_steps':        600,            # 每 episode 600 步
+    'pre_handover_rvt_sec': 30.0,
+
     'reward_delay_weight': 0.25,
     'reward_energy_weight': 0.15,
     'reward_handover_weight': 0.10,
@@ -92,7 +94,7 @@ STANDARD_CONFIG = {
 
     # 训练
     'total_timesteps':  1_000_000,       # 100万步
-    'n_steps':          2048,            # 每轮收集 2048 步
+    'n_steps':          1024,            # 每轮收集 1024 步
     'eval_interval':    100_000,         # 降低长评估频率
     'eval_episodes':    3,               # 评估集缩小
     'graph_update_interval': 100,        # 减少HAN重编码频率
@@ -123,9 +125,7 @@ LARGE_SCALE_CONFIG = {
     **STANDARD_CONFIG,
     'exp_name':         'han_mappo_delay_focus_large',
     'num_users':        20,              # 20 个用户
-    'max_steps':        3000,            # 更长 episode
     'total_timesteps':  2_000_000,       # 200万步
-    'n_steps':          4096,            # 更大的 rollout buffer
     'batch_size':       256,             # 更大的批大小
     'eval_interval':    50_000,
     'save_interval':    200_000,
@@ -138,9 +138,7 @@ QUICK_TEST_CONFIG = {
     **STANDARD_CONFIG,
     'exp_name':         'han_mappo_delay_focus_quick',
     'num_users':        5,
-    'max_steps':        1000,
     'total_timesteps':  100_000,         # 10万步
-    'n_steps':          1024,
     'eval_interval':    10_000,
     'save_interval':    50_000,
     'early_stop_patience': 15,

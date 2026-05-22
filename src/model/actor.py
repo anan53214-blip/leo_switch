@@ -70,6 +70,7 @@ class ActorConfig:
     
     # 动作空间
     max_candidates: int = 10           # 最大候选卫星数（+1为保持）
+    sat_embed_dim: int = 64            # 候选卫星嵌入维度
     
     # 连续动作参数（Beta 分布，天然支持 [0,1]）
     beta_init_scale: float = 1.0       # Beta 分布初始集中度
@@ -146,76 +147,105 @@ class HybridActor(nn.Module):
             nn.Linear(config.hidden_dims[-1] // 2, 1),
             nn.Softplus()  # 确保 > 0
         )
-    
+
+        # ---------- 候选卫星嵌入路径（用于增强切换决策）----------
+        self.candidate_sat_proj = nn.Linear(config.sat_embed_dim, config.hidden_dims[-1])
+        self.candidate_score = nn.Linear(config.hidden_dims[-1] * 2, 1)
+
+    def handover_logits(
+        self,
+        user_embedding: torch.Tensor,
+        candidate_mask: Optional[torch.Tensor] = None,
+        candidate_satellite_embeddings: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        计算切换 logits，可选地使用候选卫星嵌入增强
+
+        Args:
+            user_embedding: 用户嵌入, (batch_size, input_dim)
+            candidate_mask: 候选掩码, (batch_size, max_candidates+1)
+            candidate_satellite_embeddings: 候选卫星嵌入, (batch_size, max_candidates, embed_dim)
+
+        Returns:
+            logits: (batch_size, max_candidates+1)
+        """
+        features = self.shared_net(user_embedding)
+        base_logits = self.handover_head(features)
+
+        if candidate_satellite_embeddings is not None:
+            sat_features = self.candidate_sat_proj(candidate_satellite_embeddings)
+            repeated_user = features.unsqueeze(1).expand(-1, sat_features.size(1), -1)
+            switch_logits = self.candidate_score(
+                torch.cat([repeated_user, sat_features], dim=-1)
+            ).squeeze(-1)
+            logits = torch.cat([base_logits[:, :1], switch_logits], dim=-1)
+        else:
+            logits = base_logits
+
+        if candidate_mask is not None:
+            logits = logits.masked_fill(~candidate_mask.bool(), float("-inf"))
+
+        return logits
+
     def forward(
         self,
         user_embedding: torch.Tensor,
-        candidate_mask: Optional[torch.Tensor] = None
+        candidate_mask: Optional[torch.Tensor] = None,
+        candidate_satellite_embeddings: Optional[torch.Tensor] = None,
     ) -> Tuple[Categorical, Beta]:
         """
         前向传播，返回动作分布
-        
+
         Args:
             user_embedding: 用户嵌入, (batch_size, input_dim)
             candidate_mask: 可选的候选卫星掩码, (batch_size, max_candidates+1)
-                           1表示有效候选，0表示无效（会被mask掉）
-                           
+            candidate_satellite_embeddings: 候选卫星嵌入, (batch_size, max_candidates, embed_dim)
+
         Returns:
             - handover_dist: 切换决策的Categorical分布
             - offload_dist: 卸载比例的Beta分布
         """
         # 1. 共享特征提取
         features = self.shared_net(user_embedding)
-        
+
         # 2. 离散动作分布
-        handover_logits = self.handover_head(features)
-        
-        # 应用候选掩码（无效候选的logit设为-inf）
-        if candidate_mask is not None:
-            if candidate_mask.shape != handover_logits.shape:
-                raise ValueError(
-                    "candidate_mask shape must match handover logits: "
-                    f"got {tuple(candidate_mask.shape)} vs "
-                    f"{tuple(handover_logits.shape)}"
-                )
-            if not torch.any(candidate_mask > 0, dim=-1).all():
-                raise ValueError(
-                    "candidate_mask must keep at least one valid action per "
-                    "agent"
-                )
-            handover_logits = handover_logits.masked_fill(
-                ~candidate_mask.bool(), float('-inf')
-            )
-        
+        handover_logits = self.handover_logits(
+            user_embedding, candidate_mask, candidate_satellite_embeddings
+        )
+
         handover_dist = Categorical(logits=handover_logits)
-        
+
         # 3. 连续动作分布（Beta 分布，天然支持 [0,1]）
         alpha = self.offload_alpha_head(features) + 1.0  # alpha >= 1
         beta = self.offload_beta_head(features) + 1.0    # beta >= 1
         offload_dist = Beta(alpha, beta)
-        
+
         return handover_dist, offload_dist
     
     def sample(
         self,
         user_embedding: torch.Tensor,
         candidate_mask: Optional[torch.Tensor] = None,
-        deterministic: bool = False
+        deterministic: bool = False,
+        candidate_satellite_embeddings: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         采样动作
-        
+
         Args:
             user_embedding: 用户嵌入
             candidate_mask: 候选掩码
             deterministic: 是否使用确定性策略（用于评估）
-            
+            candidate_satellite_embeddings: 候选卫星嵌入
+
         Returns:
             - handover_action: 切换动作, (batch_size,)
             - offload_action: 卸载比例, (batch_size, 1)
             - log_prob: 联合log概率, (batch_size,)
         """
-        handover_dist, offload_dist = self.forward(user_embedding, candidate_mask)
+        handover_dist, offload_dist = self.forward(
+            user_embedding, candidate_mask, candidate_satellite_embeddings
+        )
         
         if deterministic:
             # 确定性：选择最高概率/均值
@@ -243,24 +273,28 @@ class HybridActor(nn.Module):
         user_embedding: torch.Tensor,
         handover_action: torch.Tensor,
         offload_action: torch.Tensor,
-        candidate_mask: Optional[torch.Tensor] = None
+        candidate_mask: Optional[torch.Tensor] = None,
+        candidate_satellite_embeddings: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         评估给定动作的log概率和熵
-        
+
         用于PPO的策略更新，计算importance sampling ratio。
-        
+
         Args:
             user_embedding: 用户嵌入
             handover_action: 切换动作
             offload_action: 卸载动作
             candidate_mask: 候选掩码
-            
+            candidate_satellite_embeddings: 候选卫星嵌入
+
         Returns:
             - log_prob: 动作log概率
             - entropy: 策略熵（用于鼓励探索）
         """
-        handover_dist, offload_dist = self.forward(user_embedding, candidate_mask)
+        handover_dist, offload_dist = self.forward(
+            user_embedding, candidate_mask, candidate_satellite_embeddings
+        )
         
         # Log概率
         handover_log_prob = handover_dist.log_prob(handover_action)
@@ -358,16 +392,18 @@ class MultiAgentActor(nn.Module):
         self,
         user_embeddings: torch.Tensor,
         candidate_masks: Optional[torch.Tensor] = None,
-        deterministic: bool = False
+        deterministic: bool = False,
+        candidate_satellite_embeddings: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         为所有智能体采样动作
-        
+
         Args:
             user_embeddings: 所有用户嵌入, (num_agents, input_dim)
             candidate_masks: 候选掩码
             deterministic: 是否确定性策略
-            
+            candidate_satellite_embeddings: 候选卫星嵌入
+
         Returns:
             动作字典:
             - 'handover': (num_agents,) 切换动作
@@ -375,9 +411,9 @@ class MultiAgentActor(nn.Module):
             - 'log_prob': (num_agents,) log概率
         """
         handover, offload, log_prob = self.actor.sample(
-            user_embeddings, candidate_masks, deterministic
+            user_embeddings, candidate_masks, deterministic, candidate_satellite_embeddings
         )
-        
+
         return {
             'handover': handover,
             'offload': offload.squeeze(-1),
@@ -389,17 +425,19 @@ class MultiAgentActor(nn.Module):
         user_embeddings: torch.Tensor,
         handover_actions: torch.Tensor,
         offload_actions: torch.Tensor,
-        candidate_masks: Optional[torch.Tensor] = None
+        candidate_masks: Optional[torch.Tensor] = None,
+        candidate_satellite_embeddings: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         评估所有智能体的动作
-        
+
         Args:
             user_embeddings: 所有用户嵌入
             handover_actions: 所有切换动作
             offload_actions: 所有卸载动作
             candidate_masks: 候选掩码
-            
+            candidate_satellite_embeddings: 候选卫星嵌入
+
         Returns:
             - log_probs: (num_agents,)
             - entropies: (num_agents,)
@@ -408,5 +446,6 @@ class MultiAgentActor(nn.Module):
             user_embeddings,
             handover_actions,
             offload_actions.unsqueeze(-1) if offload_actions.dim() == 1 else offload_actions,
-            candidate_masks
+            candidate_masks,
+            candidate_satellite_embeddings
         )

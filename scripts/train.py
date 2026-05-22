@@ -192,7 +192,7 @@ class TrainConfig:
     altitude_km: float = 550.0            # 轨道高度
     inclination_deg: float = 53.0         # 轨道倾角
     num_users: int = 20                   # 用户数量
-    max_steps: int = 2000                 # 每episode最大步数
+    max_steps: int = 600                  # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
     min_effective_offload_ratio: float = 0.05
     reward_delay_weight: float = 0.25
@@ -203,7 +203,8 @@ class TrainConfig:
     reward_service_continuity_weight: float = 0.15
     reward_failed_handover_penalty: float = 0.3
     reward_deadline_penalty: float = 0.30
-    
+    pre_handover_rvt_sec: float = 30.0    # Pre-handover RVT 阈值
+
     # ---------- 图参数 ----------
     max_visible_sats: int = 10            # 最大可见卫星数（候选集）
     
@@ -251,7 +252,7 @@ class TrainConfig:
     
     # ---------- 训练参数 ----------
     total_timesteps: int = 1_200_000      # 总训练步数
-    n_steps: int = 2048                   # 每次更新收集步数
+    n_steps: int = 1024                   # 每次更新收集步数
     eval_interval: int = 100_000          # 评估间隔
     eval_episodes: int = 3                # 评估episode数
     graph_update_interval: int = 100      # 图重建间隔（步），增大可提速
@@ -421,6 +422,7 @@ class HANMAPPOTrainer:
             reward_service_continuity_weight=self.config.reward_service_continuity_weight,
             reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
             reward_deadline_penalty=self.config.reward_deadline_penalty,
+            pre_handover_rvt_sec=self.config.pre_handover_rvt_sec,
             seed=self.config.seed
         )
         
@@ -472,7 +474,7 @@ class HANMAPPOTrainer:
             num_layers=self.config.han_num_layers,
             dropout=self.config.han_dropout,
             use_edge_features=True,
-            user_sat_edge_dim=6,
+            user_sat_edge_dim=5,
             isl_edge_dim=3
         )
         
@@ -537,6 +539,10 @@ class HANMAPPOTrainer:
         # 关联buffer到MAPPO
         self.mappo.set_buffer(self.buffer)
     
+    def _invalidate_han_cache(self) -> None:
+        self._cached_han_user_embed = None
+        self._cached_sat_embed = None
+
     def _get_observations_legacy_unused(self, env_obs: np.ndarray) -> tuple:
         """
         从环境观测构建MAPPO输入
@@ -594,9 +600,9 @@ class HANMAPPOTrainer:
         
         return observations, global_state, available_actions
 
-    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """构建异质图并使用 HAN 编码，返回用户嵌入、卫星嵌入及候选动作掩码。
-        
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """构建异质图并使用 HAN 编码，返回用户嵌入、卫星嵌入、候选动作掩码和候选卫星ID。
+
         性能优化：HAN编码每 graph_update_interval 步才重新计算一次，
         中间步骤只更新轻量级特征（task/rvt/available_actions）。
         """
@@ -637,6 +643,11 @@ class HANMAPPOTrainer:
         available_actions[:, 0] = 1.0
         
         rvt_threshold = getattr(self.env.config, 'rvt_threshold_sec', 60.0)
+        candidate_sat_ids = np.full(
+            (self.num_agents, self.max_candidates),
+            -1,
+            dtype=np.int64,
+        )
         for uid, user in enumerate(self.env.user_manager.users):
             # task特征
             task = self.env.user_tasks.get(uid)
@@ -654,14 +665,17 @@ class HANMAPPOTrainer:
                     rvt_warning[uid, 0] = 1.0
             else:
                 rvt_warning[uid, 0] = 1.0
-            # available_actions
+            # available_actions and candidate_sat_ids
             visible_sats = self.env._get_visible_satellites(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
                 available_actions[uid, 1:valid_count + 1] = 1.0
+                candidate_sat_ids[uid, :valid_count] = [
+                    sat_info.sat_id for sat_info in visible_sats[:valid_count]
+                ]
 
         user_embeddings = np.concatenate([self._cached_han_user_embed, rvt_warning, task_features], axis=1)
-        return user_embeddings, self._cached_sat_embed, available_actions
+        return user_embeddings, self._cached_sat_embed, available_actions, candidate_sat_ids
 
     def _get_observations(self, env_obs: np.ndarray) -> tuple:
         """
@@ -674,7 +688,7 @@ class HANMAPPOTrainer:
         """
         del env_obs
 
-        observations, _, available_actions = (
+        observations, _, available_actions, _ = (
             self._encode_graph_state()
         )
         global_state = observations.reshape(-1).astype(np.float32, copy=False)
@@ -686,7 +700,25 @@ class HANMAPPOTrainer:
             global_state = padded_state
 
         return observations, global_state, available_actions
-    
+
+    def _apply_pre_handover_action_mask(
+        self,
+        available_actions: np.ndarray,
+        pre_handover_mask: np.ndarray,
+    ) -> np.ndarray:
+        """
+        应用 pre-handover 掩码
+
+        对于安全用户（pre_handover_mask=False），强制只能选择 action 0（不切换）。
+        对于需要切换的用户（pre_handover_mask=True），保持原有可用动作。
+        """
+        gated = np.asarray(available_actions, dtype=np.float32).copy()
+        pre_handover_mask = np.asarray(pre_handover_mask, dtype=bool)
+        safe_users = ~pre_handover_mask
+        gated[safe_users, 1:] = 0.0
+        gated[:, 0] = 1.0
+        return gated
+
     def _process_actions(self, actions: Dict) -> np.ndarray:
         """
         处理MAPPO输出的动作为环境格式
@@ -768,16 +800,21 @@ class HANMAPPOTrainer:
         rollout_env_stats = self._empty_env_stats()
         
         obs, info = self.env.reset()
-        observations, satellite_embeddings, available_actions = self._encode_graph_state()
+        self._invalidate_han_cache()
+        observations, satellite_embeddings, available_actions, candidate_sat_ids = self._encode_graph_state()
+        # 应用 pre-handover 掩码
+        pre_handover_mask = self.env.get_pre_handover_mask()
+        available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
         global_state = observations.flatten()
-        
+
         for step in range(self.config.n_steps):
             # 选择动作
             with torch.no_grad():
                 actions, log_probs, value = self.mappo.act(
                     observations,
                     available_actions,
-                    satellite_embeddings=satellite_embeddings
+                    satellite_embeddings=satellite_embeddings,
+                    candidate_sat_ids=candidate_sat_ids
                 )
             
             # 执行动作
@@ -832,7 +869,8 @@ class HANMAPPOTrainer:
                 done=done,
                 value=value,
                 log_probs=log_probs,
-                candidate_masks=available_actions
+                candidate_masks=available_actions,
+                candidate_sat_ids=candidate_sat_ids
             )
             
             # 更新统计
@@ -852,13 +890,17 @@ class HANMAPPOTrainer:
                 current_reward = 0
                 current_length = 0
                 self.episodes += 1
-                
+
                 self.env.reset()
-            
+                self._invalidate_han_cache()
+
             # 更新观测
-            observations, satellite_embeddings, available_actions = self._encode_graph_state()
+            observations, satellite_embeddings, available_actions, candidate_sat_ids = self._encode_graph_state()
+            # 应用 pre-handover 掩码
+            pre_handover_mask = self.env.get_pre_handover_mask()
+            available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
             global_state = observations.flatten()
-        
+
         # 计算最后一步的价值（用于GAE）
         with torch.no_grad():
             last_value = self.mappo.get_value(observations, satellite_embeddings=satellite_embeddings)
@@ -1126,39 +1168,47 @@ class HANMAPPOTrainer:
         
         for ep in range(self.config.eval_episodes):
             obs, info = self.env.reset()
-            observations, satellite_embeddings, available_actions = self._encode_graph_state()
-            
+            self._invalidate_han_cache()
+            observations, satellite_embeddings, available_actions, candidate_sat_ids = self._encode_graph_state()
+            # 应用 pre-handover 掩码
+            pre_handover_mask = self.env.get_pre_handover_mask()
+            available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
+
             episode_reward = 0
             episode_length = 0
             done = False
-            
+
             while not done:
                 with torch.no_grad():
                     actions, _, _ = self.mappo.act(
                         observations,
                         available_actions,
                         satellite_embeddings=satellite_embeddings,
+                        candidate_sat_ids=candidate_sat_ids,
                         deterministic=True
                     )
-                
+
                 env_actions = self._process_actions(actions)
                 _, rewards, terminated, truncated, _ = self.env.step(
                     env_actions,
                     return_observation=False,
                     return_info=False
                 )
-                
+
                 done = terminated or truncated
-                
+
                 if isinstance(rewards, (int, float)):
                     episode_reward += rewards
                 elif isinstance(rewards, dict):
                     episode_reward += sum(rewards.values())
                 else:
                     episode_reward += np.sum(rewards)
-                
+
                 episode_length += 1
-                observations, satellite_embeddings, available_actions = self._encode_graph_state()
+                observations, satellite_embeddings, available_actions, candidate_sat_ids = self._encode_graph_state()
+                # 应用 pre-handover 掩码
+                pre_handover_mask = self.env.get_pre_handover_mask()
+                available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
             
             eval_rewards.append(episode_reward)
             eval_lengths.append(episode_length)
@@ -1403,7 +1453,8 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         self._cached_han_user_embed = None
         self._cached_sat_embed = None
         self.env.reset(seed=seed)
-        return self._encode_graph_state()
+        user_emb, sat_emb, masks, _ = self._encode_graph_state()
+        return user_emb, sat_emb, masks
 
     def _select_train_action(self, observations: np.ndarray, masks: np.ndarray, step_idx: int):
         if step_idx < self.config.warmup_steps:
@@ -1573,7 +1624,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             )
             done = bool(terminated or truncated)
             reward_value = self._scalar_reward(rewards)
-            next_observations, _, next_masks = self._encode_graph_state()
+            next_observations, _, next_masks, _ = self._encode_graph_state()
             replay_next_masks = np.zeros_like(masks, dtype=bool) if done else next_masks.astype(bool)
             self.buffer.add(
                 observations,
@@ -1669,7 +1720,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
                     episode_reward += self._scalar_reward(rewards)
                     episode_length += 1
                     if not done:
-                        observations, _, masks = self._encode_graph_state()
+                        observations, _, masks, _ = self._encode_graph_state()
                 eval_rewards.append(episode_reward)
                 eval_lengths.append(episode_length)
                 self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
@@ -1812,8 +1863,8 @@ class HANPDQNTrainer(HANMADDPGTrainer):
             f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim} + rvt/task 5)"
         )
 
-    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        encoded_observations, satellite_embeddings, available_actions = super()._encode_graph_state()
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        encoded_observations, satellite_embeddings, available_actions, candidate_sat_ids = super()._encode_graph_state()
         raw_observations = np.asarray(self.env._get_observation(), dtype=np.float32)
         if raw_observations.ndim == 1:
             raw_observations = raw_observations.reshape(1, -1)
@@ -1828,7 +1879,7 @@ class HANPDQNTrainer(HANMADDPGTrainer):
             [raw_observations, encoded_observations[:, : self.han_out_dim], light_features],
             axis=1,
         ).astype(np.float32, copy=False)
-        return observations, satellite_embeddings, available_actions
+        return observations, satellite_embeddings, available_actions, candidate_sat_ids
 
     def _epsilon_decay_steps(self) -> int:
         fraction = float(getattr(self.config, "epsilon_decay_fraction", 0.25))
@@ -1934,7 +1985,7 @@ def parse_args():
     # 环境参数
     parser.add_argument('--num_users', type=int, default=20,
                         help='用户数量')
-    parser.add_argument('--max_steps', type=int, default=2000,
+    parser.add_argument('--max_steps', type=int, default=600,
                         help='每episode最大步数')
     parser.add_argument('--reward_delay_weight', type=float, default=0.25,
                         help='时延奖励权重')
@@ -1954,11 +2005,13 @@ def parse_args():
                         help='Deadline violation penalty weight')
     parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
                         help='Treat smaller offload ratios as local execution')
-    
+    parser.add_argument('--pre_handover_rvt_sec', type=float, default=30.0,
+                        help='Pre-handover RVT threshold (seconds)')
+
     # 训练参数
     parser.add_argument('--total_timesteps', type=int, default=1200000,
                         help='总训练步数')
-    parser.add_argument('--n_steps', type=int, default=2048,
+    parser.add_argument('--n_steps', type=int, default=1024,
                         help='每次更新收集步数')
     parser.add_argument('--learning_rate', type=float, default=3e-4,
                         help='学习率')
@@ -2043,6 +2096,7 @@ def main():
     config.reward_failed_handover_penalty = args.reward_failed_handover_penalty
     config.reward_deadline_penalty = args.reward_deadline_penalty
     config.min_effective_offload_ratio = args.min_effective_offload_ratio
+    config.pre_handover_rvt_sec = args.pre_handover_rvt_sec
     config.total_timesteps = args.total_timesteps
     config.n_steps = args.n_steps
     config.learning_rate = args.learning_rate

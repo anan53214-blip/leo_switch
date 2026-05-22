@@ -46,6 +46,10 @@ class EnvConfig:
     # 仿真参数
     time_step_sec: float = 1.0         # 时间步长 (秒)
     max_steps: int = 3600              # 最大步数 (1小时)
+
+    # Episode 起始时间随机化
+    randomize_episode_start: bool = True
+    episode_start_time_jitter_sec: float = 5730.127  # 一个 550km 轨道周期
     
     # 可见性参数
     min_elevation_deg: float = 10.0    # More moderate visibility threshold
@@ -53,6 +57,7 @@ class EnvConfig:
     # 切换参数
     handover_delay_sec: float = 0.6    # Moderate signaling cost
     rvt_threshold_sec: float = 60.0    # Encourage proactive switching
+    pre_handover_rvt_sec: float = 30.0  # Pre-handover RVT 阈值
     
     # 任务参数
     task_arrival_prob: float = 0.35    # Moderate competition without pathological saturation
@@ -511,8 +516,12 @@ class LEOSatelliteEnv(gym.Env):
             self.task_arrival_rng = self._make_task_arrival_rng(seed)
             self.task_generator = TaskGenerator(seed=seed)
         
-        # 重置星座时间
-        self.constellation.reset()
+        # 重置星座时间（支持 episode 起始时间随机化）
+        offset_sec = 0.0
+        if self.config.randomize_episode_start:
+            max_offset = max(float(self.config.episode_start_time_jitter_sec), 0.0)
+            offset_sec = float(self.rng.uniform(0.0, max_offset)) if max_offset > 0 else 0.0
+        self.constellation.reset(time_offset_sec=offset_sec)
         
         # 重置用户状态
         for user in self.user_manager.users:
@@ -1282,9 +1291,34 @@ class LEOSatelliteEnv(gym.Env):
         # 安全边界：至少留 5 秒余量
         safety_margin = 5.0
         rvt = max(rvt - safety_margin, 0.0)
-        
+
         return rvt
-    
+
+    def get_pre_handover_mask(self) -> np.ndarray:
+        """
+        获取 pre-handover 掩码
+
+        返回 bool 数组，True 表示该用户需要切换（RVT 低或无连接），
+        False 表示安全用户（应强制 handover_action=0）。
+        """
+        mask = np.zeros(self.num_users, dtype=bool)
+        threshold = float(getattr(self.config, "pre_handover_rvt_sec", 30.0))
+        for uid, user in enumerate(self.user_manager.users):
+            if user.serving_satellite < 0:
+                mask[uid] = True
+                continue
+            vis = self._get_satellite_visibility(user, user.serving_satellite)
+            if vis is None or not vis.is_visible:
+                mask[uid] = True
+                continue
+            if float(vis.rvt_seconds) < threshold:
+                mask[uid] = True
+                continue
+            server = self.mec_manager.get_server(user.serving_satellite)
+            if server is not None and float(server.utilization) >= 0.95:
+                mask[uid] = True
+        return mask
+
     def _get_observation(self) -> np.ndarray:
         """获取所有用户的观测"""
         observations = np.zeros((self.num_users, self.user_obs_dim), dtype=np.float32)

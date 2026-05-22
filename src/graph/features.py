@@ -49,38 +49,50 @@ class NodeFeatures:
     user_feature_dim: int = 13
 
 
-@dataclass 
+@dataclass
 class EdgeFeatures:
     """
     边特征数据类
-    
+
     存储从环境中提取的边特征
-    
+
     【边的表示方式】
     边用 (源节点索引, 目标节点索引) 的列表表示
     对应的特征存储在特征矩阵中
-    
+
     例如：
     user_satellite_edges = [(0, 5), (0, 10), (1, 5), ...]
     表示用户0连接卫星5和10，用户1连接卫星5，...
     """
-    
-    # 用户-卫星边 (User-Satellite Link)
+
+    # 用户-卫星可见边 (User-Satellite Link, visible)
     # ---------------------------------------
     # 边索引：[(user_id, sat_id), ...]
     user_satellite_edges: List[Tuple[int, int]] = field(default_factory=list)
     # 边特征矩阵：(num_edges, edge_feat_dim)
     user_satellite_features: np.ndarray = None
-    
+
+    # 用户-卫星服务边 (User-Satellite Link, serving)
+    # ---------------------------------------
+    serving_edges: List[Tuple[int, int]] = field(default_factory=list)
+    serving_features: np.ndarray = None
+
+    # 用户-用户邻居边 (User-User nearby)
+    # ---------------------------------------
+    nearby_user_edges: List[Tuple[int, int]] = field(default_factory=list)
+    nearby_user_features: np.ndarray = None
+
     # 星间链路边 (Inter-Satellite Link)
     # ---------------------------------------
     # 边索引：[(sat_id_1, sat_id_2), ...]
     inter_satellite_edges: List[Tuple[int, int]] = field(default_factory=list)
     # 边特征矩阵
     inter_satellite_features: np.ndarray = None
-    
+
     # 特征维度
-    user_satellite_edge_dim: int = 6
+    user_satellite_edge_dim: int = 5
+    serving_edge_dim: int = 2
+    nearby_user_edge_dim: int = 1
     inter_satellite_edge_dim: int = 3
 
 
@@ -350,34 +362,54 @@ class FeatureExtractor:
     def extract_edge_features(self, env) -> EdgeFeatures:
         """
         提取所有边的特征
-        
+
         【边类型说明】
-        1. 用户-卫星边 (User-Satellite Link, UDL)
+        1. 用户-卫星可见边 (User-Satellite Link, visible)
            - 连接条件：卫星对用户可见（仰角 > 阈值）
            - 特征：距离、仰角、SNR、传输速率、RVT、是否当前服务
-           
-        2. 星间链路边 (Inter-Satellite Link, ISL)
+
+        2. 用户-卫星服务边 (User-Satellite Link, serving)
+           - 连接条件：用户当前连接的卫星
+           - 特征：is_serving, service_time
+
+        3. 用户-用户邻居边 (User-User nearby)
+           - 连接条件：地理距离 < 500km
+           - 特征：distance_normalized
+
+        4. 星间链路边 (Inter-Satellite Link, ISL)
            - 连接条件：同轨道相邻 或 跨轨道相邻
            - 特征：距离、传播时延、链路状态
-        
+
         Args:
             env: 环境实例
-            
+
         Returns:
             EdgeFeatures 包含边索引和特征
         """
-        # 提取用户-卫星边
+        # 提取用户-卫星可见边
         us_edges, us_features = self._extract_user_satellite_edges(env)
-        
+
+        # 提取用户-卫星服务边
+        serving_edges, serving_features = self._extract_serving_edges(env)
+
+        # 提取用户-用户邻居边
+        nearby_edges, nearby_features = self._extract_nearby_user_edges(env)
+
         # 提取星间链路边
         isl_edges, isl_features = self._extract_inter_satellite_edges(env)
-        
+
         return EdgeFeatures(
             user_satellite_edges=us_edges,
             user_satellite_features=us_features,
+            serving_edges=serving_edges,
+            serving_features=serving_features,
+            nearby_user_edges=nearby_edges,
+            nearby_user_features=nearby_features,
             inter_satellite_edges=isl_edges,
             inter_satellite_features=isl_features,
-            user_satellite_edge_dim=us_features.shape[1] if len(us_edges) > 0 else 6,
+            user_satellite_edge_dim=us_features.shape[1] if len(us_edges) > 0 else 5,
+            serving_edge_dim=serving_features.shape[1] if len(serving_edges) > 0 else 2,
+            nearby_user_edge_dim=nearby_features.shape[1] if len(nearby_edges) > 0 else 1,
             inter_satellite_edge_dim=isl_features.shape[1] if len(isl_edges) > 0 else 3
         )
     
@@ -385,7 +417,7 @@ class FeatureExtractor:
         """
         提取用户-卫星边及其特征
         
-        【用户-卫星边特征】(共6维)
+        【用户-卫星边特征】(共5维)
         ┌─────────────────────────────────────────────────────────┐
         │  索引  │  特征名称       │  物理含义                     │
         ├─────────────────────────────────────────────────────────┤
@@ -394,7 +426,6 @@ class FeatureExtractor:
         │  2     │  snr            │  信噪比(归一化)                │
         │  3     │  data_rate      │  可达传输速率(归一化)          │
         │  4     │  rvt            │  剩余可见时间(归一化)          │
-        │  5     │  is_serving     │  是否为当前服务卫星(0或1)      │
         └─────────────────────────────────────────────────────────┘
         
         Returns:
@@ -416,22 +447,22 @@ class FeatureExtractor:
                 edges.append((user_id, sat_id))
                 
                 # 提取边特征
-                edge_feat = np.zeros(6, dtype=np.float32)
-                
+                edge_feat = np.zeros(5, dtype=np.float32)
+
                 # 距离（归一化）
                 edge_feat[0] = sat_info.distance_km / self.max_distance
-                
+
                 # 仰角（归一化到[0,1]，因为已经过滤了负仰角）
                 edge_feat[1] = sat_info.elevation_deg / 90.0
-                
+
                 # SNR（从信道模型计算）
                 snr_db = env.channel.compute_snr_db(
-                    sat_info.distance_km, 
+                    sat_info.distance_km,
                     sat_info.elevation_deg,
                     'uplink'
                 )
                 edge_feat[2] = np.clip(snr_db / self.max_snr, -1, 1)
-                
+
                 # 传输速率
                 data_rate = env.channel.compute_data_rate_mbps(
                     sat_info.distance_km,
@@ -439,23 +470,57 @@ class FeatureExtractor:
                     'uplink'
                 )
                 edge_feat[3] = data_rate / self.max_data_rate
-                
+
                 # 剩余可见时间(RVT)
                 edge_feat[4] = sat_info.rvt_seconds / self.max_rvt
-                
-                # 是否为当前服务卫星
-                edge_feat[5] = 1.0 if user.serving_satellite == sat_id else 0.0
-                
+
                 features_list.append(edge_feat)
         
         # 转换为numpy数组
         if features_list:
             features = np.stack(features_list, axis=0)
         else:
-            features = np.zeros((0, 6), dtype=np.float32)
-        
+            features = np.zeros((0, 5), dtype=np.float32)
+
         return edges, features
-    
+
+    def _extract_serving_edges(self, env) -> Tuple[List[Tuple[int, int]], np.ndarray]:
+        """
+        提取用户-卫星服务边
+
+        只包含用户当前连接的卫星（每个用户最多一条边）。
+        特征：[is_serving=1.0, service_time_normalized]
+        """
+        edges = []
+        features = []
+        for user in env.user_manager.users:
+            if user.serving_satellite >= 0:
+                edges.append((user.user_id, user.serving_satellite))
+                service_time = getattr(user, 'total_service_time', 0.0)
+                features.append(np.array([1.0, min(float(service_time), 600.0) / 600.0], dtype=np.float32))
+        return edges, np.stack(features, axis=0) if features else np.zeros((0, 2), dtype=np.float32)
+
+    def _extract_nearby_user_edges(self, env) -> Tuple[List[Tuple[int, int]], np.ndarray]:
+        """
+        提取用户-用户邻居边
+
+        连接地理距离在 500km 内的用户对。
+        特征：[distance_normalized]
+        """
+        edges = []
+        features = []
+        max_distance_km = 500.0
+        positions = env._user_pos_ecef
+        for i in range(env.num_users):
+            for j in range(env.num_users):
+                if i == j:
+                    continue
+                distance = float(np.linalg.norm(positions[i] - positions[j]))
+                if distance <= max_distance_km:
+                    edges.append((i, j))
+                    features.append(np.array([distance / max_distance_km], dtype=np.float32))
+        return edges, np.stack(features, axis=0) if features else np.zeros((0, 1), dtype=np.float32)
+
     def _extract_inter_satellite_edges(self, env) -> Tuple[List[Tuple[int, int]], np.ndarray]:
         """
         提取星间链路(ISL)边及其特征
@@ -556,7 +621,7 @@ class FeatureExtractor:
         return {
             'satellite_node': 10 if self.include_velocity else 7,
             'user_node': 13,
-            'user_satellite_edge': 6,
+            'user_satellite_edge': 5,
             'inter_satellite_edge': 3
         }
     
@@ -581,7 +646,7 @@ class FeatureExtractor:
                 'handover_count', 'service_quality', 'rvt_warning'
             ],
             'user_satellite_edge': [
-                'distance', 'elevation', 'snr', 'data_rate', 'rvt', 'is_serving'
+                'distance', 'elevation', 'snr', 'data_rate', 'rvt'
             ],
             'inter_satellite_edge': [
                 'distance', 'prop_delay', 'link_type'

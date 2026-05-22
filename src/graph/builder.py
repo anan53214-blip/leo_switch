@@ -193,44 +193,68 @@ class HeteroGraphBuilder:
         graph.num_nodes['satellite'] = node_features.satellite_features.shape[0]
         graph.num_nodes['user'] = node_features.user_features.shape[0]
         
-        # ---------- 填充用户-卫星边 ----------
-        if edge_features.user_satellite_edges:
-            # 将边列表转换为COO格式
-            src_indices = np.array([e[0] for e in edge_features.user_satellite_edges])
-            dst_indices = np.array([e[1] for e in edge_features.user_satellite_edges])
-            
-            # 边类型：(源节点类型, 边关系名, 目标节点类型)
-            edge_type = ('user', 'connect', 'satellite')
+        def _put_edges(edge_type, edges, features, feature_dim):
+            if edges:
+                src_indices = np.array([e[0] for e in edges], dtype=np.int64)
+                dst_indices = np.array([e[1] for e in edges], dtype=np.int64)
+            else:
+                src_indices = np.zeros((0,), dtype=np.int64)
+                dst_indices = np.zeros((0,), dtype=np.int64)
+                features = np.zeros((0, feature_dim), dtype=np.float32)
             graph.edge_index[edge_type] = (src_indices, dst_indices)
-            graph.edge_features[edge_type] = edge_features.user_satellite_features
-            
-            # 添加反向边
-            if self.add_reverse_edges:
-                reverse_type = ('satellite', 'serve', 'user')
-                graph.edge_index[reverse_type] = (dst_indices, src_indices)
-                # 反向边使用相同特征
-                graph.edge_features[reverse_type] = edge_features.user_satellite_features
-        
+            graph.edge_features[edge_type] = features
+
+        # ---------- 填充用户-卫星可见边 ----------
+        _put_edges(('user', 'visible', 'satellite'),
+                   edge_features.user_satellite_edges,
+                   edge_features.user_satellite_features,
+                   edge_features.user_satellite_edge_dim)
+
+        if self.add_reverse_edges:
+            src_indices, dst_indices = graph.edge_index[('user', 'visible', 'satellite')]
+            reverse_type = ('satellite', 'visible_rev', 'user')
+            graph.edge_index[reverse_type] = (dst_indices, src_indices)
+            graph.edge_features[reverse_type] = graph.edge_features[('user', 'visible', 'satellite')]
+
+        # ---------- 填充用户-卫星服务边 ----------
+        _put_edges(('user', 'serving', 'satellite'),
+                   edge_features.serving_edges,
+                   edge_features.serving_features,
+                   edge_features.serving_edge_dim)
+
+        if self.add_reverse_edges:
+            src_indices, dst_indices = graph.edge_index[('user', 'serving', 'satellite')]
+            reverse_type = ('satellite', 'serving_rev', 'user')
+            graph.edge_index[reverse_type] = (dst_indices, src_indices)
+            graph.edge_features[reverse_type] = graph.edge_features[('user', 'serving', 'satellite')]
+
+        # ---------- 填充用户-用户邻居边 ----------
+        _put_edges(('user', 'nearby', 'user'),
+                   edge_features.nearby_user_edges,
+                   edge_features.nearby_user_features,
+                   edge_features.nearby_user_edge_dim)
+
         # ---------- 填充星间链路边 ----------
         if edge_features.inter_satellite_edges:
-            src_indices = np.array([e[0] for e in edge_features.inter_satellite_edges])
-            dst_indices = np.array([e[1] for e in edge_features.inter_satellite_edges])
-            
-            edge_type = ('satellite', 'isl', 'satellite')
-            graph.edge_index[edge_type] = (src_indices, dst_indices)
-            graph.edge_features[edge_type] = edge_features.inter_satellite_features
-            
-            # ISL是双向的，添加反向边
+            src_indices = np.array([e[0] for e in edge_features.inter_satellite_edges], dtype=np.int64)
+            dst_indices = np.array([e[1] for e in edge_features.inter_satellite_edges], dtype=np.int64)
+            isl_features = edge_features.inter_satellite_features
             if self.add_reverse_edges:
-                # 合并两个方向的边
-                all_src = np.concatenate([src_indices, dst_indices])
-                all_dst = np.concatenate([dst_indices, src_indices])
-                all_feat = np.concatenate([
-                    edge_features.inter_satellite_features,
-                    edge_features.inter_satellite_features
-                ])
-                graph.edge_index[edge_type] = (all_src, all_dst)
-                graph.edge_features[edge_type] = all_feat
+                forward_src = src_indices
+                forward_dst = dst_indices
+                src_indices = np.concatenate([forward_src, forward_dst])
+                dst_indices = np.concatenate([forward_dst, forward_src])
+                isl_features = np.concatenate([isl_features, isl_features])
+            graph.edge_index[('satellite', 'isl', 'satellite')] = (src_indices, dst_indices)
+            graph.edge_features[('satellite', 'isl', 'satellite')] = isl_features
+        else:
+            graph.edge_index[('satellite', 'isl', 'satellite')] = (
+                np.zeros((0,), dtype=np.int64),
+                np.zeros((0,), dtype=np.int64),
+            )
+            graph.edge_features[('satellite', 'isl', 'satellite')] = np.zeros(
+                (0, edge_features.inter_satellite_edge_dim), dtype=np.float32
+            )
         
         # ---------- 添加自环（可选）----------
         if self.add_self_loops:
@@ -425,12 +449,11 @@ class HeteroGraphBuilder:
             元路径列表
         """
         metapaths = [
-            # 用户相关元路径
-            [('user', 'connect', 'satellite'), ('satellite', 'serve', 'user')],
-            
-            # 卫星相关元路径
-            [('satellite', 'serve', 'user'), ('user', 'connect', 'satellite')],
-            [('satellite', 'isl', 'satellite'), ('satellite', 'isl', 'satellite')]
+            [('user', 'visible', 'satellite'), ('satellite', 'visible_rev', 'user')],
+            [('user', 'serving', 'satellite'), ('satellite', 'serving_rev', 'user')],
+            [('user', 'nearby', 'user')],
+            [('satellite', 'visible_rev', 'user'), ('user', 'visible', 'satellite')],
+            [('satellite', 'isl', 'satellite'), ('satellite', 'isl', 'satellite')],
         ]
         return metapaths
     

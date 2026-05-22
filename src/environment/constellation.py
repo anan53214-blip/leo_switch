@@ -371,12 +371,15 @@ class WalkerConstellation:
         
         self.current_time = time
     
-    def reset(self):
+    def reset(self, time_offset_sec: float = 0.0):
         """
         重置星座到初始状态
+
+        Args:
+            time_offset_sec: 从 start_time 偏移的秒数，用于 episode 随机化
         """
-        self.current_time = self.start_time
-        self._update_all_positions(self.start_time)
+        self.current_time = self.start_time + timedelta(seconds=float(time_offset_sec))
+        self._update_all_positions(self.current_time)
     
     def propagate(self, delta_seconds: float):
         """

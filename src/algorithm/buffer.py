@@ -377,7 +377,14 @@ class MultiAgentRolloutBuffer:
         # 卫星嵌入（用于图式Critic）: (buffer_size, num_satellites, obs_dim)
         # 这里复用 obs_dim 作为嵌入维度，P0 阶段等于 HAN 输出维度
         self.satellite_embeddings = None
-        
+
+        # 候选卫星ID: (buffer_size, num_agents, max_candidates)
+        self.candidate_sat_ids = np.full(
+            (buffer_size, num_agents, max_candidates),
+            -1,
+            dtype=np.int64,
+        )
+
         # 全局价值: (buffer_size,)
         self.values = np.zeros(buffer_size, dtype=np.float32)
         
@@ -402,14 +409,16 @@ class MultiAgentRolloutBuffer:
         done: bool,
         value: float,
         log_probs: np.ndarray,
-        candidate_masks: Optional[np.ndarray] = None
+        candidate_masks: Optional[np.ndarray] = None,
+        candidate_sat_ids: Optional[np.ndarray] = None
     ):
         """
         添加一个时间步的数据
-        
+
         Args:
             obs: 所有智能体观测, (num_agents, obs_dim)
             global_state: 全局状态, (global_state_dim,)
+            satellite_embeddings: 卫星嵌入, (num_sats, embed_dim)
             actions_discrete: 离散动作, (num_agents,)
             actions_continuous: 连续动作, (num_agents,)
             rewards: 奖励, (num_agents,) 或标量
@@ -417,6 +426,7 @@ class MultiAgentRolloutBuffer:
             value: 全局价值估计
             log_probs: log概率, (num_agents,)
             candidate_masks: 候选掩码, (num_agents, max_candidates+1)
+            candidate_sat_ids: 候选卫星ID, (num_agents, max_candidates)
         """
         self.observations[self.pos] = obs
         self.global_states[self.pos] = global_state
@@ -445,7 +455,10 @@ class MultiAgentRolloutBuffer:
         
         if candidate_masks is not None:
             self.candidate_masks[self.pos] = candidate_masks
-        
+
+        if candidate_sat_ids is not None:
+            self.candidate_sat_ids[self.pos] = candidate_sat_ids
+
         self.pos += 1
         if self.pos >= self.buffer_size:
             self.full = True
@@ -541,7 +554,13 @@ class MultiAgentRolloutBuffer:
             flat_satellite_embeddings = np.repeat(
                 self.satellite_embeddings[:self.pos], self.num_agents, axis=0
             )
-        
+
+        # 候选卫星ID展平
+        flat_candidate_sat_ids = self.candidate_sat_ids[:self.pos].reshape(
+            -1,
+            self.max_candidates,
+        )
+
         # 打乱索引
         if shuffle:
             indices = np.random.permutation(total_samples)
@@ -571,6 +590,9 @@ class MultiAgentRolloutBuffer:
                 ),
                 'candidate_masks': torch.tensor(
                     flat_masks[batch_indices], device=self.device, dtype=torch.float32
+                ),
+                'candidate_sat_ids': torch.tensor(
+                    flat_candidate_sat_ids[batch_indices], device=self.device, dtype=torch.long
                 ),
                 'old_log_probs': torch.tensor(
                     flat_log_probs[batch_indices], device=self.device, dtype=torch.float32

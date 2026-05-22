@@ -154,7 +154,8 @@ class MAPPO:
         actor_config = ActorConfig(
             input_dim=config.obs_dim,
             hidden_dims=config.actor_hidden_dims,
-            max_candidates=config.max_candidates
+            max_candidates=config.max_candidates,
+            sat_embed_dim=config.sat_embed_dim,
         )
         self.actor = MultiAgentActor(actor_config, config.num_agents).to(self.device)
         
@@ -205,16 +206,19 @@ class MAPPO:
         observations: np.ndarray,
         candidate_masks: Optional[np.ndarray] = None,
         satellite_embeddings: Optional[np.ndarray] = None,
+        candidate_sat_ids: Optional[np.ndarray] = None,
         deterministic: bool = False
     ) -> Tuple[Dict[str, np.ndarray], np.ndarray, float]:
         """
         为所有智能体采样动作
-        
+
         Args:
             observations: 观测, (num_agents, obs_dim)
             candidate_masks: 候选掩码, (num_agents, max_candidates+1)
+            satellite_embeddings: 卫星嵌入, (num_sats, sat_embed_dim)
+            candidate_sat_ids: 候选卫星ID, (num_agents, max_candidates)
             deterministic: 是否使用确定性策略
-            
+
         Returns:
             - actions: {'handover': (num_agents,), 'offload': (num_agents,)}
             - log_probs: (num_agents,)
@@ -274,10 +278,16 @@ class MAPPO:
             mask_tensor = torch.tensor(
                 candidate_masks, dtype=torch.float32, device=self.device
             )
-        
+
+        candidate_satellite_embeddings = self._gather_candidate_satellite_embeddings(
+            sat_tensor,
+            candidate_sat_ids,
+        )
+
         # Actor采样
         actions = self.actor.sample_all(
-            obs_tensor, mask_tensor, deterministic=deterministic
+            obs_tensor, mask_tensor, deterministic=deterministic,
+            candidate_satellite_embeddings=candidate_satellite_embeddings
         )
         
         # Critic评估
@@ -289,6 +299,40 @@ class MAPPO:
             'offload': actions['offload'].cpu().numpy()
         }, actions['log_prob'].cpu().numpy(), value.item()
     
+    def _gather_batch_candidate_satellite_embeddings(
+        self,
+        satellite_embeddings: torch.Tensor,
+        candidate_sat_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        ids = candidate_sat_ids.to(device=self.device, dtype=torch.long)
+        safe_ids = ids.clamp(min=0)
+        batch_index = torch.arange(
+            satellite_embeddings.size(0),
+            device=self.device,
+        ).unsqueeze(1)
+        gathered = satellite_embeddings[batch_index, safe_ids]
+        return gathered.masked_fill((ids < 0).unsqueeze(-1), 0.0)
+
+    def _gather_candidate_satellite_embeddings(
+        self,
+        satellite_embeddings: Optional[torch.Tensor],
+        candidate_sat_ids: Optional[np.ndarray | torch.Tensor],
+    ) -> Optional[torch.Tensor]:
+        if satellite_embeddings is None or candidate_sat_ids is None:
+            return None
+
+        ids = torch.as_tensor(candidate_sat_ids, dtype=torch.long, device=self.device)
+        if ids.shape != (self.config.num_agents, self.config.max_candidates):
+            raise ValueError(
+                "candidate_sat_ids must have shape "
+                f"{(self.config.num_agents, self.config.max_candidates)}, got {tuple(ids.shape)}"
+            )
+
+        safe_ids = ids.clamp(min=0)
+        gathered = satellite_embeddings[safe_ids]
+        gathered = gathered.masked_fill((ids < 0).unsqueeze(-1), 0.0)
+        return gathered
+
     @torch.no_grad()
     def get_value(
         self,
@@ -366,11 +410,18 @@ class MAPPO:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
                 
                 # ---------- 计算新策略的log概率和熵 ----------
+                candidate_satellite_embeddings = None
+                if satellite_embeddings is not None and 'candidate_sat_ids' in batch:
+                    candidate_satellite_embeddings = self._gather_batch_candidate_satellite_embeddings(
+                        satellite_embeddings,
+                        batch['candidate_sat_ids'],
+                    )
                 new_log_probs, entropy = self.actor.actor.evaluate(
                     obs,
                     actions_discrete,
                     actions_continuous,
-                    candidate_masks
+                    candidate_masks,
+                    candidate_satellite_embeddings
                 )
                 
                 # ---------- PPO-Clip损失 ----------
