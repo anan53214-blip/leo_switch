@@ -46,7 +46,15 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.user import UserState
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
-from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
+from src.algorithm.maddpg import (
+    HANCentralizedCritic as MADDPGCritic,
+    MADDPGActor,
+    MADDPGAlgorithm,
+    MADDPGConfig,
+    maddpg_actor_action_features,
+    maddpg_one_hot_action_features,
+    soft_update,
+)
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
 try:
@@ -1740,56 +1748,6 @@ def train_and_evaluate_dqn_baseline(
     return result
 
 
-class MADDPGActor(nn.Module):
-    def __init__(self, obs_dim: int, handover_dim: int, hidden_dims: Sequence[int] = (256, 128)):
-        super().__init__()
-        layers: List[nn.Module] = []
-        in_dim = int(obs_dim)
-        for hidden_dim in hidden_dims:
-            layers.extend([nn.Linear(in_dim, int(hidden_dim)), nn.ReLU()])
-            in_dim = int(hidden_dim)
-        self.trunk = nn.Sequential(*layers)
-        self.handover_head = nn.Linear(in_dim, int(handover_dim))
-        self.offload_head = nn.Linear(in_dim, 1)
-
-    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        features = self.trunk(obs)
-        handover_logits = self.handover_head(features)
-        offload = torch.sigmoid(self.offload_head(features)).squeeze(-1)
-        return handover_logits, offload
-
-
-class MADDPGCritic(nn.Module):
-    def __init__(
-        self,
-        num_agents: int,
-        obs_dim: int,
-        action_feature_dim: int,
-        hidden_dims: Sequence[int] = (512, 256, 128),
-    ):
-        super().__init__()
-        input_dim = int(num_agents) * (int(obs_dim) + int(action_feature_dim))
-        layers: List[nn.Module] = []
-        in_dim = input_dim
-        for hidden_dim in hidden_dims:
-            layers.extend([nn.Linear(in_dim, int(hidden_dim)), nn.ReLU()])
-            in_dim = int(hidden_dim)
-        layers.append(nn.Linear(in_dim, 1))
-        self.net = nn.Sequential(*layers)
-
-    def forward(self, observations: torch.Tensor, action_features: torch.Tensor) -> torch.Tensor:
-        if observations.dim() != 3 or action_features.dim() != 3:
-            raise ValueError("MADDPG critic expects batched tensors shaped (batch, agents, dim).")
-        joint_input = torch.cat(
-            [
-                observations.reshape(observations.shape[0], -1),
-                action_features.reshape(action_features.shape[0], -1),
-            ],
-            dim=-1,
-        )
-        return self.net(joint_input).squeeze(-1)
-
-
 def maddpg_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
     masks = np.zeros((env.num_users, env.max_visible_sats + 1), dtype=bool)
     masks[:, 0] = True
@@ -1799,50 +1757,6 @@ def maddpg_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
         if valid_count > 0:
             masks[user_id, 1:valid_count + 1] = True
     return masks
-
-
-def safe_mask_tensor(masks: torch.Tensor) -> torch.Tensor:
-    safe_masks = masks.bool().clone()
-    flat_masks = safe_masks.reshape(-1, safe_masks.shape[-1])
-    empty_rows = ~flat_masks.any(dim=-1)
-    if torch.any(empty_rows):
-        flat_masks[empty_rows, 0] = True
-    return safe_masks
-
-
-def maddpg_actor_action_features(
-    actor: MADDPGActor,
-    observations: torch.Tensor,
-    masks: torch.Tensor,
-    straight_through: bool = True,
-) -> torch.Tensor:
-    batch_size, num_agents, obs_dim = observations.shape
-    handover_dim = masks.shape[-1]
-    flat_obs = observations.reshape(batch_size * num_agents, obs_dim)
-    flat_masks = safe_mask_tensor(masks).reshape(batch_size * num_agents, handover_dim)
-    logits, offload = actor(flat_obs)
-    probs = torch.softmax(logits.masked_fill(~flat_masks, -1e9), dim=-1)
-    if straight_through:
-        hard_indices = torch.argmax(probs, dim=-1)
-        hard_handover = F.one_hot(hard_indices, num_classes=handover_dim).to(probs.dtype)
-        handover_features = hard_handover + probs - probs.detach()
-    else:
-        handover_features = probs
-    features = torch.cat([handover_features, offload.unsqueeze(-1)], dim=-1)
-    return features.reshape(batch_size, num_agents, handover_dim + 1)
-
-
-def maddpg_one_hot_action_features(
-    handover_actions: np.ndarray,
-    offload_ratios: np.ndarray,
-    handover_dim: int,
-) -> np.ndarray:
-    handover = np.clip(np.asarray(handover_actions, dtype=np.int64), 0, handover_dim - 1)
-    offload = np.clip(np.asarray(offload_ratios, dtype=np.float32), 0.0, 1.0)
-    features = np.zeros((len(handover), handover_dim + 1), dtype=np.float32)
-    features[np.arange(len(handover)), handover] = 1.0
-    features[:, -1] = offload
-    return features
 
 
 def random_maddpg_actions(
@@ -1887,12 +1801,6 @@ def select_maddpg_env_actions(
     env_actions = np.column_stack([handover, offload_np]).astype(np.float32)
     actor.train(was_training)
     return env_actions, features, handover
-
-
-def soft_update(source: nn.Module, target: nn.Module, tau: float) -> None:
-    with torch.no_grad():
-        for source_param, target_param in zip(source.parameters(), target.parameters()):
-            target_param.data.mul_(1.0 - tau).add_(source_param.data, alpha=tau)
 
 
 def scalar_reward_value(reward) -> float:

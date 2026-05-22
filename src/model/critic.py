@@ -309,64 +309,6 @@ class CentralizedCritic(nn.Module):
         
         return self.forward(user_emb, sat_emb)
 
-
-class MultiAgentCritic(nn.Module):
-    """
-    多智能体Critic（可选实现）
-    
-    【与CentralizedCritic的区别】
-    - CentralizedCritic: 输出单个全局价值 V(s)
-    - MultiAgentCritic: 为每个智能体输出价值 V_i(s)
-    
-    【使用场景】
-    - 异构智能体（不同类型用户）
-    - 需要个体价值分解
-    - 信用分配问题严重时
-    
-    【本项目选择】
-    使用CentralizedCritic，因为：
-    - 用户是同构的
-    - 使用参数共享
-    - MAPPO推荐共享Critic
-    """
-    
-    def __init__(self, config: CriticConfig):
-        """
-        初始化多智能体Critic
-        
-        Args:
-            config: Critic配置
-        """
-        super().__init__()
-        
-        self.config = config
-        
-        # 每个智能体的价值头
-        self.value_heads = nn.ModuleList([
-            SharedCritic(config) for _ in range(config.num_agents)
-        ])
-    
-    def forward(
-        self,
-        agent_embeddings: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        前向传播
-        
-        Args:
-            agent_embeddings: 每个智能体的状态嵌入, (num_agents, input_dim)
-            
-        Returns:
-            每个智能体的价值, (num_agents, 1)
-        """
-        values = []
-        for i, head in enumerate(self.value_heads):
-            v = head(agent_embeddings[i:i+1])
-            values.append(v)
-        
-        return torch.cat(values, dim=0)
-
-
 # ================================================================
 #                    工具函数
 # ================================================================

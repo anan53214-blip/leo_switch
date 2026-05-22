@@ -332,10 +332,6 @@ class MultiAgentActor(nn.Module):
         
         # 共享的Actor网络
         self.actor = HybridActor(config)
-        
-        # 可选：智能体ID嵌入
-        # 用于区分不同智能体（如果需要）
-        self.agent_embedding = nn.Embedding(num_agents, 16)
     
     def forward(
         self,
@@ -354,12 +350,8 @@ class MultiAgentActor(nn.Module):
         Returns:
             动作分布
         """
-        # 如果使用智能体ID嵌入
-        if agent_ids is not None:
-            agent_embed = self.agent_embedding(agent_ids)
-            # 可以拼接或相加
-            # 这里简单地不使用，因为用户嵌入已经包含用户特定信息
-        
+        del agent_ids
+
         return self.actor(user_embeddings, candidate_masks)
     
     def sample_all(

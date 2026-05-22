@@ -198,21 +198,49 @@ class Runner:
             - observations: (num_agents, obs_dim)
             - global_state: (global_state_dim,)
         """
-        # 简化版：直接使用环境观测
-        obs = self.env.get_wrapper_attr('_get_obs') if hasattr(self.env, 'get_wrapper_attr') else None
-        
-        if obs is None:
-            # 从环境状态构建观测
-            num_agents = self.mappo.config.num_agents
-            obs_dim = self.mappo.config.obs_dim
-            
-            # 简单地使用随机观测（实际应从环境获取）
-            observations = np.random.randn(num_agents, obs_dim).astype(np.float32)
-            global_state = np.random.randn(self.mappo.config.global_state_dim).astype(np.float32)
-        else:
-            observations = obs
-            global_state = observations.mean(axis=0)  # 简单聚合
-        
+        obs_source = None
+        for attr_name in ('_get_observation', '_get_obs'):
+            if hasattr(self.env, attr_name):
+                obs_source = getattr(self.env, attr_name)
+                break
+            if hasattr(self.env, 'get_wrapper_attr'):
+                try:
+                    obs_source = self.env.get_wrapper_attr(attr_name)
+                except AttributeError:
+                    obs_source = None
+                if obs_source is not None:
+                    break
+
+        if obs_source is None:
+            raise RuntimeError(
+                "Runner requires the environment to expose _get_observation() "
+                "or _get_obs(); refusing to train on synthetic observations."
+            )
+
+        observations = obs_source() if callable(obs_source) else obs_source
+        observations = np.asarray(observations, dtype=np.float32)
+        if observations.ndim == 1:
+            observations = observations.reshape(1, -1)
+
+        expected_shape = (
+            self.mappo.config.num_agents,
+            self.mappo.config.obs_dim,
+        )
+        if observations.shape != expected_shape:
+            padded = np.zeros(expected_shape, dtype=np.float32)
+            rows = min(observations.shape[0], expected_shape[0])
+            cols = min(observations.shape[1], expected_shape[1])
+            padded[:rows, :cols] = observations[:rows, :cols]
+            observations = padded
+
+        global_state = observations.reshape(-1)
+        expected_global_dim = self.mappo.config.global_state_dim
+        if global_state.shape[0] != expected_global_dim:
+            padded_state = np.zeros(expected_global_dim, dtype=np.float32)
+            copy_len = min(global_state.shape[0], expected_global_dim)
+            padded_state[:copy_len] = global_state[:copy_len]
+            global_state = padded_state
+
         return observations, global_state
     
     def _get_candidate_masks(self) -> np.ndarray:

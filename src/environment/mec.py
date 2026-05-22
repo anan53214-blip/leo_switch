@@ -642,7 +642,8 @@ class OffloadingCalculator:
         best_ratio = 0.0
         best_result = None
         best_objective = float('inf')
-        
+        candidates = []
+
         for ratio in np.linspace(0, 1, num_samples):
             result = self.compute_offloading_result(
                 data_size_bits=data_size_bits,
@@ -653,7 +654,22 @@ class OffloadingCalculator:
                 elevation_deg=elevation_deg,
                 satellite_freq_ghz=satellite_freq_ghz
             )
-            
+            candidates.append((ratio, result))
+
+        feasible_results = [
+            result for _, result in candidates
+            if result.deadline_met
+        ]
+        max_energy = max(
+            (float(result.total_energy) for result in feasible_results),
+            default=max(
+                (float(result.total_energy) for _, result in candidates),
+                default=1.0,
+            ),
+        )
+        max_energy = max(max_energy, 1e-12)
+
+        for ratio, result in candidates:
             # 计算目标值
             if objective == 'delay':
                 obj_value = result.total_delay
@@ -662,7 +678,7 @@ class OffloadingCalculator:
             else:  # weighted
                 # 归一化后加权
                 obj_value = 0.5 * (result.total_delay / max_delay) + \
-                           0.5 * (result.total_energy / 1.0)
+                           0.5 * (result.total_energy / max_energy)
             
             # 只考虑满足时延约束的解
             if result.deadline_met and obj_value < best_objective:

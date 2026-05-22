@@ -4,17 +4,14 @@ Walker星座模型
 实现论文中的星座建模方法
 """
 
+import logging
+
 import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-# 轨道力学库
-from astropy import units as u
-from astropy.time import Time
-from poliastro.bodies import Earth
-from poliastro.twobody import Orbit
-from poliastro.twobody.propagation import propagate
+logger = logging.getLogger(__name__)
 
 # 地球参数
 EARTH_RADIUS_KM = 6371.0  # 地球平均半径
@@ -104,10 +101,17 @@ class WalkerConstellation:
         self.satellite_states: List[SatelliteState] = []
         self._initialize_constellation()
         
-        print(f"[星座初始化] Walker {inclination_deg}:{self.total_sats}/{num_planes}/{phase_factor}")
-        print(f"  - 轨道高度: {altitude_km} km")
-        print(f"  - 轨道周期: {self.orbital_period/60:.2f} 分钟")
-        print(f"  - 总卫星数: {self.total_sats}")
+        logger.info(
+            "Walker constellation initialized: %s:%s/%s/%s, altitude=%s km, "
+            "period=%.2f min, total_sats=%s",
+            inclination_deg,
+            self.total_sats,
+            num_planes,
+            phase_factor,
+            altitude_km,
+            self.orbital_period / 60.0,
+            self.total_sats,
+        )
     
     def _compute_orbital_period(self) -> float:
         """

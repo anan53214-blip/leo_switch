@@ -149,6 +149,19 @@ class FeatureExtractor:
             Tuple[int, int],
             Tuple[np.ndarray, np.ndarray, np.ndarray, List[Tuple[int, int]]]
         ] = {}
+
+    def _position_norm_factor(self, env) -> float:
+        constellation = getattr(env, 'constellation', None)
+        for attr in ('semi_major_axis', '_a'):
+            value = getattr(constellation, attr, None)
+            if value is not None:
+                return max(float(value), 1e-6)
+
+        all_pos = getattr(constellation, '_all_pos_ecef', None)
+        if all_pos is not None and len(all_pos) > 0:
+            return max(float(np.linalg.norm(all_pos, axis=1).max()), 1e-6)
+
+        return 7000.0
     
     # ================================================================
     #                       节点特征提取
@@ -202,9 +215,11 @@ class FeatureExtractor:
         num_sats = env.num_satellites
         feat_dim = 10 if self.include_velocity else 7
         features = np.zeros((num_sats, feat_dim), dtype=np.float32)
-        
+
         # 向量化位置特征
-        features[:, 0:3] = env.constellation._all_pos_ecef / 7000.0
+        features[:, 0:3] = (
+            env.constellation._all_pos_ecef / self._position_norm_factor(env)
+        )
         
         idx = 3
         if self.include_velocity:
@@ -258,7 +273,7 @@ class FeatureExtractor:
             
             # ------ 1. 位置特征 (3维) ------
             pos_ecef = env._user_pos_ecef[user_id]
-            norm_factor = 7000.0
+            norm_factor = self._position_norm_factor(env)
             features[user_id, idx:idx+3] = pos_ecef / norm_factor
             idx += 3
             
