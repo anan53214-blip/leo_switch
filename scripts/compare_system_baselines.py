@@ -2681,7 +2681,7 @@ def evaluate_system_checkpoint(
 
     for episode_idx in range(episodes):
         trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
-        observations, satellite_embeddings, available_actions = trainer._encode_graph_state()
+        observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
         done = False
         episode_reward = 0.0
 
@@ -2705,7 +2705,7 @@ def evaluate_system_checkpoint(
             done = terminated or truncated
 
             if not done:
-                observations, satellite_embeddings, available_actions = trainer._encode_graph_state()
+                observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
 
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
@@ -2754,7 +2754,7 @@ def evaluate_mappo_checkpoint_with_trainer(
 
     for episode_idx in range(episodes):
         trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
-        observations, satellite_embeddings, available_actions = trainer._encode_graph_state()
+        observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
         done = False
         episode_reward = 0.0
 
@@ -2778,7 +2778,7 @@ def evaluate_mappo_checkpoint_with_trainer(
             done = terminated or truncated
 
             if not done:
-                observations, satellite_embeddings, available_actions = trainer._encode_graph_state()
+                observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
 
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
@@ -2874,7 +2874,7 @@ def evaluate_han_offpolicy_checkpoint(
             episode_reward += trainer._scalar_reward(reward)
             done = terminated or truncated
             if not done:
-                observations, _, masks = trainer._encode_graph_state()
+                observations, _, masks, *_ = trainer._encode_graph_state()
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
 
