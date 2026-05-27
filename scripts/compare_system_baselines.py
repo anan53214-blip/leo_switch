@@ -2544,18 +2544,26 @@ class NoHANTrainerMixin:
     def _init_han_encoder(self):
         self.han_encoder = nn.Identity().to(self.device)
 
-    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         observations = self.env._get_observation().astype(np.float32, copy=False)
         available_actions = np.zeros((self.num_agents, self.max_candidates + 1), dtype=np.float32)
         available_actions[:, 0] = 1.0
+        candidate_sat_ids = np.full(
+            (self.num_agents, self.max_candidates),
+            -1,
+            dtype=np.int64,
+        )
         for uid, user in enumerate(self.env.user_manager.users):
             visible_sats = self.env._get_visible_satellites(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
                 available_actions[uid, 1:valid_count + 1] = 1.0
+                candidate_sat_ids[uid, :valid_count] = [
+                    sat_info.sat_id for sat_info in visible_sats[:valid_count]
+                ]
 
         satellite_embeddings = np.zeros((self.env.num_satellites, self.han_out_dim), dtype=np.float32)
-        return observations, satellite_embeddings, available_actions
+        return observations, satellite_embeddings, available_actions, candidate_sat_ids
 
 
 class NoHANMAPPOTrainer(NoHANTrainerMixin, HANMAPPOTrainer):
