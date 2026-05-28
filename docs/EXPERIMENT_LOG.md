@@ -429,3 +429,45 @@ this code pass.
 
 - `C:\Users\19704\.conda\envs\satellite.env\python.exe -m pytest tests\test_offpolicy_evaluation.py tests\test_han_integration.py tests\test_baseline_plotting.py tests\test_env_metrics.py::test_step_exposes_per_agent_rewards_matching_scalar_mean tests\test_mappo_entropy.py -q`
   passed: `24 passed`.
+
+## 2026-05-28 - 20260525 Artifact-Only Full Baseline Plot Regeneration
+
+**Experiment directory:** `results/baseline_compare/20260525_220324`
+
+**System run directory:** `results/full_train_latency_priority_20260525_220324`
+
+**Command/config:** Regenerated summaries and figures from existing artifacts,
+without retraining:
+
+`C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\generate_comparison_from_artifacts.py --system-run-dir results\full_train_latency_priority_20260525_220324 --compare-dir results\baseline_compare\20260525_220324 --objective multi_objective --episodes 5 --max-steps 600 --seed 42 --num-users 20 --device cpu --metric effective_latency_score --plot-window 5`
+
+The previous 4-method summary/plots were backed up under
+`results/baseline_compare/20260525_220324/backup_before_artifact_full_20260528`.
+
+**Code changes made:** `scripts/generate_comparison_from_artifacts.py` now
+sanitizes artifact `save_path`/`log_path` values before evaluation, so Linux
+paths embedded in old training histories do not make Windows try to write under
+`/home`. The helper also loads MADDPG checkpoints into the current
+`MADDPGAlgorithm` API instead of the old actor-only evaluation call.
+
+**Main result:** The regenerated `comparison_summary.json` contains 10
+methods: HAN+MAPPO, Random, Min-Distance, Full-Local, Joint Greedy, MADDPG,
+PDQN, MAPPO(no-HAN), HAN+MADDPG, and HAN+PDQN. Current effective-latency
+ranking is led by Min-Distance (`0.293305`), MADDPG (`0.292881`), PDQN
+(`0.273594`), HAN+MAPPO (`0.271304`), and MAPPO(no-HAN) (`0.269998`).
+
+**Diagnosis:** The earlier `paper_baseline_dashboard.pdf` was incomplete
+because its input summary only contained four methods. The artifact directory
+still had `maddpg` and `pdqn` checkpoints, but the overwritten
+`comparison_summary.json` did not include those rows, so plotting could not
+draw their lines. Rule-based methods are not stored under `learned_baselines`;
+they are re-evaluated on demand and now appear in the regenerated summary and
+figures.
+
+**Verification:**
+
+- `C:\Users\19704\.conda\envs\satellite.env\python.exe -m pytest tests\test_generate_comparison_from_artifacts.py -q`
+  passed: `2 passed`.
+- Regeneration completed and wrote `comparison_summary.json`,
+  `comparison_summary.csv`, `episode_metrics.csv`, `paper_baseline_dashboard.pdf`,
+  `reward_curve_vs_baselines.pdf`, and the other comparison PDFs.

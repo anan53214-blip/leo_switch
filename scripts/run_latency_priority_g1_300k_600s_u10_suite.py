@@ -1,12 +1,23 @@
-"""Run the latency-priority system training and baseline comparison suite.
+"""Run the graph-update-1 latency-priority diagnostic suite.
 
-This script keeps the result layout aligned with the existing results folder:
+This is a smaller companion to run_latency_priority_full_suite.py for testing
+fresh HAN graph encodings:
 
-    results/full_train_latency_priority_<run_id>
-    results/baseline_compare/<run_id>
+    graph_update_interval = 1
+    total_timesteps = 300000
+    max_steps = 600
+    num_users = 10
 
-The comparison figures are produced by scripts/compare_system_baselines.py so
-plotting stays in one place.
+The result layout is labeled so these diagnostic runs do not blend into the
+full-suite directories:
+
+    results/full_train_latency_priority_g1_300k_600s_u10_<run_id>
+    results/baseline_compare/g1_300k_600s_u10_<run_id>
+
+By default the comparison stage is intentionally lightweight: it compares the
+trained HAN+MAPPO system against MAPPO without HAN and simple rule-based
+baselines only. Off-policy learned baselines such as MADDPG/PDQN are excluded
+unless explicitly requested with --baselines.
 """
 
 from __future__ import annotations
@@ -21,7 +32,14 @@ from typing import Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BASELINES = ("all",)
+RUN_LABEL = "g1_300k_600s_u10"
+DEFAULT_BASELINES = (
+    "mappo_no_han",
+    "random",
+    "min_distance",
+    "full_local",
+    "joint_greedy",
+)
 TRAIN_ARTIFACTS = ("training_history.json", "best_model.pt", "final_model.pt")
 
 
@@ -36,22 +54,22 @@ class SuitePaths:
 class SuiteConfig:
     run_id: str
     python_executable: str = "python"
-    exp_name: str = "han_mappo_latency_priority"
+    exp_name: str = "han_mappo_latency_priority_g1_300k_600s_u10"
     algorithm: str = "mappo"
     seed: int = 42
     device: str = "auto"
-    num_users: int = 20
-    total_timesteps: int = 800_000
+    num_users: int = 10
+    total_timesteps: int = 300_000
     max_steps: int = 600
     n_steps: int = 1024
-    eval_interval: int = 100_000
+    eval_interval: int = 50_000
     eval_episodes: int = 3
-    save_interval: int = 200_000
-    graph_update_interval: int = 100
+    save_interval: int = 100_000
+    graph_update_interval: int = 1
     log_interval: int = 1
     best_model_metric: str = "effective_latency_score"
     compare_ranking_metric: str = "effective_latency_score"
-    compare_episodes: int = 5
+    compare_episodes: int = 3
     plot_window: int = 5
     early_stop_patience: int = 0
     baselines: tuple[str, ...] = DEFAULT_BASELINES
@@ -64,8 +82,8 @@ class SuiteConfig:
 def build_paths(project_root: Path, run_id: str) -> SuitePaths:
     results_dir = project_root / "results"
     return SuitePaths(
-        system_run_dir=results_dir / f"full_train_latency_priority_{run_id}",
-        compare_output_dir=results_dir / "baseline_compare" / run_id,
+        system_run_dir=results_dir / f"full_train_latency_priority_{RUN_LABEL}_{run_id}",
+        compare_output_dir=results_dir / "baseline_compare" / f"{RUN_LABEL}_{run_id}",
         log_dir=results_dir / "logs",
     )
 
@@ -170,11 +188,11 @@ def run_command(command: Sequence[str], cwd: Path, dry_run: bool) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Train the latency-priority HAN+MAPPO system run, then call "
-            "compare_system_baselines.py to create baseline results and figures."
+            "Train the graph-update-1 latency-priority HAN+MAPPO diagnostic run, "
+            "then compare it with MAPPO(no-HAN) and simple rule-based baselines."
         )
     )
     parser.add_argument(
@@ -186,22 +204,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--python-executable", type=str, default="python")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
-    parser.add_argument("--num-users", type=int, default=20)
-    parser.add_argument("--total-timesteps", type=int, default=800_000)
+    parser.add_argument("--num-users", type=int, default=10)
+    parser.add_argument("--total-timesteps", type=int, default=300_000)
     parser.add_argument("--max-steps", type=int, default=600)
     parser.add_argument("--n-steps", type=int, default=1024)
-    parser.add_argument("--eval-interval", type=int, default=100_000)
+    parser.add_argument("--eval-interval", type=int, default=50_000)
     parser.add_argument("--eval-episodes", type=int, default=3)
-    parser.add_argument("--save-interval", type=int, default=200_000)
+    parser.add_argument("--save-interval", type=int, default=100_000)
     parser.add_argument(
         "--graph-update-interval",
         "--graph_update_interval",
         dest="graph_update_interval",
         type=int,
-        default=100,
+        default=1,
     )
-    parser.add_argument("--compare-episodes", type=int, default=5)
-    parser.add_argument("--baselines", nargs="+", default=list(DEFAULT_BASELINES))
+    parser.add_argument("--compare-episodes", type=int, default=3)
+    parser.add_argument(
+        "--baselines",
+        nargs="+",
+        default=list(DEFAULT_BASELINES),
+        help=(
+            "Baselines for comparison. Defaults to MAPPO(no-HAN) plus simple "
+            "rule-based baselines; pass 'all' only when you also want learned "
+            "MADDPG/PDQN-style baselines."
+        ),
+    )
     parser.add_argument("--best-model-metric", type=str, default="effective_latency_score")
     parser.add_argument("--compare-ranking-metric", type=str, default="effective_latency_score")
     parser.add_argument("--plot-window", type=int, default=5)
@@ -214,7 +241,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-system-train", action="store_true")
     parser.add_argument("--skip-compare", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def config_from_args(args: argparse.Namespace) -> SuiteConfig:
@@ -254,6 +281,7 @@ def main() -> None:
         if not config.skip_compare:
             paths.compare_output_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"Run label: {RUN_LABEL}")
     print(f"Run id: {config.run_id}")
     print(f"System run dir: {paths.system_run_dir}")
     print(f"Baseline compare dir: {paths.compare_output_dir}")

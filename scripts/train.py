@@ -543,63 +543,6 @@ class HANMAPPOTrainer:
         self._cached_han_user_embed = None
         self._cached_sat_embed = None
 
-    def _get_observations_legacy_unused(self, env_obs: np.ndarray) -> tuple:
-        """
-        从环境观测构建MAPPO输入
-        
-        Args:
-            env_obs: 环境返回的观测数组 shape=(num_users, obs_dim)
-            
-        Returns:
-            observations: (num_agents, obs_dim) 每个智能体的观测
-            global_state: (global_state_dim,) 全局状态
-            available_actions: (num_agents, max_candidates+1) 可用动作掩码
-        """
-        # 环境返回的是 (num_users, user_obs_dim) 的numpy数组
-        if isinstance(env_obs, np.ndarray):
-            # 直接使用环境的观测
-            if env_obs.ndim == 1:
-                # 单用户情况，扩展维度
-                env_obs = env_obs.reshape(1, -1)
-            
-            # 确保观测维度匹配
-            actual_obs_dim = env_obs.shape[1]
-            
-            if actual_obs_dim != self.obs_dim:
-                # 需要调整维度
-                observations = np.zeros((self.num_agents, self.obs_dim), dtype=np.float32)
-                copy_dim = min(actual_obs_dim, self.obs_dim)
-                observations[:, :copy_dim] = env_obs[:, :copy_dim]
-            else:
-                observations = env_obs.astype(np.float32)
-        else:
-            # 字典格式（备用）
-            observations = np.zeros((self.num_agents, self.obs_dim), dtype=np.float32)
-            for i in range(self.num_agents):
-                user_obs = env_obs.get(f'user_{i}', np.zeros(self.obs_dim))
-                if isinstance(user_obs, np.ndarray):
-                    observations[i, :len(user_obs)] = user_obs[:self.obs_dim]
-        
-        # 构建可用动作掩码
-        available_actions = np.zeros((self.num_agents, self.max_candidates + 1), dtype=np.float32)
-        available_actions[:, 0] = 1  # 不切换始终可用
-        
-        # 从观测中推断可见卫星数（简化：假设所有候选都可用）
-        # 实际应用中可以从环境info获取
-        available_actions[:, 1:] = 1  # 所有候选卫星都可用
-        
-        # 全局状态 = 所有观测拼接
-        global_state = observations.flatten()
-        
-        # 确保global_state维度正确
-        if len(global_state) != self.global_state_dim:
-            padded_state = np.zeros(self.global_state_dim, dtype=np.float32)
-            copy_len = min(len(global_state), self.global_state_dim)
-            padded_state[:copy_len] = global_state[:copy_len]
-            global_state = padded_state
-        
-        return observations, global_state, available_actions
-
     def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """构建异质图并使用 HAN 编码，返回用户嵌入、卫星嵌入、候选动作掩码和候选卫星ID。
 

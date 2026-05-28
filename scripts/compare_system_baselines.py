@@ -48,7 +48,6 @@ from src.environment.user import UserState
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
 from src.algorithm.maddpg import (
     HANCentralizedCritic as MADDPGCritic,
-    MADDPGActor,
     MADDPGAlgorithm,
     MADDPGConfig,
     maddpg_actor_action_features,
@@ -1759,50 +1758,6 @@ def maddpg_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
     return masks
 
 
-def random_maddpg_actions(
-    masks: np.ndarray,
-    rng: np.random.Generator,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    handover_actions = []
-    for mask in masks:
-        valid = np.flatnonzero(mask)
-        handover_actions.append(int(rng.choice(valid)) if len(valid) else 0)
-    handover = np.asarray(handover_actions, dtype=np.int64)
-    offload = rng.random(len(handover), dtype=np.float32)
-    features = maddpg_one_hot_action_features(handover, offload, masks.shape[1])
-    env_actions = np.column_stack([handover, offload]).astype(np.float32)
-    return env_actions, features, handover
-
-
-def select_maddpg_env_actions(
-    actor: MADDPGActor,
-    observations: np.ndarray,
-    masks: np.ndarray,
-    noise_std: float,
-    rng: np.random.Generator,
-    device: torch.device,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    was_training = actor.training
-    actor.eval()
-    with torch.no_grad():
-        obs_tensor = torch.tensor(observations, dtype=torch.float32, device=device)
-        logits, offload = actor(obs_tensor)
-        logits_np = logits.detach().cpu().numpy()
-        offload_np = offload.detach().cpu().numpy()
-
-    if noise_std > 0.0:
-        logits_np = logits_np + rng.normal(0.0, noise_std, size=logits_np.shape)
-        offload_np = offload_np + rng.normal(0.0, noise_std, size=offload_np.shape)
-
-    logits_np = np.where(masks, logits_np, -np.inf)
-    handover = np.argmax(logits_np, axis=1).astype(np.int64)
-    offload_np = np.clip(offload_np, 0.0, 1.0).astype(np.float32)
-    features = maddpg_one_hot_action_features(handover, offload_np, masks.shape[1])
-    env_actions = np.column_stack([handover, offload_np]).astype(np.float32)
-    actor.train(was_training)
-    return env_actions, features, handover
-
-
 def scalar_reward_value(reward) -> float:
     if isinstance(reward, (int, float)):
         return float(reward)
@@ -3164,14 +3119,6 @@ def metric_display_value(value: float, metric_key: str) -> str:
     return f"{value:.3f}"
 
 
-def metric_episode_samples(method: Dict, metric_key: str) -> np.ndarray:
-    records = method.get("episode_metrics", [])
-    if not records:
-        return np.array([], dtype=float)
-    scale = metric_scale(metric_key)
-    return np.array([float(record.get(metric_key, 0.0)) * scale for record in records], dtype=float)
-
-
 def paper_metric_scale(metric_key: str) -> float:
     if metric_key == "avg_delay":
         return 1000.0
@@ -3639,47 +3586,6 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
 
 def methods_with_episode_metrics(methods: Sequence[Dict]) -> List[Dict]:
     return [method for method in order_methods(methods) if method.get("episode_metrics")]
-
-
-def plot_episode_metric_curve(
-    methods: Sequence[Dict],
-    metric_key: str,
-    title: str,
-    ylabel: str,
-    output_path: Path,
-) -> Optional[Path]:
-    plottable = methods_with_episode_metrics(methods)
-    if not plottable:
-        return None
-
-    styles = build_method_styles(plottable)
-    fig, ax = plt.subplots(figsize=(11, 6), dpi=220)
-
-    for method in plottable:
-        records = method.get("episode_metrics", [])
-        episodes = [int(record.get("episode", idx + 1)) for idx, record in enumerate(records)]
-        values = [float(record.get(metric_key, 0.0)) * metric_scale(metric_key) for record in records]
-        style = styles[str(method.get("method", ""))]
-        ax.plot(
-            episodes,
-            values,
-            label=method.get("display_name", method.get("method", "")),
-            color=style["color"],
-            linestyle=style["linestyle"],
-            marker=style["marker"],
-            linewidth=style["linewidth"],
-            markersize=style["markersize"],
-            alpha=0.95,
-        )
-
-    direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
-    ax.set_xlabel("Evaluation Episode")
-    ax.set_ylabel(ylabel)
-    ax.set_title(f"{title} ({direction})")
-    style_axes_frame(ax)
-    ax.legend(loc="best", fontsize=9, ncol=2)
-    fig.tight_layout()
-    return save_figure(fig, output_path)
 
 
 def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:

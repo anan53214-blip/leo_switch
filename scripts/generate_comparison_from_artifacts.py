@@ -13,9 +13,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import numpy as np
 import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -24,13 +23,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from scripts.compare_system_baselines import (
     DEFAULT_SELECTION_METRIC,
+    MADDPGAlgorithm,
+    MADDPGConfig,
     PRIMARY_COMPARE_METRICS,
-    MADDPGActor,
     PDQNAlgorithm,
     PDQNConfig,
     annotate_priority_metrics,
     build_policy,
-    compute_model_selection_score,
     evaluate_han_offpolicy_checkpoint,
     evaluate_maddpg_policy,
     evaluate_mappo_checkpoint_with_trainer,
@@ -55,8 +54,6 @@ from scripts.compare_system_baselines import (
     save_results_csv,
     save_results_json,
     setup_publication_style,
-    summarize_results,
-    trainer_class_for_objective,
 )
 from scripts.train import HANMADDPGTrainer, HANPDQNTrainer
 
@@ -66,85 +63,15 @@ def load_json(path: Path) -> Dict[str, Any]:
         return json.load(handle)
 
 
-def best_eval_record(history_path: Path, metric_name: str) -> Dict[str, Any]:
-    payload = load_json(history_path)
-    records = list(payload.get("evaluation", []))
-    if not records:
-        raise ValueError(f"No evaluation records found in {history_path}")
-    return max(records, key=lambda record: compute_model_selection_score(record, metric_name))
-
-
-def method_from_eval_record(
-    method_name: str,
-    record: Dict[str, Any],
-    history_path: Path,
-    checkpoint: Optional[Path],
-    metric_name: str,
+def sanitize_artifact_config_paths(
+    config_data: Dict[str, Any],
+    system_run_dir: Path,
+    compare_dir: Path,
 ) -> Dict[str, Any]:
-    handover_success_rate = float(record.get("handover_success_rate", 0.0))
-    service_continuity_rate = float(record.get("service_continuity_rate", 0.0))
-    result = {
-        "method": method_name,
-        "display_name": method_name,
-        "episodes": len(record.get("eval_rewards", [])) or int(record.get("episodes", 0)),
-        "is_system": False,
-        "mean_reward": float(record.get("eval_mean_reward", record.get("mean_reward", 0.0))),
-        "std_reward": float(record.get("eval_std_reward", record.get("std_reward", 0.0))),
-        "avg_delay": float(record.get("avg_delay", 0.0)),
-        "total_energy": float(record.get("total_energy", 0.0)),
-        "handover_success_rate": handover_success_rate,
-        "handover_failure_rate": float(record.get("handover_failure_rate", max(0.0, 1.0 - handover_success_rate))),
-        "forced_termination_rate": float(record.get("forced_termination_rate", 0.0)),
-        "service_availability_rate": float(record.get("service_availability_rate", service_continuity_rate)),
-        "service_continuity_rate": service_continuity_rate,
-        "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
-        "task_success_rate": float(record.get("task_success_rate", record.get("task_completion_rate", 0.0))),
-        "task_failure_rate": float(record.get("task_failure_rate", record.get("deadline_violation_rate", 0.0))),
-        "task_settlement_rate": float(record.get("task_settlement_rate", record.get("task_resolution_rate", 0.0))),
-        "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
-        "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
-        "deadline_violation_rate": float(record.get("deadline_violation_rate", 0.0)),
-        "avg_load_balance_score": float(record.get("avg_load_balance_score", 0.0)),
-        "resolved_tasks": float(record.get("resolved_tasks", 0.0)),
-        "pending_tasks": float(record.get("pending_tasks", 0.0)),
-        "total_tasks": float(record.get("total_tasks", 0.0)),
-        "completed_tasks": float(record.get("completed_tasks", 0.0)),
-        "deadline_violations": float(record.get("deadline_violations", 0.0)),
-        "effective_latency_score": float(
-            record.get("effective_latency_score", compute_model_selection_score(record, "effective_latency_score"))
-        ),
-        "selection_metric": metric_name,
-        "selection_score": float(compute_model_selection_score(record, metric_name)),
-        "episode_metrics": [],
-        "training_history": str(history_path),
-        "source": f"history_best_{metric_name}",
-    }
-    if checkpoint is not None:
-        result["checkpoint"] = str(checkpoint)
-    for key, value in record.items():
-        if key.startswith("reward_") or key.startswith("penalty_"):
-            result[key] = float(value)
-    return result
-
-
-def method_from_episode_records(method_name: str, history_path: Path, checkpoint: Optional[Path]) -> Dict[str, Any]:
-    payload = load_json(history_path)
-    records = list(payload.get("evaluation", []))
-    if not records:
-        raise ValueError(f"No per-episode evaluation records found in {history_path}")
-    rewards = [float(record.get("reward", record.get("mean_reward", 0.0))) for record in records]
-    summaries: List[Dict[str, Any]] = []
-    for record in records:
-        summary = dict(record)
-        summary.pop("episode", None)
-        summary.pop("reward", None)
-        summaries.append(summary)
-    result = summarize_results(method_name, rewards, summaries, is_system=False)
-    result["training_history"] = str(history_path)
-    result["source"] = "history_episode_records"
-    if checkpoint is not None:
-        result["checkpoint"] = str(checkpoint)
-    return result
+    sanitized = dict(config_data)
+    sanitized["save_path"] = str(system_run_dir)
+    sanitized["log_path"] = str(compare_dir / "logs")
+    return sanitized
 
 
 def evaluate_maddpg_checkpoint(
@@ -158,16 +85,25 @@ def evaluate_maddpg_checkpoint(
 ) -> Dict[str, Any]:
     device = torch.device(resolve_device(device_name))
     payload = torch.load(checkpoint, map_location=device)
-    actor = MADDPGActor(int(payload["obs_dim"]), int(payload["handover_dim"])).to(device)
-    actor.load_state_dict(payload["actor_state_dict"])
+    cfg = dict(payload.get("config", {}))
+    cfg["device"] = str(device)
+    cfg.setdefault("num_agents", int(payload.get("num_agents", config_data.get("num_users", 20))))
+    cfg.setdefault("obs_dim", int(payload.get("obs_dim", 69)))
+    if "max_candidates" not in cfg and "handover_dim" in payload:
+        cfg["max_candidates"] = int(payload["handover_dim"]) - 1
+    algo = MADDPGAlgorithm(MADDPGConfig(**cfg))
+    algo.actor.load_state_dict(payload["actor_state_dict"])
+    algo.critic.load_state_dict(payload["critic_state_dict"])
+    algo.target_actor.load_state_dict(payload.get("target_actor_state_dict", payload["actor_state_dict"]))
+    algo.target_critic.load_state_dict(payload.get("target_critic_state_dict", payload["critic_state_dict"]))
+    algo.train_step = int(payload.get("train_step", 0))
     result = evaluate_maddpg_policy(
-        actor=actor,
+        algorithm=algo,
         objective=objective,
         config=config_data,
         episodes=episodes,
         seed=seed,
         max_steps=max_steps,
-        device=device,
     )
     result["checkpoint"] = str(checkpoint)
     result["training_history"] = str(checkpoint.parent / "training_history.json")
@@ -226,7 +162,11 @@ def main() -> None:
     system_checkpoint = system_run_dir / "best_model.pt"
 
     config_payload = load_json(system_history)
-    config_data = dict(config_payload.get("config", {}))
+    config_data = sanitize_artifact_config_paths(
+        dict(config_payload.get("config", {})),
+        system_run_dir=system_run_dir,
+        compare_dir=compare_dir,
+    )
     config_data["num_users"] = int(args.num_users)
     config_data["max_steps"] = int(args.max_steps)
     config_data["best_model_metric"] = args.metric
