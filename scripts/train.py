@@ -1820,30 +1820,13 @@ class HANPDQNTrainer(HANMADDPGTrainer):
 
     def _init_environment(self):
         super()._init_environment()
-        self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5
-        self.global_state_dim = self.num_agents * self.obs_dim
         self.logger.info(
             f"  - HAN+PDQN observation dim: {self.obs_dim} "
             f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim} + rvt/task 5)"
         )
 
     def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        encoded_observations, satellite_embeddings, available_actions, candidate_sat_ids = super()._encode_graph_state()
-        raw_observations = np.asarray(self.env._get_observation(), dtype=np.float32)
-        if raw_observations.ndim == 1:
-            raw_observations = raw_observations.reshape(1, -1)
-        if raw_observations.shape != (self.num_agents, self.raw_obs_dim):
-            padded = np.zeros((self.num_agents, self.raw_obs_dim), dtype=np.float32)
-            copy_rows = min(raw_observations.shape[0], self.num_agents)
-            copy_cols = min(raw_observations.shape[1], self.raw_obs_dim)
-            padded[:copy_rows, :copy_cols] = raw_observations[:copy_rows, :copy_cols]
-            raw_observations = padded
-        light_features = encoded_observations[:, self.han_out_dim : self.han_out_dim + 5]
-        observations = np.concatenate(
-            [raw_observations, encoded_observations[:, : self.han_out_dim], light_features],
-            axis=1,
-        ).astype(np.float32, copy=False)
-        return observations, satellite_embeddings, available_actions, candidate_sat_ids
+        return super()._encode_graph_state()
 
     def _epsilon_decay_steps(self) -> int:
         fraction = float(getattr(self.config, "epsilon_decay_fraction", 0.25))
