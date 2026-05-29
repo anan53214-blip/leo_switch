@@ -75,6 +75,37 @@ def test_mappo_act_rejects_misaligned_candidate_mask_shape(trainer):
         )
 
 
+def test_han_mappo_observation_includes_raw_obs_han_and_light_features():
+    run_id = uuid4().hex
+    save_path = f"results/han_mappo_obs_{run_id}"
+    log_path = f"results/han_mappo_obs_logs_{run_id}"
+    config = TrainConfig(
+        num_users=2,
+        max_steps=10,
+        total_timesteps=64,
+        n_steps=16,
+        batch_size=16,
+        eval_episodes=0,
+        device="cpu",
+        save_path=save_path,
+        log_path=log_path,
+    )
+    trainer_obj = HANMAPPOTrainer(config)
+    try:
+        trainer_obj.env.reset(seed=trainer_obj.config.seed)
+        observations, _, _, _ = trainer_obj._encode_graph_state()
+        raw_obs = trainer_obj.env._get_observation()
+
+        expected_dim = trainer_obj.raw_obs_dim + trainer_obj.config.han_out_dim + 5
+        assert trainer_obj.obs_dim == expected_dim
+        assert observations.shape == (trainer_obj.num_agents, expected_dim)
+        assert np.allclose(observations[:, : trainer_obj.raw_obs_dim], raw_obs)
+    finally:
+        trainer_obj.env.close()
+        shutil.rmtree(save_path, ignore_errors=True)
+        shutil.rmtree(log_path, ignore_errors=True)
+
+
 def test_han_pdqn_observation_includes_raw_obs_han_and_light_features():
     run_id = uuid4().hex
     save_path = f"results/han_pdqn_obs_{run_id}"
@@ -99,6 +130,10 @@ def test_han_pdqn_observation_includes_raw_obs_han_and_light_features():
         assert trainer_obj.obs_dim == trainer_obj.raw_obs_dim + trainer_obj.config.han_out_dim + 5
         assert observations.shape == (trainer_obj.num_agents, trainer_obj.obs_dim)
         assert np.allclose(observations[:, : trainer_obj.raw_obs_dim], raw_obs)
+        han_start = trainer_obj.raw_obs_dim
+        han_end = han_start + trainer_obj.config.han_out_dim
+        light_features = observations[:, han_end:]
+        assert light_features.shape == (trainer_obj.num_agents, 5)
     finally:
         trainer_obj.env.close()
         shutil.rmtree(save_path, ignore_errors=True)
