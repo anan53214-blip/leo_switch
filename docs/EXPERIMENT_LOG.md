@@ -471,3 +471,25 @@ figures.
 - Regeneration completed and wrote `comparison_summary.json`,
   `comparison_summary.csv`, `episode_metrics.csv`, `paper_baseline_dashboard.pdf`,
   `reward_curve_vs_baselines.pdf`, and the other comparison PDFs.
+
+## 2026-05-29 - HAN+MAPPO Raw-Plus-HAN Observation Path
+
+**Intent:** Prepare a diagnostic rerun that tests whether HAN provides
+incremental graph information to MAPPO instead of replacing the raw environment
+state with a frozen cached embedding.
+
+**Code changes made:**
+
+- `HANMAPPOTrainer` now builds policy observations as
+  `raw_observation + HAN_user_embedding + rvt_warning/task_features`.
+- `HANPDQNTrainer` reuses the shared raw-plus-HAN observation layout so it does
+  not prepend raw observations twice.
+- Regression tests cover the HAN+MAPPO and HAN+PDQN observation dimensions and
+  raw-observation prefix.
+
+**Expected metric effect:** This should reduce the risk that HAN+MAPPO
+underperforms MAPPO(no-HAN) because direct raw state features were removed. The
+first success criterion is a measurable improvement over MAPPO(no-HAN) on
+`effective_latency_score` without losing the existing energy advantage. This
+does not yet train the HAN encoder end-to-end and should be treated as an
+information-path ablation, not a final architecture claim.
