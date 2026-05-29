@@ -436,15 +436,18 @@ class HANMAPPOTrainer:
         # 环境的观测空间是 (num_users, user_obs_dim)
         self.raw_obs_dim = self.env.user_obs_dim
         self.han_out_dim = self.config.han_out_dim
-        # 最终观测 = HAN嵌入(64) + rvt_warning(1) + task_features(4) = 69
-        self.obs_dim = self.han_out_dim + 5
+        # Final observation = raw env obs + HAN embedding + rvt_warning(1) + task_features(4).
+        self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5
         
         # 全局状态维度 (所有用户观测拼接)
         self.global_state_dim = self.num_agents * self.obs_dim
         
         self.logger.info(f"  - 原始观测维度: {self.raw_obs_dim}")
         self.logger.info(f"  - HAN嵌入维度: {self.han_out_dim}")
-        self.logger.info(f"  - 拼接后观测维度: {self.obs_dim} (HAN {self.han_out_dim} + rvt_warning 1 + task 4)")
+        self.logger.info(
+            f"  - 拼接后观测维度: {self.obs_dim} "
+            f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim} + rvt_warning 1 + task 4)"
+        )
         self.logger.info(f"  - 全局状态维度: {self.global_state_dim}")
     
     def _create_eval_env(self) -> LEOSatelliteEnv:
@@ -543,6 +546,19 @@ class HANMAPPOTrainer:
         self._cached_han_user_embed = None
         self._cached_sat_embed = None
 
+    def _raw_policy_observations(self) -> np.ndarray:
+        raw_observations = np.asarray(self.env._get_observation(), dtype=np.float32)
+        if raw_observations.ndim == 1:
+            raw_observations = raw_observations.reshape(1, -1)
+        expected_shape = (self.num_agents, self.raw_obs_dim)
+        if raw_observations.shape != expected_shape:
+            padded = np.zeros(expected_shape, dtype=np.float32)
+            copy_rows = min(raw_observations.shape[0], self.num_agents)
+            copy_cols = min(raw_observations.shape[1], self.raw_obs_dim)
+            padded[:copy_rows, :copy_cols] = raw_observations[:copy_rows, :copy_cols]
+            raw_observations = padded
+        return raw_observations.astype(np.float32, copy=False)
+
     def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """构建异质图并使用 HAN 编码，返回用户嵌入、卫星嵌入、候选动作掩码和候选卫星ID。
 
@@ -617,7 +633,12 @@ class HANMAPPOTrainer:
                     sat_info.sat_id for sat_info in visible_sats[:valid_count]
                 ]
 
-        user_embeddings = np.concatenate([self._cached_han_user_embed, rvt_warning, task_features], axis=1)
+        raw_observations = self._raw_policy_observations()
+        light_features = np.concatenate([rvt_warning, task_features], axis=1)
+        user_embeddings = np.concatenate(
+            [raw_observations, self._cached_han_user_embed, light_features],
+            axis=1,
+        ).astype(np.float32, copy=False)
         return user_embeddings, self._cached_sat_embed, available_actions, candidate_sat_ids
 
     def _get_observations(self, env_obs: np.ndarray) -> tuple:
