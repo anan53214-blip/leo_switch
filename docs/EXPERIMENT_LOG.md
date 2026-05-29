@@ -472,6 +472,49 @@ figures.
   `comparison_summary.csv`, `episode_metrics.csv`, `paper_baseline_dashboard.pdf`,
   `reward_curve_vs_baselines.pdf`, and the other comparison PDFs.
 
+## 2026-05-29 - Graph-Update-1 300k/600s/u10 Latency-Priority Run Analysis
+
+**Experiment directories:**
+
+- System training: `results/full_train_latency_priority_g1_300k_600s_u10_20260528_235135`
+- Baseline comparison: `results/baseline_compare/g1_300k_600s_u10_20260528_235135`
+
+**Command/config summary:** Diagnostic HAN+MAPPO latency-priority suite with
+`graph_update_interval=1`, `total_timesteps=300000`, `max_steps=600`,
+`num_users=10`, `eval_episodes=3`, `compare_episodes=3`, seed `42`, and
+`best_model_metric=effective_latency_score`. Comparison ran in `compare_only`
+mode against MAPPO(no-HAN), Random, Min-Distance, Full-Local, and Joint Greedy.
+
+**Training result:** HAN+MAPPO completed `300032` steps / `293` episodes.
+Best checkpoint by `effective_latency_score` occurred at `50176` steps with
+`0.267513`; the final evaluation at `300032` steps had higher reward
+(`95.4994`) but slightly lower effective-latency score (`0.266341`). Training
+time was `12921.98` seconds.
+
+**Comparison result:** On the 3-episode comparison, Min-Distance ranked first
+by `effective_latency_score` (`0.285889`) and HAN+MAPPO ranked second
+(`0.262544`), just ahead of MAPPO(no-HAN) (`0.261964`). HAN+MAPPO led service
+continuity (`0.977033`), service availability (`0.979667`), total energy
+(`1775.56`), and energy per resolved task (`0.834772`). Min-Distance led
+average delay (`2.165214`), task completion (`0.926360`), and deadline
+violation (`0.073630`).
+
+**Diagnosis:** Updating the heterogeneous graph every step preserves fresh
+graph context and yields excellent energy efficiency and service continuity,
+but this 300k diagnostic run did not convert that extra graph freshness into a
+clear latency/task-success lead. Relative to MAPPO(no-HAN), HAN+MAPPO improved
+selection score by only `0.22%`, average delay by `0.31%`, and energy by
+`13.55%`; task completion was effectively tied. Relative to Min-Distance,
+HAN+MAPPO used about `59.6%` less energy but had worse delay, task completion,
+deadline violation, reward, and primary ranking score.
+
+**Follow-up decision:** Treat graph-update-1 as promising for energy/service
+stability, but not yet as a latency-priority winner. Next ablations should keep
+the same 10-user/600-step/300k setup and compare graph update intervals
+directly, or adjust the reward/selection objective to put stronger pressure on
+task success and deadline violations if the target is to beat Min-Distance on
+effective latency.
+
 ## 2026-05-29 - HAN+MAPPO Raw-Plus-HAN Observation Path
 
 **Intent:** Prepare a diagnostic rerun that tests whether HAN provides
@@ -493,3 +536,28 @@ first success criterion is a measurable improvement over MAPPO(no-HAN) on
 `effective_latency_score` without losing the existing energy advantage. This
 does not yet train the HAN encoder end-to-end and should be treated as an
 information-path ablation, not a final architecture claim.
+
+## 2026-05-29 - Raw-Plus-HAN CPU 50k Eval Smoke
+
+**Experiment directory:** `results/full_train_latency_priority_g1_300k_600s_u10_20260529_rawhan_cpu`
+
+**Configuration:** CPU diagnostic launch with `graph_update_interval=1`,
+`total_timesteps=300000`, `max_steps=600`, `num_users=10`,
+`eval_interval=50000`, `eval_episodes=3`, and
+`best_model_metric=effective_latency_score`. The run used the new raw-plus-HAN
+observation path and did not load an old checkpoint.
+
+**Observed result:** Training reached the first evaluation at `50176` steps
+without observation-shape or CPU execution errors. The first eval reported
+`effective_latency_score=0.2675`, `avg_delay=2.229s`, `task_completion=88.00%`,
+`service_continuity=98.17%`, `avg_load_balance=0.658`, mean reward `93.60`,
+and saved `best_model.pt`.
+
+**Stop condition:** The run was intentionally stopped after the first eval as a
+bug-smoke check, before final checkpoint/history export and before baseline
+comparison. Therefore `training_history.json` and `comparison_summary.json` were
+not produced for this partial run.
+
+**Follow-up decision:** The raw-plus-HAN policy-input path passes the CPU
+training/evaluation smoke gate. A full diagnostic comparison can reuse the same
+configuration with a fresh run id when a complete 300k run is needed.
