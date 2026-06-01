@@ -59,6 +59,7 @@ from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 try:
     from scripts.train import (
         BEST_MODEL_METRIC_CHOICES,
+        AttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
@@ -70,6 +71,7 @@ except ModuleNotFoundError:
     # Compatible with direct execution: python scripts/compare_system_baselines.py
     from train import (
         BEST_MODEL_METRIC_CHOICES,
+        AttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
@@ -107,6 +109,7 @@ DEFAULT_BASELINES = [
     "maddpg",
     "pdqn",
     "mappo_no_han",
+    "attn_mappo",
     "han_maddpg",
     "han_pdqn",
 ]
@@ -139,6 +142,7 @@ DISPLAY_NAME_MAP = {
     "maddpg": "MADDPG",
     "pdqn": "PDQN",
     "mappo_no_han": "MAPPO (no HAN)",
+    "attn_mappo": "Attn+MAPPO",
     "han_maddpg": "HAN+MADDPG",
     "han_pdqn": "HAN+PDQN",
 }
@@ -336,6 +340,7 @@ LEARNED_BASELINE_COLORS = {
     "maddpg": "#AF7AA1",
     "pdqn": "#EDC948",
     "mappo_no_han": "#59A14F",
+    "attn_mappo": "#1F77B4",
     "han_maddpg": "#17BECF",
     "han_pdqn": "#F28E2B",
 }
@@ -2485,6 +2490,12 @@ def trainer_class_for_objective(objective: str):
     return HANMAPPOTrainer
 
 
+def system_trainer_class_for_config(objective: str, config_data: Dict):
+    if str(config_data.get("algorithm", "mappo")) == "attn_mappo":
+        return AttentionMAPPOTrainer
+    return trainer_class_for_objective(objective)
+
+
 class NoHANTrainerMixin:
     """Mixin for MAPPO ablations that bypass the HAN graph encoder."""
 
@@ -2580,7 +2591,7 @@ def run_system_training(
     exp_name: Optional[str],
     resume_checkpoint: Optional[Path],
 ) -> tuple[Path, Optional[Path], Optional[Path], Dict]:
-    trainer_cls = trainer_class_for_objective(objective)
+    trainer_cls = system_trainer_class_for_config(objective, config_data)
     system_run_dir.mkdir(parents=True, exist_ok=True)
     config = train_config_from_dict(
         config_data,
@@ -2617,7 +2628,7 @@ def evaluate_system_checkpoint(
     device: str,
     max_steps: Optional[int],
 ) -> Dict:
-    trainer_cls = trainer_class_for_objective(objective)
+    trainer_cls = system_trainer_class_for_config(objective, config_data)
     config = train_config_from_dict(
         config_data,
         device=device,
@@ -2644,7 +2655,7 @@ def evaluate_system_checkpoint(
 
     for episode_idx in range(episodes):
         trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
-        observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
+        observations, satellite_embeddings, available_actions, candidate_sat_ids = trainer._encode_graph_state()
         done = False
         episode_reward = 0.0
 
@@ -2654,6 +2665,7 @@ def evaluate_system_checkpoint(
                     observations,
                     available_actions,
                     satellite_embeddings=satellite_embeddings,
+                    candidate_sat_ids=candidate_sat_ids,
                     deterministic=True,
                 )
 
@@ -2668,7 +2680,7 @@ def evaluate_system_checkpoint(
             done = terminated or truncated
 
             if not done:
-                observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
+                observations, satellite_embeddings, available_actions, candidate_sat_ids = trainer._encode_graph_state()
 
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
@@ -2717,7 +2729,7 @@ def evaluate_mappo_checkpoint_with_trainer(
 
     for episode_idx in range(episodes):
         trainer.env.reset(seed=int(config.seed) + episode_idx if config.seed is not None else None)
-        observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
+        observations, satellite_embeddings, available_actions, candidate_sat_ids = trainer._encode_graph_state()
         done = False
         episode_reward = 0.0
 
@@ -2727,6 +2739,7 @@ def evaluate_mappo_checkpoint_with_trainer(
                     observations,
                     available_actions,
                     satellite_embeddings=satellite_embeddings,
+                    candidate_sat_ids=candidate_sat_ids,
                     deterministic=True,
                 )
 
@@ -2741,7 +2754,7 @@ def evaluate_mappo_checkpoint_with_trainer(
             done = terminated or truncated
 
             if not done:
-                observations, satellite_embeddings, available_actions, *_ = trainer._encode_graph_state()
+                observations, satellite_embeddings, available_actions, candidate_sat_ids = trainer._encode_graph_state()
 
         rewards.append(episode_reward)
         summaries.append(trainer.env.get_stats_summary())
@@ -2789,6 +2802,51 @@ def train_and_evaluate_no_han_mappo(
         max_steps=max_steps,
         trainer_cls=trainer_cls,
         method_name="mappo_no_han",
+        is_system=False,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint)
+    history_path = save_dir / "training_history.json"
+    if history_path.exists():
+        result["training_history"] = str(history_path)
+    return result
+
+
+def train_and_evaluate_attention_mappo(
+    config_data: Dict,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+) -> Dict:
+    save_dir = output_dir / "learned_baselines" / "attn_mappo"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        save_path=save_dir,
+        exp_name="attn_mappo",
+    )
+    config.algorithm = "attn_mappo"
+    trainer = AttentionMAPPOTrainer(config)
+    trainer.train()
+    checkpoint = save_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = save_dir / "final_model.pt"
+    result = evaluate_mappo_checkpoint_with_trainer(
+        checkpoint=checkpoint,
+        config_data=asdict(config),
+        episodes=episodes,
+        device=resolve_device(device),
+        max_steps=max_steps,
+        trainer_cls=AttentionMAPPOTrainer,
+        method_name="attn_mappo",
         is_system=False,
     )
     result["trained_timesteps"] = int(total_timesteps)
@@ -4063,6 +4121,8 @@ def parse_args() -> argparse.Namespace:
                         help="Training steps for the PDQN baseline. Defaults to --total-timesteps.")
     parser.add_argument("--no-han-total-timesteps", type=int, default=None,
                         help="Training steps for the MAPPO(no-HAN) ablation. Defaults to --total-timesteps.")
+    parser.add_argument("--attn-mappo-timesteps", type=int, default=None,
+                        help="Training steps for the Attn+MAPPO baseline. Defaults to --total-timesteps.")
     parser.add_argument("--skip-system-eval", action="store_true",
                         help="Skip checkpoint evaluation and only use history summary when available.")
     parser.add_argument("--plot-window", type=int, default=DEFAULT_PLOT_WINDOW,
@@ -4218,6 +4278,17 @@ def main() -> None:
                 early_stop_patience=args.early_stop_patience,
             )
             result["source"] = "mappo_no_han_train_eval"
+        elif baseline_name == "attn_mappo":
+            result = train_and_evaluate_attention_mappo(
+                config_data=config_data,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.attn_mappo_timesteps or args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
+            )
+            result["source"] = "attn_mappo_train_eval"
         elif baseline_name == "han_maddpg":
             result = train_and_evaluate_han_maddpg_baseline(
                 config_data=config_data,

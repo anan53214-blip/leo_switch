@@ -53,6 +53,12 @@ from .critic import (
     CentralizedCritic
 )
 
+from .candidate_attention import (
+    CandidateAttentionConfig,
+    SatelliteLoadEncoder,
+    CandidateAttentionActor,
+)
+
 __all__ = [
     # Layers
     'MLP',
@@ -71,4 +77,8 @@ __all__ = [
     'CriticConfig',
     'SharedCritic',
     'CentralizedCritic',
+    # Candidate attention
+    'CandidateAttentionConfig',
+    'SatelliteLoadEncoder',
+    'CandidateAttentionActor',
 ]

@@ -15,9 +15,9 @@ full-suite directories:
     results/baseline_compare/g1_300k_600s_u10_<run_id>
 
 By default the comparison stage is intentionally lightweight: it compares the
-trained HAN+MAPPO system against MAPPO without HAN and simple rule-based
-baselines only. Off-policy learned baselines such as MADDPG/PDQN are excluded
-unless explicitly requested with --baselines.
+trained HAN+MAPPO system against Attn+MAPPO, MAPPO without HAN, and simple
+rule-based baselines only. Off-policy learned baselines such as MADDPG/PDQN are
+excluded unless explicitly requested with --baselines.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUN_LABEL = "g1_300k_600s_u10"
 DEFAULT_BASELINES = (
     "mappo_no_han",
+    "attn_mappo",
     "random",
     "min_distance",
     "full_local",
@@ -192,7 +193,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Train the graph-update-1 latency-priority HAN+MAPPO diagnostic run, "
-            "then compare it with MAPPO(no-HAN) and simple rule-based baselines."
+            "then compare it with Attn+MAPPO, MAPPO(no-HAN), and simple rule-based baselines."
         )
     )
     parser.add_argument(
@@ -224,9 +225,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         nargs="+",
         default=list(DEFAULT_BASELINES),
         help=(
-            "Baselines for comparison. Defaults to MAPPO(no-HAN) plus simple "
-            "rule-based baselines; pass 'all' only when you also want learned "
-            "MADDPG/PDQN-style baselines."
+            "Baselines for comparison. Defaults to Attn+MAPPO, MAPPO(no-HAN), "
+            "and simple rule-based baselines; pass 'all' only when you also "
+            "want learned MADDPG/PDQN-style baselines."
         ),
     )
     parser.add_argument("--best-model-metric", type=str, default="effective_latency_score")

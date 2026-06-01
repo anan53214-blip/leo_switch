@@ -36,6 +36,8 @@ from .mappo import (
     MAPPO
 )
 
+from .attention_mappo import AttentionMAPPO
+
 from .maddpg import (
     MADDPGConfig,
     MADDPGActor,
@@ -62,6 +64,7 @@ __all__ = [
     'MultiAgentReplayBuffer',
     'MAPPOConfig',
     'MAPPO',
+    'AttentionMAPPO',
     'MADDPGConfig',
     'MADDPGActor',
     'HANCentralizedCritic',

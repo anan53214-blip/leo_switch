@@ -561,3 +561,83 @@ not produced for this partial run.
 **Follow-up decision:** The raw-plus-HAN policy-input path passes the CPU
 training/evaluation smoke gate. A full diagnostic comparison can reuse the same
 configuration with a fresh run id when a complete 300k run is needed.
+
+## 2026-06-01 - Raw-Plus-HAN g1 300k/600s/u10 Full Diagnostic Result
+
+**Experiment directories:**
+
+- System training: `results/full_train_latency_priority_g1_300k_600s_u10_20260529_130351`
+- Baseline comparison: `results/baseline_compare/g1_300k_600s_u10_20260529_130351`
+
+**Configuration:** Full raw-plus-HAN diagnostic run with
+`graph_update_interval=1`, `total_timesteps=300000`, `max_steps=600`,
+`num_users=10`, `eval_episodes=3`, `compare_episodes=3`,
+`best_model_metric=effective_latency_score`, and comparison ranking by
+`effective_latency_score`. Reward weights remained the balanced defaults:
+delay `0.25`, energy `0.15`, QoS `0.30`, service interruption `0.15`, and
+deadline penalty `0.30`.
+
+**Training result:** HAN+MAPPO completed `300032` steps / `293` episodes.
+Best eval checkpoint by `effective_latency_score` occurred at `50176` steps
+with score `0.269787`, average delay `2.2080`, task completion `0.8831`,
+deadline violation `0.1169`, service continuity `0.9800`, and energy per
+resolved task `0.8494`. The final eval at `300032` steps dropped to
+`effective_latency_score=0.259076`, `avg_delay=2.2663`, and
+`task_completion=0.8699`. Training time was `6400.11` seconds.
+
+**Comparison result:** On the 3-episode comparison, Min-Distance still ranked
+first by `effective_latency_score` (`0.285889`). Raw-plus-HAN+MAPPO ranked
+second (`0.262687`), ahead of MAPPO(no-HAN) (`0.261964`) but only by `0.28%`.
+Compared with the previous g1 HAN+MAPPO run (`20260528_235135`), the system
+score improved by only `0.05%`; average delay improved by `0.09%`, service
+continuity by `0.01%`, and energy per resolved task regressed by `3.18%`.
+Task completion was effectively unchanged and slightly lower
+(`0.869742` vs `0.869900`).
+
+**Diagnosis:** Raw-plus-HAN fixed the information-path concern but did not
+unlock a meaningful HAN advantage for MAPPO. The comparison cleared neither
+the planned `1%` improvement gate over MAPPO(no-HAN) nor the task-success gap
+to Min-Distance. HAN+MAPPO still leads service continuity and availability and
+is much more energy efficient than Min-Distance, but the decisive weakness is
+unchanged: task completion and deadline violation remain near MAPPO(no-HAN)
+and far behind Min-Distance.
+
+**Follow-up decision:** Do not spend more runs only on raw-plus-HAN or
+graph-update interval. The next useful ablation should change the learning
+problem: either make HAN/HGT trainable or auxiliary-supervised, or introduce a
+hierarchical heuristic-prior/residual-RL policy that starts from a
+deadline-aware Min-Distance/greedy action and lets MAPPO learn corrections.
+
+## 2026-06-01 - Attn+MAPPO Candidate-Attention Baseline Added
+
+**Code change:** Added an independent `attn_mappo` algorithm path for direct
+comparison with HAN+MAPPO. The new actor uses global satellite load
+self-attention plus user-to-candidate cross-attention over the raw visible
+satellite block. It does not call the heterogeneous graph builder or HAN
+encoder, so it is a clean alternative to both HAN+MAPPO and MAPPO(no-HAN).
+
+**Entry points:** `scripts/train.py --algorithm attn_mappo` trains the new
+method. `scripts/compare_system_baselines.py --baselines attn_mappo ...`
+trains/evaluates it as a learned baseline and labels it as `Attn+MAPPO`.
+The g1 diagnostic suite now includes `attn_mappo` in its default comparison
+set.
+
+**Smoke experiment directory:** `results/attn_mappo_smoke`
+
+**Smoke configuration:** CPU-only functional smoke with `num_users=2`,
+`total_timesteps=16`, `max_steps=5`, `n_steps=8`, `batch_size=8`,
+`n_epochs=1`, `eval_interval=8`, and
+`best_model_metric=effective_latency_score`.
+
+**Observed result:** The rollout, PPO update, evaluation, checkpoint save, and
+`training_history.json` export all completed. The first smoke evaluation saved
+`best_model.pt` with `effective_latency_score=0.3276`, `avg_delay=2.052s`,
+task completion `100.00%`, service continuity `100.00%`, and load balance
+`1.000`. These values are only a wiring smoke, not a performance claim.
+
+**Expected metric effect:** This baseline should test whether explicit load
+attention over visible candidate satellites can improve deadline-sensitive
+handover/offloading without relying on the current non-end-to-end HAN path.
+The success gate for a real 300k g1 run is outperforming both HAN+MAPPO and
+MAPPO(no-HAN) on `effective_latency_score`, while keeping service continuity
+and energy per resolved task near the current HAN+MAPPO level.

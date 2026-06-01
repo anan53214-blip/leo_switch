@@ -59,6 +59,7 @@ from src.model.hetero_gnn import HANEncoder, HANConfig
 from src.model.actor import MultiAgentActor, ActorConfig
 from src.model.critic import CentralizedCritic, CriticConfig
 from src.algorithm.mappo import MAPPO, MAPPOConfig
+from src.algorithm.attention_mappo import AttentionMAPPO
 from src.algorithm.buffer import MultiAgentRolloutBuffer
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
 from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
@@ -1354,6 +1355,176 @@ class HANMAPPOTrainer:
         self.logger.info(f"从步数 {self.total_steps:,} 恢复训练")
 
 
+class AttentionMAPPOTrainer(HANMAPPOTrainer):
+    """Raw observation MAPPO with satellite-load attention over candidate links."""
+
+    algorithm_name = "attn_mappo"
+    sat_feature_dim = 8
+
+    def _init_environment(self):
+        self.logger.info("Initializing environment for AttentionMAPPO...")
+
+        env_config = EnvConfig(
+            num_planes=self.config.num_planes,
+            sats_per_plane=self.config.sats_per_plane,
+            altitude_km=self.config.altitude_km,
+            inclination_deg=self.config.inclination_deg,
+            num_users=self.config.num_users,
+            max_steps=self.config.max_steps,
+            time_step_sec=self.config.time_step_sec,
+            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
+            reward_delay_weight=self.config.reward_delay_weight,
+            reward_energy_weight=self.config.reward_energy_weight,
+            reward_handover_weight=self.config.reward_handover_weight,
+            reward_load_balance_weight=self.config.reward_load_balance_weight,
+            reward_qos_weight=self.config.reward_qos_weight,
+            reward_service_continuity_weight=self.config.reward_service_continuity_weight,
+            reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
+            reward_deadline_penalty=self.config.reward_deadline_penalty,
+            pre_handover_rvt_sec=self.config.pre_handover_rvt_sec,
+            seed=self.config.seed,
+        )
+
+        self.env = LEOSatelliteEnv(env_config)
+        self.num_agents = self.config.num_users
+        self.max_candidates = self.config.max_visible_sats
+        self.raw_obs_dim = self.env.user_obs_dim
+        self.han_out_dim = self.sat_feature_dim
+        self.obs_dim = self.raw_obs_dim
+        self.global_state_dim = self.num_agents * self.obs_dim
+
+        self.logger.info(f"  - Raw observation dim: {self.raw_obs_dim}")
+        self.logger.info(f"  - Satellite load feature dim: {self.sat_feature_dim}")
+        self.logger.info(f"  - Policy observation dim: {self.obs_dim}")
+        self.logger.info(f"  - Global state dim: {self.global_state_dim}")
+
+    def _init_graph_builder(self):
+        self.feature_extractor = None
+        self.graph_builder = None
+        self.logger.info("AttentionMAPPO skips heterogeneous graph construction.")
+
+    def _init_han_encoder(self):
+        self.han_encoder = torch.nn.Identity().to(self.device)
+        self.logger.info("AttentionMAPPO uses raw_obs + satellite load attention; no HAN encoder.")
+
+    def _init_mappo(self):
+        self.logger.info("Initializing AttentionMAPPO...")
+
+        mappo_config = MAPPOConfig(
+            num_agents=self.num_agents,
+            obs_dim=self.obs_dim,
+            global_state_dim=self.global_state_dim,
+            max_candidates=self.max_candidates,
+            sat_embed_dim=self.sat_feature_dim,
+            actor_hidden_dims=list(self.config.actor_hidden_dims),
+            critic_hidden_dims=list(self.config.critic_hidden_dims),
+            clip_range=self.config.clip_range,
+            clip_range_vf=self.config.clip_range_vf,
+            value_loss_coef=self.config.value_loss_coef,
+            value_loss_type=self.config.value_loss_type,
+            normalize_returns=self.config.normalize_returns,
+            value_huber_beta=self.config.value_huber_beta,
+            entropy_coef=self.config.entropy_coef,
+            entropy_schedule=self.config.entropy_schedule,
+            learning_rate=self.config.learning_rate,
+            max_grad_norm=self.config.max_grad_norm,
+            n_epochs=self.config.n_epochs,
+            batch_size=self.config.batch_size,
+            gamma=self.config.gamma,
+            gae_lambda=self.config.gae_lambda,
+            device=self.config.device,
+        )
+
+        self.mappo = AttentionMAPPO(mappo_config)
+        actor_params = sum(p.numel() for p in self.mappo.actor.parameters())
+        critic_params = sum(p.numel() for p in self.mappo.critic.parameters())
+        self.logger.info(f"  - Attention Actor params: {actor_params:,}")
+        self.logger.info(f"  - Critic params: {critic_params:,}")
+
+    def _invalidate_han_cache(self) -> None:
+        return None
+
+    def _satellite_load_features(self) -> np.ndarray:
+        features = np.zeros(
+            (self.env.num_satellites, self.sat_feature_dim),
+            dtype=np.float32,
+        )
+        visible_count = np.zeros(self.env.num_satellites, dtype=np.float32)
+        snr_sum = np.zeros(self.env.num_satellites, dtype=np.float32)
+        rvt_sum = np.zeros(self.env.num_satellites, dtype=np.float32)
+        demand_sum = np.zeros(self.env.num_satellites, dtype=np.float32)
+
+        for user in self.env.user_manager.users:
+            task = self.env.user_tasks.get(user.user_id)
+            task_demand = 0.0
+            if task is not None:
+                data_score = float(task.data_size) / 1e8
+                compute_score = float(task.computation) / 1e10
+                task_demand = 0.5 * data_score + 0.5 * compute_score
+            for vis in self.env._get_visible_satellites(user):
+                sid = int(vis.sat_id)
+                visible_count[sid] += 1.0
+                snr_sum[sid] += self.env.channel.compute_snr_db(
+                    vis.distance_km,
+                    vis.elevation_deg,
+                )
+                rvt_sum[sid] += float(vis.rvt_seconds)
+                demand_sum[sid] += task_demand
+
+        for sid in range(self.env.num_satellites):
+            server = self.env.mec_manager.get_server(sid)
+            utilization = 0.0
+            queue_ratio = 0.0
+            connected_ratio = 0.0
+            if server is not None:
+                utilization = float(server.utilization)
+                queue_ratio = (
+                    float(server.queue_length)
+                    / max(float(server.config.max_queue_size), 1.0)
+                )
+                connected_ratio = (
+                    float(len(server.connected_users))
+                    / max(float(self.num_agents), 1.0)
+                )
+            count = max(float(visible_count[sid]), 1.0)
+            features[sid] = [
+                sid / max(float(self.env.num_satellites), 1.0),
+                np.clip(utilization, 0.0, 1.0),
+                np.clip(queue_ratio, 0.0, 1.0),
+                np.clip(connected_ratio, 0.0, 1.0),
+                np.clip(visible_count[sid] / max(float(self.num_agents), 1.0), 0.0, 1.0),
+                np.clip(demand_sum[sid] / count, 0.0, 1.0),
+                np.clip((snr_sum[sid] / count) / 50.0, 0.0, 1.0),
+                np.clip((rvt_sum[sid] / count) / 600.0, 0.0, 1.0),
+            ]
+        return features
+
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        raw_observations = self._raw_policy_observations()
+        satellite_features = self._satellite_load_features()
+        available_actions = np.zeros(
+            (self.num_agents, self.max_candidates + 1),
+            dtype=np.float32,
+        )
+        available_actions[:, 0] = 1.0
+        candidate_sat_ids = np.full(
+            (self.num_agents, self.max_candidates),
+            -1,
+            dtype=np.int64,
+        )
+
+        for uid, user in enumerate(self.env.user_manager.users):
+            visible_sats = self.env._get_visible_satellites(user)
+            valid_count = min(len(visible_sats), self.max_candidates)
+            if valid_count > 0:
+                available_actions[uid, 1 : valid_count + 1] = 1.0
+                candidate_sat_ids[uid, :valid_count] = [
+                    sat_info.sat_id for sat_info in visible_sats[:valid_count]
+                ]
+
+        return raw_observations, satellite_features, available_actions, candidate_sat_ids
+
+
 class HANMADDPGTrainer(HANMAPPOTrainer):
     """HAN feature encoder with off-policy MADDPG on cached no-grad user embeddings."""
 
@@ -1925,8 +2096,8 @@ def parse_args():
         "--algorithm",
         type=str,
         default="mappo",
-        choices=["mappo", "maddpg", "pdqn"],
-        help="Training algorithm: mappo, maddpg, or pdqn",
+        choices=["mappo", "attn_mappo", "maddpg", "pdqn"],
+        help="Training algorithm: mappo, attn_mappo, maddpg, or pdqn",
     )
     
     # 环境参数
@@ -2071,6 +2242,7 @@ def main():
     # 创建训练器
     trainer_cls = {
         "mappo": HANMAPPOTrainer,
+        "attn_mappo": AttentionMAPPOTrainer,
         "maddpg": HANMADDPGTrainer,
         "pdqn": HANPDQNTrainer,
     }[config.algorithm]

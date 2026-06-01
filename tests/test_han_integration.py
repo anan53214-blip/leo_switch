@@ -140,6 +140,53 @@ def test_han_pdqn_observation_includes_raw_obs_han_and_light_features():
         shutil.rmtree(log_path, ignore_errors=True)
 
 
+def test_attention_mappo_trainer_builds_attention_state_without_han():
+    from scripts.train import AttentionMAPPOTrainer
+
+    run_id = uuid4().hex
+    save_path = f"results/attn_mappo_obs_{run_id}"
+    log_path = f"results/attn_mappo_obs_logs_{run_id}"
+    config = TrainConfig(
+        num_users=2,
+        max_steps=10,
+        total_timesteps=64,
+        n_steps=16,
+        batch_size=16,
+        eval_episodes=0,
+        device="cpu",
+        save_path=save_path,
+        log_path=log_path,
+        algorithm="attn_mappo",
+    )
+    trainer_obj = AttentionMAPPOTrainer(config)
+    try:
+        trainer_obj.env.reset(seed=trainer_obj.config.seed)
+        observations, satellite_features, available_actions, candidate_sat_ids = (
+            trainer_obj._encode_graph_state()
+        )
+        raw_obs = trainer_obj.env._get_observation()
+
+        assert trainer_obj.obs_dim == trainer_obj.raw_obs_dim
+        assert observations.shape == (trainer_obj.num_agents, trainer_obj.raw_obs_dim)
+        assert np.allclose(observations, raw_obs)
+        assert satellite_features.shape == (
+            trainer_obj.env.num_satellites,
+            trainer_obj.sat_feature_dim,
+        )
+        assert available_actions.shape == (
+            trainer_obj.num_agents,
+            trainer_obj.max_candidates + 1,
+        )
+        assert candidate_sat_ids.shape == (
+            trainer_obj.num_agents,
+            trainer_obj.max_candidates,
+        )
+    finally:
+        trainer_obj.env.close()
+        shutil.rmtree(save_path, ignore_errors=True)
+        shutil.rmtree(log_path, ignore_errors=True)
+
+
 def test_han_pdqn_warmup_uses_seventy_percent_safe_heuristic_mix():
     trainer_obj = HANPDQNTrainer.__new__(HANPDQNTrainer)
     trainer_obj.config = SimpleNamespace(warmup_steps=10)
