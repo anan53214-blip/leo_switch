@@ -641,3 +641,50 @@ handover/offloading without relying on the current non-end-to-end HAN path.
 The success gate for a real 300k g1 run is outperforming both HAN+MAPPO and
 MAPPO(no-HAN) on `effective_latency_score`, while keeping service continuity
 and energy per resolved task near the current HAN+MAPPO level.
+
+## 2026-06-02 - Deadline-Priority Reward Redesign
+
+**Context:** The 2026-06-01 Attn+MAPPO g1 comparison showed that candidate
+attention learned the lowest energy per resolved task (`0.7492`) but ranked
+behind HAN+MAPPO and MAPPO(no-HAN) on `effective_latency_score`. Diagnosis was
+that the current additive reward allowed energy savings and enqueue bonuses to
+partly offset deadline misses, while the primary score is directly limited by
+delay, service continuity, and task success.
+
+**Code change:** Reworked the task reward in `src/environment/gym_env.py` to
+make deadline success the primary objective and energy a secondary objective:
+
+- Default weights changed from delay `0.25`, energy `0.15`, QoS `0.30`,
+  deadline penalty `0.30`, enqueue bonus `0.02` to delay `0.35`, energy
+  `0.05`, QoS/success `0.40`, deadline-slack reward `0.25`, fixed failed-task
+  penalty `0.80`, deadline-excess penalty `1.00`, and enqueue bonus `0.0`.
+- Successful tasks now receive `reward_task_success` plus
+  `reward_deadline_slack`; delay is a normalized negative cost based on
+  `total_delay / max_delay`.
+- Energy is no longer a positive reward and is only charged as a small
+  successful-task penalty. Failed tasks cannot recover reward by being
+  energy-efficient.
+- Deadline failures now record both `penalty_task_failure` and
+  `penalty_deadline`.
+- The new reward fields are propagated through `scripts/train.py` and
+  `scripts/compare_system_baselines.py` so training history, comparison CSV,
+  and reward-component plots expose the new terms.
+
+**Rationale:** This matches the common LEO/satellite MEC formulation where
+deadline/QoS is treated as a hard or high-priority constraint and energy is
+optimized after QoS is satisfied. It should push Attn+MAPPO and MAPPO-family
+policies away from "cheap but late" offloading behavior and toward task
+success/deadline improvement.
+
+**Verification:**
+
+- `pytest tests/test_reward_function.py -q`
+- `pytest tests/test_env_metrics.py -q`
+- `pytest tests/test_baseline_plotting.py tests/test_generate_comparison_from_artifacts.py -q`
+- `pytest tests/test_candidate_attention.py tests/test_han_integration.py::test_attention_mappo_trainer_builds_attention_state_without_han -q`
+
+**Follow-up decision:** Rerun the g1 300k/600s/u10 suite with the new reward
+defaults, preferably with `compare_episodes >= 10` and multiple seeds. Success
+criteria are lower `deadline_violation_rate`, higher `task_success_rate`, and
+an `effective_latency_score` gain over both HAN+MAPPO and MAPPO(no-HAN),
+while monitoring whether Attn+MAPPO keeps a meaningful energy advantage.

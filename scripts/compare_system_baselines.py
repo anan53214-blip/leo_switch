@@ -181,11 +181,14 @@ REWARD_BREAKDOWN_KEYS = [
     "reward_delay",
     "reward_energy",
     "reward_qos",
+    "reward_task_success",
+    "reward_deadline_slack",
     "reward_service_continuity",
     "reward_handover",
     "reward_load_balance",
     "reward_enqueue",
     "penalty_deadline",
+    "penalty_task_failure",
     "penalty_queue_full",
     "penalty_invalid_action",
     "penalty_blocked",
@@ -248,11 +251,14 @@ REWARD_COMPONENT_STEP_METRICS = [
     ("reward_delay", "Delay Reward", "Reward Term", 1.0),
     ("reward_energy", "Energy Reward", "Reward Term", 1.0),
     ("reward_qos", "QoS Reward", "Reward Term", 1.0),
+    ("reward_task_success", "Task Success Reward", "Reward Term", 1.0),
+    ("reward_deadline_slack", "Deadline Slack Reward", "Reward Term", 1.0),
     ("reward_service_continuity", "Service Interruption Penalty", "Penalty Term", 1.0),
     ("reward_handover", "Handover Reward", "Reward Term", 1.0),
     ("reward_load_balance", "Load Balance Reward", "Reward Term", 1.0),
     ("reward_enqueue", "Enqueue Reward", "Reward Term", 1.0),
     ("penalty_deadline", "Deadline Penalty", "Penalty Term", 1.0),
+    ("penalty_task_failure", "Task Failure Penalty", "Penalty Term", 1.0),
     ("penalty_failed_handover", "Failed Handover Penalty", "Penalty Term", 1.0),
     ("penalty_handover_cost", "Handover Cost Penalty", "Penalty Term", 1.0),
     ("penalty_blocked", "Blocked-Service Penalty", "Penalty Term", 1.0),
@@ -794,11 +800,20 @@ def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_st
         reward_service_continuity_weight=float(
             config.get("reward_service_continuity_weight", EnvConfig.reward_service_continuity_weight)
         ),
+        reward_deadline_slack_weight=float(
+            config.get("reward_deadline_slack_weight", EnvConfig.reward_deadline_slack_weight)
+        ),
+        reward_enqueue_bonus=float(
+            config.get("reward_enqueue_bonus", EnvConfig.reward_enqueue_bonus)
+        ),
         reward_failed_handover_penalty=float(
             config.get("reward_failed_handover_penalty", EnvConfig.reward_failed_handover_penalty)
         ),
         reward_deadline_penalty=float(
             config.get("reward_deadline_penalty", EnvConfig.reward_deadline_penalty)
+        ),
+        reward_failed_task_penalty=float(
+            config.get("reward_failed_task_penalty", EnvConfig.reward_failed_task_penalty)
         ),
         seed=seed if seed is not None else config.get("seed"),
     )
@@ -873,13 +888,16 @@ def build_default_train_config(
         config["reward_service_continuity_weight"] = 0.0
     else:
         config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
-        config["reward_delay_weight"] = 0.25
-        config["reward_energy_weight"] = 0.15
+        config["reward_delay_weight"] = 0.35
+        config["reward_energy_weight"] = 0.05
         config["reward_handover_weight"] = 0.10
         config["reward_load_balance_weight"] = 0.05
-        config["reward_qos_weight"] = 0.30
+        config["reward_qos_weight"] = 0.40
         config["reward_service_continuity_weight"] = 0.15
-        config["reward_deadline_penalty"] = 0.30
+        config["reward_deadline_slack_weight"] = 0.25
+        config["reward_enqueue_bonus"] = 0.0
+        config["reward_deadline_penalty"] = 1.00
+        config["reward_failed_task_penalty"] = 0.80
     return config
 
 

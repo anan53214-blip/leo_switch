@@ -116,11 +116,14 @@ def test_info_contains_reward_breakdown_and_load_balance():
             'reward_delay',
             'reward_energy',
             'reward_qos',
+            'reward_task_success',
+            'reward_deadline_slack',
             'reward_service_continuity',
             'reward_handover',
             'reward_load_balance',
             'reward_enqueue',
             'penalty_deadline',
+            'penalty_task_failure',
             'penalty_queue_full',
         ]:
             assert key in info['stats']
@@ -150,6 +153,48 @@ def test_service_continuity_term_stays_bounded_over_long_episodes():
         env.close()
 
 
+def test_task_reward_prioritizes_deadline_success_over_energy_savings():
+    env = _build_single_user_env()
+
+    try:
+        success_reward, success_terms = env._compute_task_reward(
+            total_delay=1.0,
+            total_energy=8.0,
+            max_delay=2.0,
+        )
+        late_reward, late_terms = env._compute_task_reward(
+            total_delay=2.2,
+            total_energy=0.0,
+            max_delay=2.0,
+        )
+
+        assert success_terms["reward_task_success"] > 0.0
+        assert success_terms["reward_deadline_slack"] > 0.0
+        assert success_terms["reward_energy"] < 0.0
+        assert late_terms["penalty_task_failure"] < 0.0
+        assert late_terms["penalty_deadline"] < 0.0
+        assert late_reward < 0.0
+        assert success_reward > late_reward
+    finally:
+        env.close()
+
+
+def test_energy_penalty_only_applies_to_successful_tasks():
+    env = _build_single_user_env()
+
+    try:
+        _, late_terms = env._compute_task_reward(
+            total_delay=3.0,
+            total_energy=10.0,
+            max_delay=1.0,
+        )
+
+        assert late_terms["reward_energy"] == pytest.approx(0.0)
+        assert late_terms["penalty_task_failure"] < 0.0
+    finally:
+        env.close()
+
+
 def test_training_defaults_use_balanced_update_budget():
     config = TrainConfig()
 
@@ -164,13 +209,16 @@ def test_reward_default_weights_are_balanced():
     train_config = TrainConfig()
 
     expected = {
-        "reward_delay_weight": 0.25,
-        "reward_energy_weight": 0.15,
+        "reward_delay_weight": 0.35,
+        "reward_energy_weight": 0.05,
         "reward_handover_weight": 0.10,
         "reward_load_balance_weight": 0.05,
-        "reward_qos_weight": 0.30,
+        "reward_qos_weight": 0.40,
         "reward_service_continuity_weight": 0.15,
-        "reward_deadline_penalty": 0.30,
+        "reward_deadline_penalty": 1.00,
+        "reward_failed_task_penalty": 0.80,
+        "reward_deadline_slack_weight": 0.25,
+        "reward_enqueue_bonus": 0.0,
     }
 
     for key, value in expected.items():
@@ -178,15 +226,24 @@ def test_reward_default_weights_are_balanced():
         assert getattr(train_config, key) == pytest.approx(value)
 
 
-def test_server_training_defaults_use_balanced_reward_weights():
-    from scripts.run_server_training import STANDARD_CONFIG, build_training_config
+def test_comparison_defaults_use_deadline_priority_reward_weights():
+    from scripts.compare_system_baselines import build_default_train_config
 
-    config = build_training_config(STANDARD_CONFIG, algorithm="mappo")
+    config = build_default_train_config(
+        objective="multi_objective",
+        seed=42,
+        max_steps=600,
+        num_users=10,
+        best_model_metric="effective_latency_score",
+    )
 
-    assert config.reward_delay_weight == pytest.approx(0.25)
-    assert config.reward_energy_weight == pytest.approx(0.15)
-    assert config.reward_handover_weight == pytest.approx(0.10)
-    assert config.reward_load_balance_weight == pytest.approx(0.05)
-    assert config.reward_qos_weight == pytest.approx(0.30)
-    assert config.reward_service_continuity_weight == pytest.approx(0.15)
-    assert config.reward_deadline_penalty == pytest.approx(0.30)
+    assert config["reward_delay_weight"] == pytest.approx(0.35)
+    assert config["reward_energy_weight"] == pytest.approx(0.05)
+    assert config["reward_handover_weight"] == pytest.approx(0.10)
+    assert config["reward_load_balance_weight"] == pytest.approx(0.05)
+    assert config["reward_qos_weight"] == pytest.approx(0.40)
+    assert config["reward_service_continuity_weight"] == pytest.approx(0.15)
+    assert config["reward_deadline_penalty"] == pytest.approx(1.00)
+    assert config["reward_failed_task_penalty"] == pytest.approx(0.80)
+    assert config["reward_deadline_slack_weight"] == pytest.approx(0.25)
+    assert config["reward_enqueue_bonus"] == pytest.approx(0.0)

@@ -196,14 +196,17 @@ class TrainConfig:
     max_steps: int = 600                  # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
     min_effective_offload_ratio: float = 0.05
-    reward_delay_weight: float = 0.25
-    reward_energy_weight: float = 0.15
+    reward_delay_weight: float = 0.35
+    reward_energy_weight: float = 0.05
     reward_handover_weight: float = 0.10
     reward_load_balance_weight: float = 0.05
-    reward_qos_weight: float = 0.30
+    reward_qos_weight: float = 0.40
     reward_service_continuity_weight: float = 0.15
+    reward_deadline_slack_weight: float = 0.25
+    reward_enqueue_bonus: float = 0.0
     reward_failed_handover_penalty: float = 0.3
-    reward_deadline_penalty: float = 0.30
+    reward_deadline_penalty: float = 1.00
+    reward_failed_task_penalty: float = 0.80
     pre_handover_rvt_sec: float = 30.0    # Pre-handover RVT 阈值
 
     # ---------- 图参数 ----------
@@ -421,8 +424,11 @@ class HANMAPPOTrainer:
             reward_load_balance_weight=self.config.reward_load_balance_weight,
             reward_qos_weight=self.config.reward_qos_weight,
             reward_service_continuity_weight=self.config.reward_service_continuity_weight,
+            reward_deadline_slack_weight=self.config.reward_deadline_slack_weight,
+            reward_enqueue_bonus=self.config.reward_enqueue_bonus,
             reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
             reward_deadline_penalty=self.config.reward_deadline_penalty,
+            reward_failed_task_penalty=self.config.reward_failed_task_penalty,
             pre_handover_rvt_sec=self.config.pre_handover_rvt_sec,
             seed=self.config.seed
         )
@@ -723,11 +729,14 @@ class HANMAPPOTrainer:
             'reward_delay': 0.0,
             'reward_energy': 0.0,
             'reward_qos': 0.0,
+            'reward_task_success': 0.0,
+            'reward_deadline_slack': 0.0,
             'reward_service_continuity': 0.0,
             'reward_handover': 0.0,
             'reward_load_balance': 0.0,
             'reward_enqueue': 0.0,
             'penalty_deadline': 0.0,
+            'penalty_task_failure': 0.0,
             'penalty_queue_full': 0.0,
             'penalty_invalid_action': 0.0,
             'penalty_blocked': 0.0,
@@ -925,11 +934,14 @@ class HANMAPPOTrainer:
             'reward_delay': env_stats.get('reward_delay', 0.0),
             'reward_energy': env_stats.get('reward_energy', 0.0),
             'reward_qos': env_stats.get('reward_qos', 0.0),
+            'reward_task_success': env_stats.get('reward_task_success', 0.0),
+            'reward_deadline_slack': env_stats.get('reward_deadline_slack', 0.0),
             'reward_service_continuity': env_stats.get('reward_service_continuity', 0.0),
             'reward_handover': env_stats.get('reward_handover', 0.0),
             'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
             'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
             'penalty_deadline': env_stats.get('penalty_deadline', 0.0),
+            'penalty_task_failure': env_stats.get('penalty_task_failure', 0.0),
             'penalty_queue_full': env_stats.get('penalty_queue_full', 0.0),
             'penalty_invalid_action': env_stats.get('penalty_invalid_action', 0.0),
             'penalty_blocked': env_stats.get('penalty_blocked', 0.0),
@@ -1023,11 +1035,14 @@ class HANMAPPOTrainer:
                 'reward_delay': rollout_stats.get('reward_delay', 0),
                 'reward_energy': rollout_stats.get('reward_energy', 0),
                 'reward_qos': rollout_stats.get('reward_qos', 0),
+                'reward_task_success': rollout_stats.get('reward_task_success', 0),
+                'reward_deadline_slack': rollout_stats.get('reward_deadline_slack', 0),
                 'reward_service_continuity': rollout_stats.get('reward_service_continuity', 0),
                 'reward_handover': rollout_stats.get('reward_handover', 0),
                 'reward_load_balance': rollout_stats.get('reward_load_balance', 0),
                 'reward_enqueue': rollout_stats.get('reward_enqueue', 0),
                 'penalty_deadline': rollout_stats.get('penalty_deadline', 0),
+                'penalty_task_failure': rollout_stats.get('penalty_task_failure', 0),
                 'penalty_queue_full': rollout_stats.get('penalty_queue_full', 0),
                 'penalty_invalid_action': rollout_stats.get('penalty_invalid_action', 0),
                 'penalty_blocked': rollout_stats.get('penalty_blocked', 0),
@@ -1227,11 +1242,14 @@ class HANMAPPOTrainer:
             'reward_delay': eval_env_stats.get('reward_delay', 0.0),
             'reward_energy': eval_env_stats.get('reward_energy', 0.0),
             'reward_qos': eval_env_stats.get('reward_qos', 0.0),
+            'reward_task_success': eval_env_stats.get('reward_task_success', 0.0),
+            'reward_deadline_slack': eval_env_stats.get('reward_deadline_slack', 0.0),
             'reward_service_continuity': eval_env_stats.get('reward_service_continuity', 0.0),
             'reward_handover': eval_env_stats.get('reward_handover', 0.0),
             'reward_load_balance': eval_env_stats.get('reward_load_balance', 0.0),
             'reward_enqueue': eval_env_stats.get('reward_enqueue', 0.0),
             'penalty_deadline': eval_env_stats.get('penalty_deadline', 0.0),
+            'penalty_task_failure': eval_env_stats.get('penalty_task_failure', 0.0),
             'penalty_queue_full': eval_env_stats.get('penalty_queue_full', 0.0),
             'penalty_invalid_action': eval_env_stats.get('penalty_invalid_action', 0.0),
             'penalty_blocked': eval_env_stats.get('penalty_blocked', 0.0),
@@ -1379,8 +1397,11 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
             reward_load_balance_weight=self.config.reward_load_balance_weight,
             reward_qos_weight=self.config.reward_qos_weight,
             reward_service_continuity_weight=self.config.reward_service_continuity_weight,
+            reward_deadline_slack_weight=self.config.reward_deadline_slack_weight,
+            reward_enqueue_bonus=self.config.reward_enqueue_bonus,
             reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
             reward_deadline_penalty=self.config.reward_deadline_penalty,
+            reward_failed_task_penalty=self.config.reward_failed_task_penalty,
             pre_handover_rvt_sec=self.config.pre_handover_rvt_sec,
             seed=self.config.seed,
         )
@@ -1718,11 +1739,14 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'reward_delay': env_stats.get('reward_delay', 0.0),
             'reward_energy': env_stats.get('reward_energy', 0.0),
             'reward_qos': env_stats.get('reward_qos', 0.0),
+            'reward_task_success': env_stats.get('reward_task_success', 0.0),
+            'reward_deadline_slack': env_stats.get('reward_deadline_slack', 0.0),
             'reward_service_continuity': env_stats.get('reward_service_continuity', 0.0),
             'reward_handover': env_stats.get('reward_handover', 0.0),
             'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
             'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
             'penalty_deadline': env_stats.get('penalty_deadline', 0.0),
+            'penalty_task_failure': env_stats.get('penalty_task_failure', 0.0),
             'penalty_queue_full': env_stats.get('penalty_queue_full', 0.0),
             'penalty_invalid_action': env_stats.get('penalty_invalid_action', 0.0),
             'penalty_blocked': env_stats.get('penalty_blocked', 0.0),
@@ -2105,22 +2129,28 @@ def parse_args():
                         help='用户数量')
     parser.add_argument('--max_steps', type=int, default=600,
                         help='每episode最大步数')
-    parser.add_argument('--reward_delay_weight', type=float, default=0.25,
+    parser.add_argument('--reward_delay_weight', type=float, default=0.35,
                         help='时延奖励权重')
-    parser.add_argument('--reward_energy_weight', type=float, default=0.15,
+    parser.add_argument('--reward_energy_weight', type=float, default=0.05,
                         help='能耗奖励权重')
     parser.add_argument('--reward_handover_weight', type=float, default=0.10,
                         help='切换奖励权重')
     parser.add_argument('--reward_load_balance_weight', type=float, default=0.05,
                         help='负载均衡奖励权重')
-    parser.add_argument('--reward_qos_weight', type=float, default=0.30,
+    parser.add_argument('--reward_qos_weight', type=float, default=0.40,
                         help='QoS reward weight')
     parser.add_argument('--reward_service_continuity_weight', type=float, default=0.15,
                         help='Service interruption penalty weight')
+    parser.add_argument('--reward_deadline_slack_weight', type=float, default=0.25,
+                        help='Deadline slack reward weight for successful tasks')
+    parser.add_argument('--reward_enqueue_bonus', type=float, default=0.0,
+                        help='Queue admission bonus weight')
     parser.add_argument('--reward_failed_handover_penalty', type=float, default=0.3,
                         help='Failed handover penalty weight')
-    parser.add_argument('--reward_deadline_penalty', type=float, default=0.30,
+    parser.add_argument('--reward_deadline_penalty', type=float, default=1.00,
                         help='Deadline violation penalty weight')
+    parser.add_argument('--reward_failed_task_penalty', type=float, default=0.80,
+                        help='Fixed penalty for tasks that miss their deadline')
     parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
                         help='Treat smaller offload ratios as local execution')
     parser.add_argument('--pre_handover_rvt_sec', type=float, default=30.0,
@@ -2211,8 +2241,11 @@ def main():
     config.reward_load_balance_weight = args.reward_load_balance_weight
     config.reward_qos_weight = args.reward_qos_weight
     config.reward_service_continuity_weight = args.reward_service_continuity_weight
+    config.reward_deadline_slack_weight = args.reward_deadline_slack_weight
+    config.reward_enqueue_bonus = args.reward_enqueue_bonus
     config.reward_failed_handover_penalty = args.reward_failed_handover_penalty
     config.reward_deadline_penalty = args.reward_deadline_penalty
+    config.reward_failed_task_penalty = args.reward_failed_task_penalty
     config.min_effective_offload_ratio = args.min_effective_offload_ratio
     config.pre_handover_rvt_sec = args.pre_handover_rvt_sec
     config.total_timesteps = args.total_timesteps

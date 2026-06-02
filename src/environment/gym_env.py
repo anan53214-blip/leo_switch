@@ -65,18 +65,20 @@ class EnvConfig:
     task_arrival_seed_offset: int = 7919
     
     # 奖励权重（按归一化项平衡，避免单个项主导总 reward）
-    reward_delay_weight: float = 0.25
-    reward_energy_weight: float = 0.15
+    reward_delay_weight: float = 0.35
+    reward_energy_weight: float = 0.05
     reward_handover_weight: float = 0.10
     reward_load_balance_weight: float = 0.05
-    reward_qos_weight: float = 0.30
+    reward_qos_weight: float = 0.40
     reward_service_continuity_weight: float = 0.15
-    reward_enqueue_bonus: float = 0.02
+    reward_deadline_slack_weight: float = 0.25
+    reward_enqueue_bonus: float = 0.0
     reward_invalid_action_penalty: float = 0.5
     reward_blocked_penalty: float = 1.0
     reward_queue_full_penalty: float = 0.3
     reward_failed_handover_penalty: float = 0.3
-    reward_deadline_penalty: float = 0.30
+    reward_deadline_penalty: float = 1.00
+    reward_failed_task_penalty: float = 0.80
     reward_energy_reference: float = 10.0
     
     # 随机种子
@@ -351,11 +353,14 @@ class LEOSatelliteEnv(gym.Env):
             'reward_delay': 0.0,
             'reward_energy': 0.0,
             'reward_qos': 0.0,
+            'reward_task_success': 0.0,
+            'reward_deadline_slack': 0.0,
             'reward_service_continuity': 0.0,
             'reward_handover': 0.0,
             'reward_load_balance': 0.0,
             'reward_enqueue': 0.0,
             'penalty_deadline': 0.0,
+            'penalty_task_failure': 0.0,
             'penalty_queue_full': 0.0,
             'penalty_invalid_action': 0.0,
             'penalty_blocked': 0.0,
@@ -685,7 +690,7 @@ class LEOSatelliteEnv(gym.Env):
         """Penalty for a generated task that misses its deadline unserved."""
         max_delay = max(float(max_delay), 1e-6)
         delay_ratio = float(elapsed) / max_delay
-        reward_qos = -self.config.reward_qos_weight
+        reward_qos = -self.config.reward_failed_task_penalty
         penalty_deadline = -self.config.reward_deadline_penalty * min(
             max(delay_ratio - 1.0, 0.0),
             2.0,
@@ -693,6 +698,7 @@ class LEOSatelliteEnv(gym.Env):
         return reward_qos + penalty_deadline, {
             'reward_qos': reward_qos,
             'penalty_deadline': penalty_deadline,
+            'penalty_task_failure': reward_qos,
         }
 
     def _expire_pending_user_tasks(self) -> None:
@@ -818,28 +824,52 @@ class LEOSatelliteEnv(gym.Env):
         This helper keeps delay/QoS dominant and adds energy as a secondary term.
         """
         max_delay = max(float(max_delay), 1e-6)
-        delay_ratio = float(total_delay) / max_delay
-        delay_reward = max(1.0 - min(delay_ratio, 1.0), 0.0)
+        delay_ratio = max(float(total_delay) / max_delay, 0.0)
+        deadline_met = delay_ratio <= 1.0
+        deadline_slack = max(1.0 - delay_ratio, 0.0)
+        deadline_excess = max(delay_ratio - 1.0, 0.0)
 
         energy_ref = max(float(self.config.reward_energy_reference), 1e-6)
-        energy_reward = max(1.0 - min(float(total_energy) / energy_ref, 1.0), 0.0)
-        qos_reward = 1.0 if delay_ratio <= 1.0 else -1.0
+        energy_ratio = min(max(float(total_energy) / energy_ref, 0.0), 1.0)
 
-        reward_delay = self.config.reward_delay_weight * delay_reward
-        reward_energy = self.config.reward_energy_weight * energy_reward
-        reward_qos = self.config.reward_qos_weight * qos_reward
-        penalty_deadline = 0.0
+        reward_delay = -self.config.reward_delay_weight * min(delay_ratio, 2.0)
+        reward_task_success = self.config.reward_qos_weight if deadline_met else 0.0
+        reward_deadline_slack = (
+            self.config.reward_deadline_slack_weight * deadline_slack
+            if deadline_met else 0.0
+        )
+        # Energy is a secondary objective: only successful tasks get to trade
+        # off energy after satisfying the deadline.
+        reward_energy = (
+            -self.config.reward_energy_weight * energy_ratio
+            if deadline_met else 0.0
+        )
+        penalty_task_failure = (
+            -self.config.reward_failed_task_penalty
+            if not deadline_met else 0.0
+        )
+        penalty_deadline = (
+            -self.config.reward_deadline_penalty * min(deadline_excess, 2.0)
+            if not deadline_met else 0.0
+        )
+        reward_qos = reward_task_success + penalty_task_failure
 
-        if delay_ratio > 1.0:
-            penalty_deadline = -self.config.reward_deadline_penalty * min(delay_ratio - 1.0, 2.0)
-
-        reward = reward_delay + reward_energy + reward_qos + penalty_deadline
+        reward = (
+            reward_delay
+            + reward_energy
+            + reward_qos
+            + reward_deadline_slack
+            + penalty_deadline
+        )
 
         return reward, {
             'reward_delay': reward_delay,
             'reward_energy': reward_energy,
             'reward_qos': reward_qos,
+            'reward_task_success': reward_task_success,
+            'reward_deadline_slack': reward_deadline_slack,
             'penalty_deadline': penalty_deadline,
+            'penalty_task_failure': penalty_task_failure,
         }
 
     def _compute_handover_success_probability(
