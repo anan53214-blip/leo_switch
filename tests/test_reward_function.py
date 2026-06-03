@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -37,6 +39,19 @@ def test_g1_latency_suite_defaults_use_energy_aware_ranking():
 
     assert config.best_model_metric == "latency_priority_score"
     assert config.compare_ranking_metric == "latency_priority_score"
+
+
+def test_g1_u20_latency_suite_defaults_match_run_label():
+    from scripts.run_latency_priority_g1_300k_600s_u20_suite import RUN_LABEL, SuiteConfig, build_paths
+
+    config = SuiteConfig(run_id="unit")
+    paths = build_paths(project_root=Path("project"), run_id=config.run_id)
+
+    assert RUN_LABEL == "g1_300k_600s_u20"
+    assert config.exp_name == "han_mappo_latency_priority_g1_300k_600s_u20"
+    assert config.num_users == 20
+    assert "u20" in str(paths.system_run_dir)
+    assert "u20" in str(paths.compare_output_dir)
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:

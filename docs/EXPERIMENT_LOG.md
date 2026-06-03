@@ -773,3 +773,52 @@ score designed around a single baseline.
 Report both `latency_priority_score` and `effective_latency_score`, plus
 `energy_per_resolved_task`, so the paper can distinguish true latency/QoS
 improvement from energy-aware tradeoff changes.
+
+## 2026-06-03 - g1 300k/600s/u10 Constrained-CPU Comparison Result
+
+**Experiment directory:** `results/baseline_compare/g1_300k_600s_u10_20260603_105244`
+
+**Configuration:** `num_users=10`, `max_steps=600`,
+`total_timesteps=300000`, `task_arrival_prob=0.35`,
+`best_model_metric=latency_priority_score`, and
+`compare_ranking_metric=latency_priority_score`. This run used the constrained
+local CPU setting (`user_cpu_freq_ghz=0.5`) and the deadline-priority reward
+weights: delay `0.35`, energy `0.05`, QoS `0.40`, deadline slack `0.25`,
+failed-task penalty `0.80`, and deadline penalty `1.00`.
+
+**Main comparison:**
+
+| Method | Selection Score | Effective Latency | Avg Delay | Task Success | Deadline Violation | Energy / Resolved | Mean Offload | Handover Action |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Min-Distance | 0.610711 | 0.246736 | 2.397747 | 0.858626 | 0.141061 | 0.063004 | 1.000000 | 0.005000 |
+| MAPPO(no-HAN) | 0.603661 | 0.251775 | 2.335683 | 0.860490 | 0.139354 | 0.148701 | 0.810078 | 0.001611 |
+| Attn+MAPPO | 0.602867 | 0.251945 | 2.338451 | 0.861901 | 0.137943 | 0.169081 | 0.764465 | 0.000444 |
+| HAN+MAPPO | 0.602833 | 0.249144 | 2.365555 | 0.859397 | 0.140448 | 0.127174 | 0.856019 | 0.001333 |
+| Full-Local | 0.481106 | 0.087418 | 4.251546 | 0.523749 | 0.474841 | 0.463401 | 0.000000 | 0.000000 |
+
+**Diagnosis:** Reducing local CPU to `0.5GHz` successfully removed the previous
+full-local advantage: Full-Local dropped to `0.481106` selection score and
+about `52.4%` task success. However, the three MAPPO variants still occupy the
+same performance plateau. They all learn a near-static, offload-heavy policy
+with almost no handover action. Their task success, service continuity, and
+deadline violation rates differ only at the third decimal place, and the
+three-episode comparison variance is similar to the observed method gaps.
+
+The likely reason is that raw observations already expose strong local
+decision features: current serving satellite information, up to ten visible
+satellites with distance/elevation/SNR/RVT/load, and the current task features.
+In a 10-user scenario with low queue-full and blocked penalties, global
+coordination pressure is weak, so HAN and candidate-load attention add little
+action-relevant information beyond the raw per-user observation. The learned
+methods mostly differ in offload-ratio calibration: HAN+MAPPO offloads more
+(`0.856`) and uses less energy than MAPPO(no-HAN)/Attn+MAPPO, while Attn+MAPPO
+gets slightly better task success but higher energy. These tradeoffs nearly
+cancel under `latency_priority_score`.
+
+**Follow-up decision:** Treat this run as evidence that the current 10-user
+g1 setting is not discriminative enough for graph/attention structure. The
+next ablation should increase coordination pressure rather than only tune the
+policy network: run more comparison episodes or seeds, test more users or
+higher task-arrival probability, and report confidence intervals. If the paper
+needs to demonstrate HAN's value, include a higher-contention scenario where
+load distribution and global satellite state are actually decision-critical.
