@@ -67,7 +67,7 @@ action_i = (handover_action_i, offload_ratio_i)
 
 | 参数 | 当前默认值 |
 | --- | --- |
-| `user_cpu_freq_ghz` | `1.0` |
+| `user_cpu_freq_ghz` | `0.5` |
 | `user_max_cpu_freq_ghz` | `1.5` |
 | `bandwidth_mhz` | `10.0` |
 | `user_tx_power_dbm` | `24.0` |
@@ -97,14 +97,16 @@ action_i = (handover_action_i, offload_ratio_i)
 
 | 参数 | 当前默认值 |
 | --- | --- |
-| `reward_delay_weight` | `0.25` |
-| `reward_energy_weight` | `0.15` |
+| `reward_delay_weight` | `0.35` |
+| `reward_energy_weight` | `0.05` |
 | `reward_handover_weight` | `0.10` |
 | `reward_load_balance_weight` | `0.05` |
-| `reward_qos_weight` | `0.30` |
+| `reward_qos_weight` | `0.40` |
 | `reward_service_continuity_weight` | `0.15` |
-| `reward_deadline_penalty` | `0.30` |
-| `reward_enqueue_bonus` | `0.02` |
+| `reward_deadline_slack_weight` | `0.25` |
+| `reward_deadline_penalty` | `1.00` |
+| `reward_failed_task_penalty` | `0.80` |
+| `reward_enqueue_bonus` | `0.0` |
 | `reward_queue_full_penalty` | `0.3` |
 
 `reward_service_continuity` is kept as the legacy breakdown key, but it is now
@@ -143,6 +145,9 @@ The default `effective_latency_score` is now:
 `1 / (1 + avg_delay) * service_continuity_rate * task_success_rate`
 
 This makes deadline failures reduce the primary latency-oriented score directly.
+The g1 300k/600s/u10 suite uses `latency_priority_score` by default for
+checkpoint selection and comparison ranking so energy remains a secondary
+evaluation term instead of being completely ignored.
 
 ## 7. 与基线的关系
 

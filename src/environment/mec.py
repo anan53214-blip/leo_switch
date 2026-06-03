@@ -32,7 +32,7 @@ class MECConfig:
     max_queue_size: int = 6                   # 最大任务队列长度 - 大幅缩小，迫使智能选择
     
     # 用户本地计算参数
-    user_cpu_freq_ghz: float = 1.0            # 用户设备CPU频率 (GHz) - 降低本地能力
+    user_cpu_freq_ghz: float = 0.5            # 用户设备CPU频率 (GHz) - 资源受限终端
     user_max_cpu_freq_ghz: float = 1.5        # 最大CPU频率 (GHz)
     
     # 能耗参数

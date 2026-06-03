@@ -3,6 +3,7 @@ import pytest
 
 from scripts.train import TrainConfig, compute_model_selection_score
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
+from src.environment.mec import MECConfig
 
 
 def test_effective_latency_score_fallback_uses_task_success_rate():
@@ -21,6 +22,21 @@ def test_task_success_rate_can_be_used_as_selection_metric():
     record = {"task_success_rate": 0.73}
 
     assert compute_model_selection_score(record, "task_success_rate") == pytest.approx(0.73)
+
+
+def test_default_local_cpu_matches_constrained_terminal_scenario():
+    config = MECConfig()
+
+    assert config.user_cpu_freq_ghz == pytest.approx(0.5)
+
+
+def test_g1_latency_suite_defaults_use_energy_aware_ranking():
+    from scripts.run_latency_priority_g1_300k_600s_u10_suite import SuiteConfig
+
+    config = SuiteConfig(run_id="unit")
+
+    assert config.best_model_metric == "latency_priority_score"
+    assert config.compare_ranking_metric == "latency_priority_score"
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:

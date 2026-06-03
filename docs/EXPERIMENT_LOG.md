@@ -642,6 +642,54 @@ The success gate for a real 300k g1 run is outperforming both HAN+MAPPO and
 MAPPO(no-HAN) on `effective_latency_score`, while keeping service continuity
 and energy per resolved task near the current HAN+MAPPO level.
 
+## 2026-06-03 - Latency-Priority Weight Update g1 300k/600s/u10 Result
+
+**Experiment directories:**
+
+- System training: `results/full_train_latency_priority_g1_300k_600s_u10_20260602_143937`
+- Baseline comparison: `results/baseline_compare/g1_300k_600s_u10_20260602_143937`
+
+**Configuration:** `graph_update_interval=1`, `total_timesteps=300000`,
+`max_steps=600`, `num_users=10`, `n_steps=1024`, `eval_episodes=3`,
+`compare_episodes=3`, and `best_model_metric=effective_latency_score`.
+The reward update emphasized latency/deadline success: delay weight `0.35`,
+energy weight `0.05`, QoS weight `0.40`, service continuity weight `0.15`,
+deadline slack weight `0.25`, failed-task penalty `0.80`, and deadline
+penalty `1.00`.
+
+**Training result:** HAN+MAPPO completed `300032` steps / `293` episodes.
+The best eval checkpoint occurred early at `50176` steps with
+`effective_latency_score=0.267742`, `avg_delay=2.2161`,
+`task_completion_rate=0.8798`, `service_continuity_rate=0.9787`,
+`avg_load_balance_score=0.6890`, and energy per resolved task `0.7986`.
+The final eval at `300032` steps was lower:
+`effective_latency_score=0.261039`, `avg_delay=2.2733`,
+`task_completion_rate=0.8744`, and deadline violation rate `0.1255`.
+
+**Comparison result:** Min-Distance remained first with
+`effective_latency_score=0.285889`, `avg_delay=2.1652`,
+`task_completion_rate=0.9264`, and deadline violation rate `0.0736`, but with
+high energy per resolved task `2.0674`. MAPPO(no-HAN) scored `0.262389`,
+HAN+MAPPO scored `0.260886`, and Attn+MAPPO scored `0.257637`.
+
+**Diagnosis:** The reward-weight update did not improve HAN+MAPPO relative to
+the previous raw-plus-HAN run (`0.262687` -> `0.260886`). It mostly preserved
+the existing ranking: Min-Distance wins the latency/deadline-oriented metric,
+while learned methods remain much more energy efficient. Min-Distance is strong
+because it uses full-local execution selected by offload-grid search
+(`local_compute_rate=1.0`, `mean_offload_ratio=0.0`) and the current
+`effective_latency_score` ignores energy, so a robust local-compute heuristic
+gets rewarded for deadline success even with poor energy cost. This suggests
+the evaluation metric and task/local-compute model are giving rule-based local
+execution a structural advantage.
+
+**Follow-up decision:** Do not keep tuning only reward weights. The next check
+should validate whether Min-Distance is unrealistically advantaged by the
+baseline offload search and metric definition. Useful ablations are:
+compare under an energy-aware score, restrict Min-Distance to the same
+offload/offloading action family as learned policies, and inspect whether local
+CPU/task-size settings make full-local execution too reliable for this scenario.
+
 ## 2026-06-02 - Deadline-Priority Reward Redesign
 
 **Context:** The 2026-06-01 Attn+MAPPO g1 comparison showed that candidate
@@ -688,3 +736,40 @@ defaults, preferably with `compare_episodes >= 10` and multiple seeds. Success
 criteria are lower `deadline_violation_rate`, higher `task_success_rate`, and
 an `effective_latency_score` gain over both HAN+MAPPO and MAPPO(no-HAN),
 while monitoring whether Attn+MAPPO keeps a meaningful energy advantage.
+
+## 2026-06-03 - Constrained Local CPU and Energy-Aware Ranking Defaults
+
+**Context:** The 2026-06-02 g1 result showed Min-Distance selecting
+full-local execution (`local_compute_rate=1.0`, `mean_offload_ratio=0.0`) and
+ranking first under `effective_latency_score` despite much higher energy per
+resolved task. A local-compute sanity check indicated that the previous
+`user_cpu_freq_ghz=1.0` setting made the current task/deadline distribution
+too reliable for local execution.
+
+**Code change:**
+
+- Changed `src/environment/mec.py` default `user_cpu_freq_ghz` from `1.0` to
+  `0.5` to model a resource-constrained ground/IoT terminal rather than a
+  strong local device.
+- Changed `scripts/run_latency_priority_g1_300k_600s_u10_suite.py` default
+  `best_model_metric` and `compare_ranking_metric` from
+  `effective_latency_score` to `latency_priority_score`.
+- Updated scenario documentation so the CPU and reward-weight tables match the
+  current code.
+
+**Rationale:** This keeps deadline/QoS as the dominant objective but prevents
+energy from being entirely free in the default g1 comparison. The existing
+`latency_priority_score` already includes a small energy term and load-balance
+term, so this is a conservative metric-alignment change rather than a new
+score designed around a single baseline.
+
+**Verification:**
+
+- Added regression tests for the constrained local CPU default and the g1
+  suite energy-aware ranking defaults.
+- `pytest tests/test_reward_function.py::test_default_local_cpu_matches_constrained_terminal_scenario tests/test_reward_function.py::test_g1_latency_suite_defaults_use_energy_aware_ranking`
+
+**Follow-up decision:** Rerun the g1 300k/600s/u10 suite with a fresh run ID.
+Report both `latency_priority_score` and `effective_latency_score`, plus
+`energy_per_resolved_task`, so the paper can distinguish true latency/QoS
+improvement from energy-aware tradeoff changes.
