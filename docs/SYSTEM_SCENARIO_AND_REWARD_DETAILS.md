@@ -125,6 +125,7 @@ interruption_seconds / step_user_seconds`.
 | `total_energy` | 总能耗 |
 | `handover_success_rate` | 切换成功率 |
 | `handover_failure_rate` | 切换失败率 |
+| `handover_frequency` | 单位用户服务时间内的切换频率 |
 | `service_continuity_rate` | 服务连续性 |
 | `service_availability_rate` | 服务可用性 |
 | `task_completion_rate` | 任务完成率 |
@@ -133,26 +134,30 @@ interruption_seconds / step_user_seconds`.
 | `task_settlement_rate` | 任务结算率 |
 | `task_resolution_rate` | 任务解析率 |
 | `pending_task_rate` | 未完成或排队任务比例 |
-| `avg_load_balance_score` | MEC queue/CPU utilization load-balance score |
+| `energy_per_resolved_task` | 每个已解决任务的平均能耗 |
+| `active_load_balance_score` | 活跃 MEC 服务器之间的 queue/CPU utilization 均衡度 |
+| `avg_load_balance_score` | `active_load_balance_score` 的兼容别名 |
+| `mec_activity_score` | 全星座 MEC 使用强度 |
 
 `task_success_rate` is the primary task outcome metric and is computed as `completed_tasks / total_tasks`.
 `task_failure_rate` is computed as `deadline_violations / total_tasks`.
 `task_settlement_rate` is computed as `(completed_tasks + deadline_violations) / total_tasks`.
 The legacy `task_resolution_rate` is kept as an alias of `task_settlement_rate` for backward compatibility, but it should not be used as the main competitiveness metric because deadline failures are counted as settled tasks.
 
-The default `effective_latency_score` is now:
+The custom composite scores `effective_latency_score` and
+`latency_priority_score` have been removed from the current evaluation
+protocol. Comparisons should report the single paper-style KPIs directly:
+delay QoS, task reliability, service continuity/handover behavior, and
+resource cost. Checkpoint selection defaults to `avg_delay`; final claims
+should use the full metric group and trade-off plots rather than a single
+aggregate score.
 
-`1 / (1 + avg_delay) * service_continuity_rate * task_success_rate`
-
-This makes deadline failures reduce the primary latency-oriented score directly.
-The g1 300k/600s/u10 suite uses `latency_priority_score` by default for
-checkpoint selection and comparison ranking so energy remains a secondary
-evaluation term instead of being completely ignored.
-
-`avg_load_balance_score` is now computed from MEC queue pressure and CPU
-utilization only. It no longer includes the number of users connected to each
-satellite, so local-compute policies cannot receive a high load-balance score
-merely because serving-satellite connections are geographically spread out.
+`active_load_balance_score` is computed from MEC queue pressure and CPU
+utilization on active MEC servers only. Idle satellites are excluded from the
+fairness denominator so a small number of active MEC servers can still show
+meaningful balance differences. `mec_activity_score` is reported separately to
+show how much MEC work exists at all; local-compute policies should have low
+activity rather than a misleading high balance score.
 
 ## 7. 与基线的关系
 
@@ -167,6 +172,9 @@ merely because serving-satellite connections are geographically spread out.
 因此，对比主方法时应重点观察：
 
 - HAN+MAPPO 是否降低 `avg_delay`。
-- 是否提升 `task_completion_rate` 和 `service_continuity_rate`。
-- 是否保持可接受的 `total_energy`。
+- 是否提升 `task_success_rate` 和 `service_continuity_rate`。
+- 是否降低 `deadline_violation_rate`、`handover_failure_rate` 和
+  `handover_frequency`。
+- 是否保持可接受的 `energy_per_resolved_task`、`active_load_balance_score`
+  和 `mec_activity_score`。
 - 是否优于 `mappo_no_han`，从而证明 HAN 结构有效。

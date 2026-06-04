@@ -56,6 +56,7 @@ def test_stats_summary_uses_external_task_denominator_for_deadline_violation_rat
         assert math.isclose(stats['deadline_violation_rate'], 0.2)
         assert math.isclose(stats['avg_delay'], 2.0)
         assert math.isclose(stats['avg_load_balance_score'], 0.9)
+        assert math.isclose(stats['active_load_balance_score'], 0.9)
     finally:
         env.close()
 
@@ -88,9 +89,15 @@ def test_compare_summary_includes_task_success_metrics():
     assert "task_success_rate" in SUMMARY_METRIC_KEYS
     assert "task_failure_rate" in SUMMARY_METRIC_KEYS
     assert "task_settlement_rate" in SUMMARY_METRIC_KEYS
+    assert "handover_frequency" in SUMMARY_METRIC_KEYS
+    assert "active_load_balance_score" in SUMMARY_METRIC_KEYS
+    assert "mec_activity_score" in SUMMARY_METRIC_KEYS
     assert HIGHER_IS_BETTER["task_success_rate"] is True
     assert HIGHER_IS_BETTER["task_failure_rate"] is False
     assert HIGHER_IS_BETTER["task_settlement_rate"] is True
+    assert HIGHER_IS_BETTER["handover_frequency"] is False
+    assert HIGHER_IS_BETTER["active_load_balance_score"] is True
+    assert HIGHER_IS_BETTER["mec_activity_score"] is True
 
 
 def test_load_balance_score_ignores_connection_only_distribution():
@@ -131,6 +138,47 @@ def test_load_balance_score_rewards_balanced_mec_workload():
         env.close()
 
 
+def test_active_load_balance_ignores_idle_satellites_when_mec_is_used():
+    env = _build_single_user_env(num_users=2)
+
+    try:
+        env.reset(seed=11)
+
+        first = env.mec_manager.servers[0]
+        second = env.mec_manager.servers[1]
+        first.task_queue = [{} for _ in range(1)]
+        second.task_queue = [{} for _ in range(1)]
+
+        assert env._compute_load_balance_score() == pytest.approx(1.0)
+        assert 0.0 < env._compute_mec_activity_score() < 1.0
+    finally:
+        env.close()
+
+
+def test_mec_activity_score_tracks_usage_separately_from_balance():
+    env = _build_single_user_env(num_users=2)
+
+    try:
+        env.reset(seed=11)
+
+        first = env.mec_manager.servers[0]
+        second = env.mec_manager.servers[1]
+        first.task_queue = [{} for _ in range(1)]
+        second.task_queue = [{} for _ in range(1)]
+        light_activity = env._compute_mec_activity_score()
+        light_balance = env._compute_load_balance_score()
+
+        first.task_queue = [{} for _ in range(3)]
+        second.task_queue = [{} for _ in range(3)]
+        heavy_activity = env._compute_mec_activity_score()
+        heavy_balance = env._compute_load_balance_score()
+
+        assert heavy_activity > light_activity
+        assert heavy_balance == pytest.approx(light_balance)
+    finally:
+        env.close()
+
+
 def test_compare_summary_preserves_reward_breakdown_metrics():
     summary = {
         "avg_delay": 1.0,
@@ -152,7 +200,7 @@ def test_compare_summary_preserves_reward_breakdown_metrics():
     assert episode["penalty_deadline"] == pytest.approx(-0.1)
 
 
-def test_effective_latency_score_uses_task_success_rate_not_settlement_rate():
+def test_stats_summary_removes_custom_composite_latency_score():
     base = {
         "total_tasks": 100,
         "total_delay": 100.0,
@@ -165,7 +213,9 @@ def test_effective_latency_score_uses_task_success_rate_not_settlement_rate():
     bad = summarize_env_stats({**base, "completed_tasks": 20, "deadline_violations": 75})
 
     assert good["task_settlement_rate"] == pytest.approx(bad["task_settlement_rate"])
-    assert good["effective_latency_score"] > bad["effective_latency_score"]
+    assert good["task_success_rate"] > bad["task_success_rate"]
+    assert "effective_latency_score" not in good
+    assert "effective_latency_score" not in bad
 
 
 def test_stats_summary_prefers_time_based_service_reliability_metrics():
@@ -287,26 +337,18 @@ def test_step_exposes_per_agent_rewards_matching_scalar_mean():
         env.close()
 
 
-def test_effective_latency_score_penalizes_low_service_coverage():
-    reliable = summarize_env_stats({
+def test_handover_frequency_uses_time_normalized_handover_count():
+    summary = summarize_env_stats({
         'total_tasks': 100,
         'completed_tasks': 60,
         'deadline_violations': 40,
         'total_delay': 220.0,
         'total_user_seconds': 100.0,
         'service_interruption_seconds': 3.0,
-    })
-    low_coverage = summarize_env_stats({
-        'total_tasks': 100,
-        'completed_tasks': 55,
-        'deadline_violations': 15,
-        'total_delay': 140.0,
-        'total_user_seconds': 100.0,
-        'service_interruption_seconds': 57.0,
+        'total_handovers': 8,
     })
 
-    assert low_coverage['avg_delay'] < reliable['avg_delay']
-    assert reliable['effective_latency_score'] > low_coverage['effective_latency_score']
+    assert summary['handover_frequency'] == pytest.approx(0.08)
 
 
 def test_handover_success_probability_prefers_high_quality_targets():

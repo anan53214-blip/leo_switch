@@ -118,7 +118,7 @@ DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority
 DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
 DEFAULT_TOTAL_TIMESTEPS = 1_200_000
 DEFAULT_PLOT_WINDOW = 5
-DEFAULT_SELECTION_METRIC = "effective_latency_score"
+DEFAULT_SELECTION_METRIC = "avg_delay"
 TRAIN_ARTIFACT_FILENAMES = (
     "training_history.json",
     "best_model.pt",
@@ -127,10 +127,13 @@ TRAIN_ARTIFACT_FILENAMES = (
 
 PRIMARY_COMPARE_METRICS = [
     ("avg_delay", "Average Delay"),
-    ("service_continuity_rate", "Service Continuity"),
-    ("service_availability_rate", "Service Availability"),
     ("task_success_rate", "Task Success"),
     ("deadline_violation_rate", "Deadline Violation"),
+    ("service_continuity_rate", "Service Continuity"),
+    ("handover_failure_rate", "Handover Failure"),
+    ("handover_frequency", "Handover Frequency"),
+    ("energy_per_resolved_task", "Energy per Resolved Task"),
+    ("active_load_balance_score", "Active Load Balance"),
 ]
 
 DISPLAY_NAME_MAP = {
@@ -161,14 +164,16 @@ SUMMARY_METRIC_KEYS = [
     "task_settlement_rate",
     "task_resolution_rate",
     "pending_task_rate",
+    "handover_frequency",
+    "active_load_balance_score",
     "avg_load_balance_score",
+    "mec_activity_score",
     "resolved_tasks",
     "pending_tasks",
     "total_tasks",
     "completed_tasks",
     "deadline_violations",
     "deadline_violation_rate",
-    "effective_latency_score",
 ]
 
 ACTION_DIAGNOSTIC_KEYS = [
@@ -207,12 +212,15 @@ HIGHER_IS_BETTER = {
     "task_failure_rate": False,
     "task_settlement_rate": True,
     "task_resolution_rate": True,
-    "effective_latency_score": True,
+    "active_load_balance_score": True,
     "avg_load_balance_score": True,
+    "mec_activity_score": True,
     "handover_failure_rate": False,
+    "handover_frequency": False,
     "forced_termination_rate": False,
     "avg_delay": False,
     "total_energy": False,
+    "energy_per_resolved_task": False,
     "pending_task_rate": False,
     "deadline_violation_rate": False,
 }
@@ -228,22 +236,24 @@ PAPER_METRIC_PLOTS = [
 
 CORE_BAR_METRICS = [
     ("avg_delay", "Average Delay", "Average Delay (ms)"),
-    ("effective_latency_score", "Effective Latency Score", "Effective Latency Score"),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
     ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
     ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)"),
-    ("avg_load_balance_score", "Avg Load Balance Score", "Avg Load Balance Score"),
+    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
+    ("energy_per_resolved_task", "Energy per Resolved Task", "Energy per Resolved Task"),
+    ("active_load_balance_score", "Active Load Balance Score", "Active Load Balance Score"),
 ]
 
 TRAINING_QOS_STEP_METRICS = [
     ("mean_reward", "Reward", "Mean Episode Reward", 1.0),
     ("avg_delay", "Average Delay", "Average Delay (ms)", 1000.0),
-    ("effective_latency_score", "Effective Latency Score", "Score", 1.0),
     ("service_continuity_rate", "Service Continuity", "Rate (%)", 100.0),
     ("task_success_rate", "Task Success", "Rate (%)", 100.0),
     ("task_settlement_rate", "Task Settlement", "Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation", "Rate (%)", 100.0),
-    ("avg_load_balance_score", "Load Balance", "Score", 1.0),
+    ("handover_frequency", "Handover Frequency", "Handovers / User-second", 1.0),
+    ("energy_per_resolved_task", "Energy per Resolved Task", "Energy / Task", 1.0),
+    ("active_load_balance_score", "Active Load Balance", "Score", 1.0),
+    ("mec_activity_score", "MEC Activity", "Score", 1.0),
 ]
 
 REWARD_COMPONENT_STEP_METRICS = [
@@ -280,13 +290,13 @@ SERVICE_INTERRUPTION_PENALTY_SPEC = (
 )
 
 RADAR_METRICS = [
-    ("effective_latency_score", "Effective\nLatency", True),
     ("service_continuity_rate", "Continuity", True),
     ("task_success_rate", "Task\nSuccess", True),
     ("task_completion_rate", "Completion", True),
-    ("avg_load_balance_score", "Load\nBalance", True),
+    ("active_load_balance_score", "Load\nBalance", True),
     ("avg_delay", "Low\nDelay", False),
     ("deadline_violation_rate", "Deadline\nReliability", False),
+    ("energy_per_resolved_task", "Energy\nEfficiency", False),
 ]
 
 PAPER_DASHBOARD_LEFT_METRICS = [
@@ -298,7 +308,7 @@ PAPER_DASHBOARD_LEFT_METRICS = [
 PAPER_DASHBOARD_RIGHT_METRICS = [
     ("avg_delay", "Delay"),
     ("total_energy", "Energy"),
-    ("avg_load_balance_score", "Load Balance"),
+    ("active_load_balance_score", "Load Balance"),
 ]
 
 CORE_EPISODE_PLOTS = [
@@ -312,9 +322,11 @@ ADDITIONAL_EPISODE_METRICS = [
     ("service_continuity_rate", "Service Continuity Rate"),
     ("service_availability_rate", "Service Availability Rate"),
     ("handover_failure_rate", "Handover Failure Rate"),
+    ("handover_frequency", "Handover Frequency"),
     ("forced_termination_rate", "Forced Termination Rate"),
     ("deadline_violation_rate", "Deadline Violation Rate"),
-    ("avg_load_balance_score", "Load Balance Score"),
+    ("active_load_balance_score", "Active Load Balance Score"),
+    ("mec_activity_score", "MEC Activity Score"),
 ]
 
 SYSTEM_STYLE = {
@@ -1018,6 +1030,13 @@ def compute_deadline_violation_rate(summary: Dict) -> float:
     return float(summary.get("deadline_violations", 0.0)) / max(total_tasks, 1.0)
 
 
+def compute_handover_frequency(summary: Dict) -> float:
+    total_user_seconds = float(summary.get("total_user_seconds", 0.0))
+    if total_user_seconds <= 0.0:
+        return 0.0
+    return float(summary.get("total_handovers", 0.0)) / total_user_seconds
+
+
 def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -> List[Dict]:
     episode_records: List[Dict] = []
     for episode_index, (reward, summary) in enumerate(zip(rewards, summaries), start=1):
@@ -1026,12 +1045,15 @@ def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -
             "reward": float(reward),
         }
         for key in SUMMARY_METRIC_KEYS:
-            if key == "deadline_violation_rate":
+            if key in {"deadline_violation_rate", "handover_frequency"}:
                 continue
             record[key] = float(summary.get(key, 0.0))
         for key in REWARD_BREAKDOWN_KEYS:
             record[key] = float(summary.get(key, 0.0))
         record["deadline_violation_rate"] = compute_deadline_violation_rate(summary)
+        record["handover_frequency"] = float(
+            summary.get("handover_frequency", compute_handover_frequency(summary))
+        )
         episode_records.append(record)
     return episode_records
 
@@ -1091,6 +1113,13 @@ def ensure_action_diagnostic_fields(method: Dict) -> Dict:
             normalized[key] = float(normalized.get(key, 0.0))
         except (TypeError, ValueError):
             normalized[key] = 0.0
+    active_balance = float(
+        normalized.get("active_load_balance_score", normalized.get("avg_load_balance_score", 0.0))
+        or 0.0
+    )
+    normalized["active_load_balance_score"] = active_balance
+    normalized["avg_load_balance_score"] = active_balance
+    normalized["mec_activity_score"] = float(normalized.get("mec_activity_score", 0.0) or 0.0)
     return normalized
 
 
@@ -2357,12 +2386,20 @@ def train_and_evaluate_pdqn_baseline(
                     "param_loss": float(np.mean(recent_param_losses)) if recent_param_losses else 0.0,
                     "epsilon": algo.current_epsilon(),
                     "avg_delay": summary.get("avg_delay", 0.0),
-                    "effective_latency_score": summary.get("effective_latency_score", 0.0),
+                    "handover_frequency": summary.get("handover_frequency", 0.0),
                     "service_continuity_rate": summary.get("service_continuity_rate", 0.0),
                     "task_completion_rate": summary.get("task_completion_rate", 0.0),
                     "task_success_rate": summary.get("task_success_rate", 0.0),
                     "avg_load_balance_score": summary.get("avg_load_balance_score", 0.0),
+                    "active_load_balance_score": summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0)),
+                    "mec_activity_score": summary.get("mec_activity_score", 0.0),
                     "total_energy": env_stats.get("total_energy", 0.0),
+                    "energy_per_resolved_task": energy_per_resolved_task(
+                        {
+                            "total_energy": env_stats.get("total_energy", 0.0),
+                            "resolved_tasks": summary.get("resolved_tasks", 0.0),
+                        }
+                    ),
                 }
             )
             observations, _ = env.reset(seed=seed + step_idx + 1)
@@ -3091,12 +3128,6 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
     )
     handover_success_rate = float(best_record.get("handover_success_rate", 0.0))
     service_continuity_rate = float(best_record.get("service_continuity_rate", 0.0))
-    effective_latency_score = float(
-        best_record.get(
-            "effective_latency_score",
-            compute_model_selection_score(best_record, "effective_latency_score"),
-        )
-    )
     result = {
         "method": str(config_data.get("exp_name", history_path.parent.name or "system")),
         "display_name": pretty_method_name(
@@ -3120,14 +3151,16 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "task_settlement_rate": float(best_record.get("task_settlement_rate", best_record.get("task_resolution_rate", 0.0))),
         "task_resolution_rate": float(best_record.get("task_resolution_rate", 0.0)),
         "pending_task_rate": float(best_record.get("pending_task_rate", 0.0)),
-        "avg_load_balance_score": float(best_record.get("avg_load_balance_score", 0.0)),
+        "handover_frequency": float(best_record.get("handover_frequency", compute_handover_frequency(best_record))),
+        "active_load_balance_score": float(best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0))),
+        "avg_load_balance_score": float(best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0))),
+        "mec_activity_score": float(best_record.get("mec_activity_score", 0.0)),
         "resolved_tasks": float(best_record.get("resolved_tasks", 0.0)),
         "pending_tasks": float(best_record.get("pending_tasks", 0.0)),
         "total_tasks": float(best_record.get("total_tasks", 0.0)),
         "completed_tasks": float(best_record.get("completed_tasks", 0.0)),
         "deadline_violations": float(best_record.get("deadline_violations", 0.0)),
         "deadline_violation_rate": compute_deadline_violation_rate(best_record),
-        "effective_latency_score": effective_latency_score,
         "episode_metrics": [],
         "training_history": str(history_path),
         "source": f"training_history_best_{selection_metric_name}",
@@ -3171,8 +3204,10 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "task_resolution_rate",
         "pending_task_rate",
         "deadline_violation_rate",
-        "effective_latency_score",
+        "handover_frequency",
+        "active_load_balance_score",
         "avg_load_balance_score",
+        "mec_activity_score",
         "energy_per_resolved_task",
         *ACTION_DIAGNOSTIC_KEYS,
         *REWARD_BREAKDOWN_KEYS,
@@ -3216,8 +3251,10 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "task_settlement_rate": float(record.get("task_settlement_rate", record.get("task_resolution_rate", 0.0))),
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
-                "effective_latency_score": float(record.get("effective_latency_score", 0.0)),
-                "avg_load_balance_score": float(record.get("avg_load_balance_score", 0.0)),
+                "handover_frequency": float(record.get("handover_frequency", compute_handover_frequency(record))),
+                "active_load_balance_score": float(record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0))),
+                "avg_load_balance_score": float(record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0))),
+                "mec_activity_score": float(record.get("mec_activity_score", 0.0)),
                 "deadline_violation_rate": float(record.get("deadline_violation_rate", 0.0)),
                 "resolved_tasks": float(record.get("resolved_tasks", 0.0)),
                 "completed_tasks": float(record.get("completed_tasks", 0.0)),
@@ -3374,8 +3411,7 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
 
     ax.set_xticks(positions, labels=labels)
     ax.tick_params(axis="x", rotation=25 if compact else 28)
-    direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
-    ax.set_title(f"{title} ({direction})")
+    ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", linestyle="--", alpha=0.6, color="#BDBDBD")
     if values:
@@ -3497,7 +3533,7 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
 
     fig.suptitle("HAN+MAPPO vs. Heuristic Baselines: Core Metrics", fontsize=16, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return save_figure(fig, output_dir / "method_comparison.pdf")
+    return save_figure(fig, output_dir / "method_comparison.png")
 
 
 def draw_training_metric_step_panel(
@@ -3687,7 +3723,7 @@ def plot_reward_component_per_task_curves(history_path: Optional[Path], output_d
 
     fig.suptitle("Reward Components per Task vs. Steps", fontsize=15, fontweight="bold", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.975))
-    return save_figure(fig, output_dir / "reward_components_per_task_vs_steps.pdf")
+    return save_figure(fig, output_dir / "reward_components_per_task_vs_steps.png")
 
 
 def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, window: int) -> List[Path]:
@@ -3697,7 +3733,7 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
         output_dir,
         window,
         TRAINING_QOS_STEP_METRICS,
-        "training_qos_metrics_vs_steps.pdf",
+        "training_qos_metrics_vs_steps.png",
         "Training QoS Metrics vs. Steps",
     )
     if qos_path is not None:
@@ -3708,7 +3744,7 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
         output_dir,
         window,
         reward_component_step_metrics_for_history(history_path),
-        "reward_components_vs_steps.pdf",
+        "reward_components_vs_steps.png",
         "Reward Components vs. Steps",
     )
     if reward_component_path is not None:
@@ -3733,8 +3769,10 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
         return None
 
     styles = build_method_styles(plottable)
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10), dpi=220)
-    axes = axes.flatten()
+    ncols = 2
+    nrows = int(np.ceil(len(ADDITIONAL_EPISODE_METRICS) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(18, 4.6 * nrows), dpi=220)
+    axes = np.asarray(axes).flatten()
 
     for axis, (metric_key, title) in zip(axes, ADDITIONAL_EPISODE_METRICS):
         for method in plottable:
@@ -3754,18 +3792,20 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
                 alpha=0.95,
             )
 
-        direction = "Higher is better" if HIGHER_IS_BETTER.get(metric_key, True) else "Lower is better"
-        axis.set_title(f"{title} ({direction})")
+        axis.set_title(title)
         axis.set_xlabel("Evaluation Episode")
         axis.set_ylabel("Rate (%)" if metric_key.endswith("_rate") else "Score")
         style_axes_frame(axis)
+
+    for axis in axes[len(ADDITIONAL_EPISODE_METRICS):]:
+        axis.axis("off")
 
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
         fig.legend(handles, labels, loc="upper center", ncol=min(len(labels), 4), bbox_to_anchor=(0.5, 1.02))
 
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return save_figure(fig, output_dir / "additional_metrics_episode_comparison.pdf")
+    return save_figure(fig, output_dir / "additional_metrics_episode_comparison.png")
 
 
 def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -3855,7 +3895,7 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
     ax.set_title("Delay-Energy Trade-off Across System and Heuristic Methods")
     style_axes_frame(ax)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "delay_energy_tradeoff.pdf")
+    return save_figure(fig, output_dir / "delay_energy_tradeoff.png")
 
 
 def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -3869,8 +3909,7 @@ def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -
         style = styles[str(method.get("method", ""))]
         x_value = float(method.get("task_success_rate", method.get("task_completion_rate", 0.0))) * 100.0
         y_value = float(method.get("service_continuity_rate", 0.0)) * 100.0
-        load_balance = float(method.get("avg_load_balance_score", 0.0))
-        effective = float(method.get("effective_latency_score", 0.0))
+        load_balance = float(method.get("active_load_balance_score", method.get("avg_load_balance_score", 0.0)))
         size = 90.0 + 360.0 * np.clip(load_balance, 0.0, 1.0)
         if method.get("is_system"):
             size *= 1.20
@@ -3895,33 +3934,21 @@ def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -
             fontsize=10,
             color=PAPER_COLORS["dark"],
         )
-        ax.text(
-            x_value,
-            y_value,
-            f"{effective:.2f}",
-            ha="center",
-            va="center",
-            fontsize=8,
-            color="white",
-            fontweight="bold",
-            zorder=5,
-        )
-
     ax.set_xlabel("Task Success Rate (%)")
     ax.set_ylabel("Service Continuity Rate (%)")
-    ax.set_title("Success-Continuity Trade-off (marker size: load balance, label: effective latency)")
+    ax.set_title("Success-Continuity Trade-off (marker size: load balance)")
     ax.set_xlim(left=0.0, right=max(100.0, ax.get_xlim()[1]))
     ax.set_ylim(bottom=0.0, top=max(100.0, ax.get_ylim()[1]))
     style_axes_frame(ax)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "success_continuity_tradeoff.pdf")
+    return save_figure(fig, output_dir / "success_continuity_tradeoff.png")
 
 
 def normalized_metric_values(methods: Sequence[Dict], metric_key: str, higher_is_better: bool) -> np.ndarray:
     values = np.array([float(method.get(metric_key, 0.0)) for method in methods], dtype=float)
     if len(values) == 0:
         return values
-    if metric_key.endswith("_rate") or metric_key in {"effective_latency_score", "avg_load_balance_score"}:
+    if metric_key.endswith("_rate") or metric_key in {"active_load_balance_score", "avg_load_balance_score", "mec_activity_score"}:
         bounded = np.clip(values, 0.0, 1.0)
         return bounded if higher_is_better else 1.0 - bounded
 
@@ -3981,7 +4008,7 @@ def plot_performance_radar(methods: Sequence[Dict], output_dir: Path) -> Optiona
     ax.grid(True, linestyle="--", alpha=0.45)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2, fontsize=9)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "performance_radar.pdf")
+    return save_figure(fig, output_dir / "performance_radar.png")
 
 
 def plot_paper_dashboard(
@@ -4044,16 +4071,16 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="avg_load_balance_score",
-        title="Avg Load Balance Score",
-        ylabel="Avg Load Balance Score",
+        metric_key="active_load_balance_score",
+        title="Active Load Balance Score",
+        ylabel="Active Load Balance Score",
         compact=True,
     )
     add_panel_label(ax_energy, "(d)")
 
     fig.suptitle("Publication-Style Baseline Comparison", fontsize=15, fontweight="bold", y=0.985)
     fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.26, hspace=0.32)
-    return save_figure(fig, output_dir / "paper_baseline_dashboard.pdf")
+    return save_figure(fig, output_dir / "paper_baseline_dashboard.png")
 
 
 def plot_training_curve_vs_baselines(
@@ -4068,7 +4095,7 @@ def plot_training_curve_vs_baselines(
         plt.close(fig)
         return None
     fig.tight_layout()
-    return save_figure(fig, output_dir / "reward_curve_vs_baselines.pdf")
+    return save_figure(fig, output_dir / "reward_curve_vs_baselines.png")
 
 
 def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -4138,7 +4165,7 @@ def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optio
     style_axes_frame(ax)
     ax.invert_yaxis()
     fig.tight_layout()
-    return save_figure(fig, output_dir / "reward_distribution.pdf")
+    return save_figure(fig, output_dir / "reward_distribution.png")
 
 
 def parse_args() -> argparse.Namespace:

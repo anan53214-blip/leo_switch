@@ -79,8 +79,6 @@ BEST_MODEL_METRIC_CHOICES = (
     "task_success_rate",
     "task_failure_rate",
     "task_settlement_rate",
-    "latency_priority_score",
-    "effective_latency_score",
 )
 
 BEST_MODEL_METRIC_LABELS = {
@@ -95,8 +93,6 @@ BEST_MODEL_METRIC_LABELS = {
     "task_success_rate": "task success",
     "task_failure_rate": "task failure rate",
     "task_settlement_rate": "task settlement",
-    "latency_priority_score": "latency-priority score",
-    "effective_latency_score": "effective latency score",
 }
 
 
@@ -113,10 +109,6 @@ def energy_per_resolved_task(record: Dict[str, Any]) -> float:
 
 def _bounded_unit_score(value: Any) -> float:
     return float(np.clip(float(value), 0.0, 1.0))
-
-
-def _inverse_positive_score(value: Any) -> float:
-    return 1.0 / (1.0 + max(float(value), 0.0))
 
 
 def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> float:
@@ -145,29 +137,6 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
         return -_bounded_unit_score(record.get("task_failure_rate", record.get("deadline_violation_rate", 0.0)))
     if metric_name == "task_settlement_rate":
         return _bounded_unit_score(record.get("task_settlement_rate", record.get("task_resolution_rate", 0.0)))
-    if metric_name == "latency_priority_score":
-        delay_score = _inverse_positive_score(record.get("avg_delay", 0.0))
-        continuity_score = _bounded_unit_score(record.get("service_continuity_rate", 0.0))
-        completion_score = _bounded_unit_score(record.get("task_completion_rate", 0.0))
-        load_balance_score = _bounded_unit_score(record.get("avg_load_balance_score", 0.0))
-        energy_score = _inverse_positive_score(energy_per_resolved_task(record))
-        return (
-            0.45 * delay_score
-            + 0.20 * continuity_score
-            + 0.15 * completion_score
-            + 0.15 * load_balance_score
-            + 0.05 * energy_score
-        )
-    if metric_name == "effective_latency_score":
-        if "effective_latency_score" in record:
-            return _bounded_unit_score(record.get("effective_latency_score", 0.0))
-        delay_score = _inverse_positive_score(record.get("avg_delay", 0.0))
-        continuity_score = _bounded_unit_score(record.get("service_continuity_rate", 0.0))
-        success_score = _bounded_unit_score(
-            record.get("task_success_rate", record.get("task_completion_rate", 0.0))
-        )
-        return delay_score * continuity_score * success_score
-
     raise ValueError(f"Unsupported best-model metric: {metric_name}")
 
 
@@ -743,6 +712,7 @@ class HANMAPPOTrainer:
             'penalty_failed_handover': 0.0,
             'penalty_handover_cost': 0.0,
             'load_balance_sum': 0.0,
+            'mec_activity_sum': 0.0,
             'load_balance_samples': 0,
         }
 
@@ -928,9 +898,15 @@ class HANMAPPOTrainer:
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
             'avg_delay': summary_env_stats.get('avg_delay', 0.0),
-            'effective_latency_score': summary_env_stats.get('effective_latency_score', 0.0),
+            'handover_frequency': summary_env_stats.get('handover_frequency', 0.0),
             'total_energy': env_stats.get('total_energy', 0.0),
+            'energy_per_resolved_task': (
+                env_stats.get('total_energy', 0.0) /
+                max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)
+            ),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
+            'active_load_balance_score': summary_env_stats.get('active_load_balance_score', 0.0),
+            'mec_activity_score': summary_env_stats.get('mec_activity_score', 0.0),
             'reward_delay': env_stats.get('reward_delay', 0.0),
             'reward_energy': env_stats.get('reward_energy', 0.0),
             'reward_qos': env_stats.get('reward_qos', 0.0),
@@ -1029,9 +1005,12 @@ class HANMAPPOTrainer:
                 'pending_task_rate': rollout_stats.get('pending_task_rate', 0),
                 'deadline_violation_rate': rollout_stats.get('deadline_violation_rate', 0),
                 'avg_delay': rollout_stats.get('avg_delay', 0),
-                'effective_latency_score': rollout_stats.get('effective_latency_score', 0),
+                'handover_frequency': rollout_stats.get('handover_frequency', 0),
                 'total_energy': rollout_stats.get('total_energy', 0),
+                'energy_per_resolved_task': energy_per_resolved_task(rollout_stats),
                 'avg_load_balance_score': rollout_stats.get('avg_load_balance_score', 0),
+                'active_load_balance_score': rollout_stats.get('active_load_balance_score', 0),
+                'mec_activity_score': rollout_stats.get('mec_activity_score', 0),
                 'reward_delay': rollout_stats.get('reward_delay', 0),
                 'reward_energy': rollout_stats.get('reward_energy', 0),
                 'reward_qos': rollout_stats.get('reward_qos', 0),
@@ -1233,12 +1212,14 @@ class HANMAPPOTrainer:
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
             'avg_delay': summary_env_stats.get('avg_delay', 0.0),
-            'effective_latency_score': summary_env_stats.get('effective_latency_score', 0.0),
+            'handover_frequency': summary_env_stats.get('handover_frequency', 0.0),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)
             ),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
+            'active_load_balance_score': summary_env_stats.get('active_load_balance_score', 0.0),
+            'mec_activity_score': summary_env_stats.get('mec_activity_score', 0.0),
             'reward_delay': eval_env_stats.get('reward_delay', 0.0),
             'reward_energy': eval_env_stats.get('reward_energy', 0.0),
             'reward_qos': eval_env_stats.get('reward_qos', 0.0),
@@ -1733,9 +1714,15 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'pending_task_rate': summary.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary.get('deadline_violation_rate', 0.0),
             'avg_delay': summary.get('avg_delay', 0.0),
-            'effective_latency_score': summary.get('effective_latency_score', 0.0),
+            'handover_frequency': summary.get('handover_frequency', 0.0),
             'total_energy': env_stats.get('total_energy', 0.0),
+            'energy_per_resolved_task': (
+                env_stats.get('total_energy', 0.0) /
+                max(float(summary.get('resolved_tasks', 0.0)), 1.0)
+            ),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
+            'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
+            'mec_activity_score': summary.get('mec_activity_score', 0.0),
             'reward_delay': env_stats.get('reward_delay', 0.0),
             'reward_energy': env_stats.get('reward_energy', 0.0),
             'reward_qos': env_stats.get('reward_qos', 0.0),
@@ -1927,12 +1914,14 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'pending_task_rate': summary.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary.get('deadline_violation_rate', 0.0),
             'avg_delay': summary.get('avg_delay', 0.0),
-            'effective_latency_score': summary.get('effective_latency_score', 0.0),
+            'handover_frequency': summary.get('handover_frequency', 0.0),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary.get('resolved_tasks', 0.0)), 1.0)
             ),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
+            'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
+            'mec_activity_score': summary.get('mec_activity_score', 0.0),
         }
         selection_metric = getattr(self.config, 'best_model_metric', 'reward')
         eval_record['best_model_metric'] = selection_metric

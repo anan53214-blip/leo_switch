@@ -68,8 +68,8 @@ class SuiteConfig:
     save_interval: int = 100_000
     graph_update_interval: int = 1
     log_interval: int = 1
-    best_model_metric: str = "latency_priority_score"
-    compare_ranking_metric: str = "latency_priority_score"
+    best_model_metric: str = "avg_delay"
+    compare_ranking_metric: str = "avg_delay"
     compare_episodes: int = 3
     plot_window: int = 5
     early_stop_patience: int = 0
@@ -230,8 +230,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "want learned MADDPG/PDQN-style baselines."
         ),
     )
-    parser.add_argument("--best-model-metric", type=str, default="latency_priority_score")
-    parser.add_argument("--compare-ranking-metric", type=str, default="latency_priority_score")
+    parser.add_argument("--best-model-metric", type=str, default="avg_delay")
+    parser.add_argument("--compare-ranking-metric", type=str, default="avg_delay")
     parser.add_argument("--plot-window", type=int, default=5)
     parser.add_argument("--early-stop-patience", type=int, default=0)
     parser.add_argument(

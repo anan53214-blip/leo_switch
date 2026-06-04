@@ -277,7 +277,7 @@ class _PerAgentRewardEnv:
             "task_success_rate": 0.0,
             "task_resolution_rate": 0.0,
             "avg_delay": 0.0,
-            "effective_latency_score": 0.0,
+            "handover_frequency": 0.0,
         }
 
 

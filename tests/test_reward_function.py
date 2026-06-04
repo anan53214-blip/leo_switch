@@ -8,16 +8,11 @@ from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
 from src.environment.mec import MECConfig
 
 
-def test_effective_latency_score_fallback_uses_task_success_rate():
-    record = {
-        "avg_delay": 1.0,
-        "service_continuity_rate": 0.8,
-        "task_success_rate": 0.5,
-        "task_resolution_rate": 1.0,
-        "task_completion_rate": 0.9,
-    }
+def test_custom_composite_scores_are_not_model_selection_metrics():
+    from scripts.train import BEST_MODEL_METRIC_CHOICES
 
-    assert compute_model_selection_score(record, "effective_latency_score") == pytest.approx(0.2)
+    assert "effective_latency_score" not in BEST_MODEL_METRIC_CHOICES
+    assert "latency_priority_score" not in BEST_MODEL_METRIC_CHOICES
 
 
 def test_task_success_rate_can_be_used_as_selection_metric():
@@ -32,13 +27,13 @@ def test_default_local_cpu_matches_constrained_terminal_scenario():
     assert config.user_cpu_freq_ghz == pytest.approx(0.5)
 
 
-def test_g1_latency_suite_defaults_use_energy_aware_ranking():
+def test_g1_latency_suite_defaults_use_avg_delay_selection_metric():
     from scripts.run_latency_priority_g1_300k_600s_u10_suite import SuiteConfig
 
     config = SuiteConfig(run_id="unit")
 
-    assert config.best_model_metric == "latency_priority_score"
-    assert config.compare_ranking_metric == "latency_priority_score"
+    assert config.best_model_metric == "avg_delay"
+    assert config.compare_ranking_metric == "avg_delay"
 
 
 def test_g1_u20_latency_suite_defaults_match_run_label():
@@ -265,7 +260,7 @@ def test_comparison_defaults_use_deadline_priority_reward_weights():
         seed=42,
         max_steps=600,
         num_users=10,
-        best_model_metric="effective_latency_score",
+        best_model_metric="avg_delay",
     )
 
     assert config["reward_delay_weight"] == pytest.approx(0.35)

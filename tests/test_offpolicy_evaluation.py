@@ -43,7 +43,7 @@ class _FakeEnv:
             "task_success_rate": 1.0,
             "task_resolution_rate": 1.0,
             "avg_delay": 1.0,
-            "effective_latency_score": 0.5,
+            "handover_frequency": 0.0,
         }
 
     def close(self):
@@ -55,7 +55,7 @@ def test_han_offpolicy_evaluation_does_not_reset_training_env():
     training_env = _FakeEnv("train")
     eval_env = _FakeEnv("eval")
     trainer.env = training_env
-    trainer.config = SimpleNamespace(eval_episodes=1, seed=7, best_model_metric="effective_latency_score")
+    trainer.config = SimpleNamespace(eval_episodes=1, seed=7, best_model_metric="avg_delay")
     trainer.episodes = 0
     trainer.total_steps = 100
     trainer.best_reward = float("-inf")
@@ -75,7 +75,7 @@ def test_han_offpolicy_evaluation_does_not_reset_training_env():
         "task_success_rate": 0.0,
         "task_resolution_rate": 0.0,
         "avg_delay": 0.0,
-        "effective_latency_score": 0.0,
+        "handover_frequency": 0.0,
     }
     trainer._accumulate_env_stats = lambda target, source: target.update(source) or target
     trainer._create_eval_env = lambda: eval_env
@@ -317,7 +317,7 @@ def test_evaluate_maddpg_policy_uses_shared_algorithm_core(monkeypatch):
                 "task_success_rate": 1.0,
                 "task_resolution_rate": 1.0,
                 "avg_delay": 1.0,
-                "effective_latency_score": 0.5,
+                "handover_frequency": 0.0,
             }
 
     class RecordingAlgorithm:

@@ -1,4 +1,6 @@
 import json
+import re
+from pathlib import Path
 
 import matplotlib
 import numpy as np
@@ -10,12 +12,29 @@ import matplotlib.pyplot as plt
 from scripts.compare_system_baselines import (
     action_diagnostics,
     annotate_priority_metrics,
+    CORE_BAR_METRICS,
     draw_metric_bar_panel,
     load_training_curve_from_path,
     reward_component_step_metrics_for_history,
     save_results_csv,
     save_results_json,
 )
+
+
+def test_comparison_plot_outputs_are_png_only():
+    source = Path("scripts/compare_system_baselines.py").read_text(encoding="utf-8")
+    saved_outputs = re.findall(r"save_figure\([^)]*?output_dir / \"([^\"]+)\"", source, flags=re.DOTALL)
+
+    assert saved_outputs
+    assert all(output.endswith(".png") for output in saved_outputs)
+    assert not any(output.endswith(".pdf") for output in saved_outputs)
+
+
+def test_metric_plots_do_not_show_better_direction_in_titles():
+    source = Path("scripts/compare_system_baselines.py").read_text(encoding="utf-8")
+
+    assert "Higher is better" not in source
+    assert "Lower is better" not in source
 
 
 def test_reward_curve_uses_raw_training_rewards_and_returns_eval_markers(tmp_path):
@@ -114,14 +133,20 @@ def test_comparison_summary_outputs_action_diagnostics_for_legacy_methods(tmp_pa
                 "mean_reward": 1.0,
                 "std_reward": 0.0,
                 "avg_delay": 1.0,
+                "total_handovers": 2,
+                "total_user_seconds": 10.0,
+                "handover_frequency": 0.2,
                 "service_continuity_rate": 1.0,
                 "task_completion_rate": 1.0,
-                "avg_load_balance_score": 0.0,
+                "task_success_rate": 1.0,
+                "active_load_balance_score": 0.5,
+                "avg_load_balance_score": 0.5,
+                "mec_activity_score": 0.2,
                 "total_energy": 1.0,
                 "resolved_tasks": 1.0,
             }
         ],
-        "latency_priority_score",
+        "avg_delay",
     )
 
     json_path = save_results_json(tmp_path, {"methods": methods})
@@ -132,10 +157,34 @@ def test_comparison_summary_outputs_action_diagnostics_for_legacy_methods(tmp_pa
     assert method["handover_action_rate"] == pytest.approx(0.0)
     assert method["local_compute_rate"] == pytest.approx(0.0)
     assert method["mean_offload_ratio"] == pytest.approx(0.0)
+    assert method["handover_frequency"] == pytest.approx(0.2)
+    assert method["active_load_balance_score"] == pytest.approx(0.5)
+    assert method["mec_activity_score"] == pytest.approx(0.2)
 
     csv_text = csv_path.read_text(encoding="utf-8")
-    assert "handover_action_rate" in csv_text.splitlines()[0]
+    header = csv_text.splitlines()[0]
+    assert "handover_action_rate" in header
+    assert "handover_frequency" in header
+    assert "active_load_balance_score" in header
+    assert "mec_activity_score" in header
+    assert "effective_latency_score" not in header
+    assert "latency_priority_score" not in header
     assert ",0.0,0.0,0.0," in csv_text
+
+
+def test_core_metric_comparison_uses_paper_kpis_without_custom_composite_score():
+    metric_keys = [metric[0] for metric in CORE_BAR_METRICS]
+
+    assert metric_keys == [
+        "avg_delay",
+        "task_success_rate",
+        "deadline_violation_rate",
+        "service_continuity_rate",
+        "energy_per_resolved_task",
+        "active_load_balance_score",
+    ]
+    assert "effective_latency_score" not in metric_keys
+    assert "latency_priority_score" not in metric_keys
 
 
 def test_tiny_load_balance_bar_labels_stay_inside_axes():
@@ -144,20 +193,20 @@ def test_tiny_load_balance_bar_labels_stay_inside_axes():
             "method": "han_mappo",
             "display_name": "HAN+MAPPO",
             "is_system": True,
-            "avg_load_balance_score": 0.001235,
-            "episode_metrics": [{"avg_load_balance_score": 0.0011}, {"avg_load_balance_score": 0.0013}],
+            "active_load_balance_score": 0.001235,
+            "episode_metrics": [{"active_load_balance_score": 0.0011}, {"active_load_balance_score": 0.0013}],
         },
         {
             "method": "attn_mappo",
             "display_name": "Attn+MAPPO",
-            "avg_load_balance_score": 0.001097,
-            "episode_metrics": [{"avg_load_balance_score": 0.0010}, {"avg_load_balance_score": 0.0012}],
+            "active_load_balance_score": 0.001097,
+            "episode_metrics": [{"active_load_balance_score": 0.0010}, {"active_load_balance_score": 0.0012}],
         },
         {
             "method": "full_local",
             "display_name": "Full-Local",
-            "avg_load_balance_score": 0.0,
-            "episode_metrics": [{"avg_load_balance_score": 0.0}, {"avg_load_balance_score": 0.0}],
+            "active_load_balance_score": 0.0,
+            "episode_metrics": [{"active_load_balance_score": 0.0}, {"active_load_balance_score": 0.0}],
         },
     ]
 
@@ -166,13 +215,14 @@ def test_tiny_load_balance_bar_labels_stay_inside_axes():
         draw_metric_bar_panel(
             ax,
             methods,
-            metric_key="avg_load_balance_score",
-            title="Avg Load Balance Score",
-            ylabel="Avg Load Balance Score",
+            metric_key="active_load_balance_score",
+            title="Active Load Balance Score",
+            ylabel="Active Load Balance Score",
             compact=True,
         )
 
         y_top = ax.get_ylim()[1]
+        assert ax.get_title() == "Active Load Balance Score"
         assert all(text.get_position()[1] <= y_top for text in ax.texts)
     finally:
         plt.close(fig)

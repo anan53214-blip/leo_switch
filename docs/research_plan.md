@@ -67,23 +67,22 @@ action_i = (handover_action_i, offload_ratio_i)
 
 ## 5. 评价指标
 
-主要指标：
+主要指标按论文常见 KPI 分组报告，不再使用自定义综合排序分：
 
-- `latency_priority_score`
-- `avg_delay`
-- `service_continuity_rate`
-- `service_availability_rate`
-- `task_completion_rate`
-- `total_energy`
-- `avg_load_balance_score`
+- 延迟 QoS：`avg_delay`
+- 任务可靠性：`task_success_rate`, `deadline_violation_rate`, `task_failure_rate`
+- 服务连续性/切换：`service_continuity_rate`,
+  `service_availability_rate`, `handover_success_rate`,
+  `handover_failure_rate`, `handover_frequency`
+- 资源代价：`energy_per_resolved_task`, `total_energy`,
+  `active_load_balance_score`, `mec_activity_score`
 
 辅助指标：
 
-- `handover_success_rate`
-- `handover_failure_rate`
+- `task_completion_rate`
+- `task_settlement_rate`
 - `task_resolution_rate`
 - `pending_task_rate`
-- `energy_per_resolved_task`
 
 ## 6. 实验流程
 
@@ -101,7 +100,7 @@ python scripts\compare_system_baselines.py `
   --run-mode compare_only `
   --system-run-dir results\full_train_latency_priority `
   --episodes 5 `
-  --compare-ranking-metric latency_priority_score
+  --compare-ranking-metric avg_delay
 ```
 
 ## 7. 论文图建议
