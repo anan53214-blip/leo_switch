@@ -195,16 +195,28 @@ def run_command(command: Sequence[str], cwd: Path, log_path: Path, dry_run: bool
     print(f"Log: {log_path}", flush=True)
     if dry_run:
         return
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     with log_path.open("w", encoding="utf-8") as handle:
         handle.write(format_command(command) + "\n\n")
         handle.flush()
-        subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd,
-            check=True,
-            stdout=handle,
+            env=env,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            handle.write(line)
+            handle.flush()
+        return_code = process.wait()
+        if return_code:
+            raise subprocess.CalledProcessError(return_code, command)
 
 
 def _float_or_nan(value: str | None) -> float:

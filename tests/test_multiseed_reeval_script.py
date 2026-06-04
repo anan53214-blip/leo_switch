@@ -1,4 +1,5 @@
 import csv
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from scripts.run_u20_multiseed_reeval import (
     MultiSeedConfig,
     aggregate_seed_summaries,
     build_compare_command,
+    run_command,
 )
 
 
@@ -76,3 +78,20 @@ def test_aggregate_seed_summaries_writes_mean_std(tmp_path):
     assert float(rows["han_mappo"]["avg_delay_mean"]) == pytest.approx(2.7)
     assert float(rows["han_mappo"]["avg_delay_std"]) == pytest.approx(0.1414213562)
     assert float(rows["attn_mappo"]["task_success_rate_mean"]) == pytest.approx(0.85)
+
+
+def test_run_command_streams_output_to_log(tmp_path):
+    log_path = tmp_path / "command.log"
+
+    run_command(
+        [
+            sys.executable,
+            "-c",
+            "import os; print('PYTHONUNBUFFERED=' + str(os.environ.get('PYTHONUNBUFFERED')))",
+        ],
+        cwd=Path.cwd(),
+        log_path=log_path,
+        dry_run=False,
+    )
+
+    assert "PYTHONUNBUFFERED=1" in log_path.read_text(encoding="utf-8")
