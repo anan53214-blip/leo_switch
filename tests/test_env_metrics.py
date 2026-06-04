@@ -93,6 +93,44 @@ def test_compare_summary_includes_task_success_metrics():
     assert HIGHER_IS_BETTER["task_settlement_rate"] is True
 
 
+def test_load_balance_score_ignores_connection_only_distribution():
+    env = _build_single_user_env(num_users=2)
+
+    try:
+        env.reset(seed=11)
+        env.mec_manager.servers[0].add_user(0)
+        env.mec_manager.servers[1].add_user(1)
+
+        assert env._compute_load_balance_score() == pytest.approx(0.0)
+    finally:
+        env.close()
+
+
+def test_load_balance_score_rewards_balanced_mec_workload():
+    env = _build_single_user_env(num_users=2)
+
+    try:
+        env.reset(seed=11)
+
+        first = env.mec_manager.servers[0]
+        second = env.mec_manager.servers[1]
+        first.task_queue = [{} for _ in range(3)]
+        second.task_queue = [{} for _ in range(3)]
+        first.available_freq_ghz = first.total_capacity_ghz * 0.5
+        second.available_freq_ghz = second.total_capacity_ghz * 0.5
+        balanced = env._compute_load_balance_score()
+
+        first.task_queue = [{} for _ in range(6)]
+        second.task_queue = []
+        first.available_freq_ghz = 0.0
+        second.available_freq_ghz = second.total_capacity_ghz
+        imbalanced = env._compute_load_balance_score()
+
+        assert balanced > imbalanced
+    finally:
+        env.close()
+
+
 def test_compare_summary_preserves_reward_breakdown_metrics():
     summary = {
         "avg_delay": 1.0,

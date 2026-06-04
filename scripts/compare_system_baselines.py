@@ -928,6 +928,14 @@ def infer_system_artifacts(
     return run_dir, checkpoint, history_path
 
 
+def find_existing_checkpoint(run_dir: Path) -> Optional[Path]:
+    for filename in ("best_model.pt", "final_model.pt"):
+        candidate = run_dir / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def list_training_artifacts(run_dir: Path) -> List[Path]:
     if not run_dir.exists():
         return []
@@ -2590,6 +2598,7 @@ def train_config_from_dict(
         config.early_stop_patience = int(early_stop_patience)
     if save_path is not None:
         config.save_path = str(save_path)
+        config.log_path = str(PROJECT_ROOT / "results" / "logs")
     if exp_name:
         config.exp_name = exp_name
     if load_path is not None:
@@ -2793,10 +2802,30 @@ def train_and_evaluate_no_han_mappo(
     max_steps: Optional[int],
     total_timesteps: int,
     early_stop_patience: int,
+    reuse_checkpoint_if_available: bool = False,
 ) -> Dict:
     save_dir = output_dir / "learned_baselines" / "mappo_no_han"
     save_dir.mkdir(parents=True, exist_ok=True)
     trainer_cls = no_han_trainer_class_for_objective(objective)
+    if reuse_checkpoint_if_available:
+        checkpoint = find_existing_checkpoint(save_dir)
+        if checkpoint is not None:
+            result = evaluate_mappo_checkpoint_with_trainer(
+                checkpoint=checkpoint,
+                config_data=config_data,
+                episodes=episodes,
+                device=resolve_device(device),
+                max_steps=max_steps,
+                trainer_cls=trainer_cls,
+                method_name="mappo_no_han",
+                is_system=False,
+            )
+            result["source"] = "mappo_no_han_checkpoint_eval"
+            result["checkpoint"] = str(checkpoint)
+            history_path = save_dir / "training_history.json"
+            if history_path.exists():
+                result["training_history"] = str(history_path)
+            return result
     config = train_config_from_dict(
         config_data,
         device=device,
@@ -2838,9 +2867,38 @@ def train_and_evaluate_attention_mappo(
     max_steps: Optional[int],
     total_timesteps: int,
     early_stop_patience: int,
+    reuse_checkpoint_if_available: bool = False,
 ) -> Dict:
     save_dir = output_dir / "learned_baselines" / "attn_mappo"
     save_dir.mkdir(parents=True, exist_ok=True)
+    if reuse_checkpoint_if_available:
+        checkpoint = find_existing_checkpoint(save_dir)
+        if checkpoint is not None:
+            config = train_config_from_dict(
+                config_data,
+                device=device,
+                max_steps=max_steps,
+                episodes=episodes,
+                save_path=checkpoint.parent,
+                load_path=checkpoint,
+            )
+            config.algorithm = "attn_mappo"
+            result = evaluate_mappo_checkpoint_with_trainer(
+                checkpoint=checkpoint,
+                config_data=asdict(config),
+                episodes=episodes,
+                device=resolve_device(device),
+                max_steps=max_steps,
+                trainer_cls=AttentionMAPPOTrainer,
+                method_name="attn_mappo",
+                is_system=False,
+            )
+            result["source"] = "attn_mappo_checkpoint_eval"
+            result["checkpoint"] = str(checkpoint)
+            history_path = save_dir / "training_history.json"
+            if history_path.exists():
+                result["training_history"] = str(history_path)
+            return result
     config = train_config_from_dict(
         config_data,
         device=device,
@@ -3278,6 +3336,11 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
 
     positions = np.arange(len(ordered), dtype=float)
     colors = [styles[str(method.get("method", ""))].get("color", PAPER_COLORS["muted"]) for method in ordered]
+    value_top = max(
+        [value + error for value, error in zip(values, errors)] + [0.0]
+    )
+    y_top = value_top * 1.24 if value_top > 0.0 else 1.0
+    label_offset = y_top * 0.025
     bars = ax.bar(
         positions,
         values,
@@ -3301,7 +3364,7 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
             bar.set_linewidth(2.1)
         ax.text(
             bar.get_x() + bar.get_width() / 2.0,
-            value + max(max(values) * 0.02, 0.015),
+            min(value + errors[index] + label_offset, y_top * 0.98),
             metric_display_value(value, metric_key),
             va="bottom",
             ha="center",
@@ -3316,7 +3379,7 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", linestyle="--", alpha=0.6, color="#BDBDBD")
     if values:
-        ax.set_ylim(0.0, max(values) * 1.20 + 1e-9)
+        ax.set_ylim(0.0, y_top + 1e-12)
     style_axes_frame(ax)
 
 
@@ -4151,6 +4214,8 @@ def parse_args() -> argparse.Namespace:
                         help="Previous baseline_compare directory or comparison_summary.json to reuse methods from.")
     parser.add_argument("--reuse-methods", type=str, nargs="*", default=[],
                         help="Method names to reuse from --reuse-methods-from. Empty means all non-system methods.")
+    parser.add_argument("--reuse-learned-checkpoints", action="store_true",
+                        help="Evaluate existing learned baseline checkpoints in --output-dir instead of retraining them.")
     return parser.parse_args()
 
 
@@ -4294,8 +4359,9 @@ def main() -> None:
                 max_steps=args.max_steps,
                 total_timesteps=args.no_han_total_timesteps or args.total_timesteps,
                 early_stop_patience=args.early_stop_patience,
+                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
-            result["source"] = "mappo_no_han_train_eval"
+            result.setdefault("source", "mappo_no_han_train_eval")
         elif baseline_name == "attn_mappo":
             result = train_and_evaluate_attention_mappo(
                 config_data=config_data,
@@ -4305,8 +4371,9 @@ def main() -> None:
                 max_steps=args.max_steps,
                 total_timesteps=args.attn_mappo_timesteps or args.total_timesteps,
                 early_stop_patience=args.early_stop_patience,
+                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
-            result["source"] = "attn_mappo_train_eval"
+            result.setdefault("source", "attn_mappo_train_eval")
         elif baseline_name == "han_maddpg":
             result = train_and_evaluate_han_maddpg_baseline(
                 config_data=config_data,

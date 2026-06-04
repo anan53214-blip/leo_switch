@@ -822,3 +822,111 @@ policy network: run more comparison episodes or seeds, test more users or
 higher task-arrival probability, and report confidence intervals. If the paper
 needs to demonstrate HAN's value, include a higher-contention scenario where
 load distribution and global satellite state are actually decision-critical.
+
+## 2026-06-04 - g1 300k/600s/u20 Load-Balance Metric Diagnosis
+
+**Experiment directory:** `results/baseline_compare/g1_300k_600s_u20_20260603_201842`
+
+**Observation:** Attn+MAPPO led the main latency/QoS metrics but ranked below
+HAN+MAPPO, Min-Distance, and MAPPO(no-HAN) under `latency_priority_score`.
+Attn+MAPPO achieved the best average delay (`2.5816s`), best task success
+(`0.8377`), lowest deadline violation (`0.1622`), and highest
+`effective_latency_score` (`0.2304`), but its `avg_load_balance_score` was only
+`0.3521`. By contrast, Min-Distance scored `0.5818` on load balance, and
+Full-Local scored `0.6038` despite doing no offloading.
+
+**Root cause:** The current load-balance metric is not a pure MEC compute-load
+metric. `LEOSatelliteEnv._compute_load_balance_score()` computes the spread of
+`server.queue_length + len(server.connected_users)` over active satellites and
+returns `1 / (1 + std(active_loads))`. This means methods can receive high
+load-balance scores by spreading serving-satellite connections, even when tasks
+are computed locally or when MEC queues are not the bottleneck. Conversely, a
+policy that concentrates users on a few good satellites for latency/deadline
+benefit can be penalized as "imbalanced" even if its task performance is better.
+
+**Impact on ranking:** The `latency_priority_score` includes
+`0.15 * avg_load_balance_score`. Attn+MAPPO gained on delay and task success
+but lost roughly `0.033` selection-score points against HAN+MAPPO from the load
+balance component alone (`0.0528` vs `0.0861`). This is large enough to reverse
+the ranking even though Attn+MAPPO wins the primary latency/deadline metrics.
+
+**Follow-up decision:** Treat the u20 result as evidence that Attn+MAPPO has a
+latency/QoS advantage, but do not use the current `avg_load_balance_score` as a
+paper claim about MEC load balancing. The next code change should separate
+connection balance from MEC compute/queue balance, for example by reporting
+both `connection_balance_score` and a queue/utilization-based
+`mec_load_balance_score`, then using the MEC-specific score in energy/latency
+comparisons.
+
+## 2026-06-04 - MEC-Only Load-Balance Metric Redefinition
+
+**Context:** Follow-up discussion decided not to keep a separate
+`connection_balance_score`, because serving-satellite connection spread is not
+part of the paper's MEC task-offloading objective and can mislead comparisons.
+
+**Code change:** Redefined `LEOSatelliteEnv._compute_load_balance_score()` so
+`avg_load_balance_score` is based only on MEC queue pressure and CPU
+utilization. Each satellite's load is computed as `0.5 * queue_ratio + 0.5 *
+cpu_utilization`; the final score uses Jain-style fairness across satellites
+multiplied by a mean-load activity factor. Empty/full-local MEC usage now
+returns `0.0` instead of receiving a high score from balanced connections.
+
+**Verification:**
+
+- Added regression tests showing connection-only distributions do not increase
+  `avg_load_balance_score`.
+- Added regression tests showing balanced MEC queue/CPU workload scores higher
+  than concentrating the same work on one satellite.
+- `pytest tests/test_env_metrics.py -q`
+
+**Follow-up decision:** Rerun u20/u30 comparisons after this change. Historical
+`avg_load_balance_score` values before this entry are not comparable to future
+runs because the metric definition changed.
+
+## 2026-06-04 - g1 300k/600s/u20 MEC-Only LB Re-Evaluation
+
+**Experiment directory overwritten:**
+`results/baseline_compare/g1_300k_600s_u20_20260603_201842`
+
+**Command intent:** Re-ran the evaluation stage on CPU after redefining
+`avg_load_balance_score`. The system checkpoint, MAPPO(no-HAN) checkpoint, and
+Attn+MAPPO checkpoint were re-evaluated for `3` episodes with `max_steps=600`;
+the learned baselines reused existing `best_model.pt` files instead of
+retraining. Rule-based baselines were re-evaluated under the same seed and
+episode settings. Output JSON/CSV/PDF files were regenerated in the same
+baseline comparison directory.
+
+**Code support added for safe re-evaluation:** `compare_system_baselines.py`
+now rewrites stale artifact `log_path` values to the local `results/logs`
+directory when reusing checkpoints, preventing old Linux absolute paths from
+breaking Windows CPU evaluation. It also supports
+`--reuse-learned-checkpoints`, which evaluates existing learned-baseline
+checkpoints in `--output-dir` instead of launching another 300k-step baseline
+training run.
+
+**Updated comparison:**
+
+| Method | Selection Score | Avg Delay | Task Success | Service Continuity | MEC LB | Energy / Resolved | Source |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Attn+MAPPO | 0.4887 | 2.589s | 0.837 | 0.984 | 0.001097 | 0.2266 | checkpoint eval |
+| HAN+MAPPO | 0.4852 | 2.655s | 0.828 | 0.985 | 0.001235 | 0.2291 | checkpoint eval |
+| MAPPO(no-HAN) | 0.4839 | 2.690s | 0.824 | 0.981 | 0.001412 | 0.1961 | checkpoint eval |
+| Min-Distance | 0.4813 | 2.786s | 0.814 | 0.985 | 0.001773 | 0.1614 | heuristic eval |
+| Joint Greedy | 0.3930 | 4.218s | 0.568 | 0.941 | 0.000000 | 0.4954 | heuristic eval |
+| Full-Local | 0.3878 | 4.223s | 0.557 | 0.922 | 0.000000 | 0.4857 | heuristic eval |
+| Random | 0.3316 | 3.133s | 0.665 | 0.386 | 0.001509 | 0.1000 | heuristic eval |
+
+**Diagnosis:** The new MEC-only LB metric removes the suspicious advantage of
+Full-Local and Joint Greedy: both now score `0.0` because they generate no
+meaningful MEC queue/CPU activity. Min-Distance is no longer inflated by
+balanced serving-satellite connections and falls behind all three learned
+methods under `latency_priority_score`. Attn+MAPPO remains the best method in
+this three-episode re-evaluation because it has the lowest delay and highest
+task success, but its lead over HAN+MAPPO is small (`0.0035` selection-score
+points), so this should be treated as a promising trend rather than a strong
+claim without multi-seed confidence intervals.
+
+**Verification:**
+
+- `pytest tests/test_compare_system_baselines_config.py tests/test_env_metrics.py tests/test_reward_function.py tests/test_baseline_plotting.py -q`
+- `py_compile scripts/compare_system_baselines.py src/environment/gym_env.py`

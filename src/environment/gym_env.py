@@ -798,17 +798,32 @@ class LEOSatelliteEnv(gym.Env):
         return reward
 
     def _compute_load_balance_score(self) -> float:
-        """Use the spread of active satellite load as a cooperative signal."""
-        active_loads = []
+        """Measure MEC workload balance from queue pressure and CPU utilization."""
+        mec_loads = []
         for server in self.mec_manager.servers.values():
-            aggregate_load = server.queue_length + len(server.connected_users)
-            if aggregate_load > 0:
-                active_loads.append(float(aggregate_load))
+            queue_ratio = float(server.queue_length) / max(
+                float(server.config.max_queue_size),
+                1.0,
+            )
+            cpu_utilization = float(np.clip(server.utilization, 0.0, 1.0))
+            mec_loads.append(
+                float(np.clip(0.5 * queue_ratio + 0.5 * cpu_utilization, 0.0, 1.0))
+            )
 
-        if len(active_loads) <= 1:
-            return 1.0
+        if not mec_loads:
+            return 0.0
 
-        return 1.0 / (1.0 + float(np.std(active_loads)))
+        loads = np.asarray(mec_loads, dtype=np.float32)
+        total_load = float(np.sum(loads))
+        if total_load <= 1e-9:
+            return 0.0
+
+        squared_load = float(np.sum(np.square(loads)))
+        fairness = (total_load * total_load) / (
+            float(len(loads)) * max(squared_load, 1e-9)
+        )
+        activity = min(float(np.mean(loads)) / 0.05, 1.0)
+        return float(np.clip(fairness * activity, 0.0, 1.0))
 
     def _compute_task_reward(
         self,

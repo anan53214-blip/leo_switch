@@ -133,7 +133,7 @@ interruption_seconds / step_user_seconds`.
 | `task_settlement_rate` | 任务结算率 |
 | `task_resolution_rate` | 任务解析率 |
 | `pending_task_rate` | 未完成或排队任务比例 |
-| `avg_load_balance_score` | 平均负载均衡得分 |
+| `avg_load_balance_score` | MEC queue/CPU utilization load-balance score |
 
 `task_success_rate` is the primary task outcome metric and is computed as `completed_tasks / total_tasks`.
 `task_failure_rate` is computed as `deadline_violations / total_tasks`.
@@ -148,6 +148,11 @@ This makes deadline failures reduce the primary latency-oriented score directly.
 The g1 300k/600s/u10 suite uses `latency_priority_score` by default for
 checkpoint selection and comparison ranking so energy remains a secondary
 evaluation term instead of being completely ignored.
+
+`avg_load_balance_score` is now computed from MEC queue pressure and CPU
+utilization only. It no longer includes the number of users connected to each
+satellite, so local-compute policies cannot receive a high load-balance score
+merely because serving-satellite connections are geographically spread out.
 
 ## 7. 与基线的关系
 

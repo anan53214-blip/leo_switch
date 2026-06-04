@@ -1,11 +1,16 @@
 import json
 
+import matplotlib
 import numpy as np
 import pytest
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from scripts.compare_system_baselines import (
     action_diagnostics,
     annotate_priority_metrics,
+    draw_metric_bar_panel,
     load_training_curve_from_path,
     reward_component_step_metrics_for_history,
     save_results_csv,
@@ -131,3 +136,43 @@ def test_comparison_summary_outputs_action_diagnostics_for_legacy_methods(tmp_pa
     csv_text = csv_path.read_text(encoding="utf-8")
     assert "handover_action_rate" in csv_text.splitlines()[0]
     assert ",0.0,0.0,0.0," in csv_text
+
+
+def test_tiny_load_balance_bar_labels_stay_inside_axes():
+    methods = [
+        {
+            "method": "han_mappo",
+            "display_name": "HAN+MAPPO",
+            "is_system": True,
+            "avg_load_balance_score": 0.001235,
+            "episode_metrics": [{"avg_load_balance_score": 0.0011}, {"avg_load_balance_score": 0.0013}],
+        },
+        {
+            "method": "attn_mappo",
+            "display_name": "Attn+MAPPO",
+            "avg_load_balance_score": 0.001097,
+            "episode_metrics": [{"avg_load_balance_score": 0.0010}, {"avg_load_balance_score": 0.0012}],
+        },
+        {
+            "method": "full_local",
+            "display_name": "Full-Local",
+            "avg_load_balance_score": 0.0,
+            "episode_metrics": [{"avg_load_balance_score": 0.0}, {"avg_load_balance_score": 0.0}],
+        },
+    ]
+
+    fig, ax = plt.subplots()
+    try:
+        draw_metric_bar_panel(
+            ax,
+            methods,
+            metric_key="avg_load_balance_score",
+            title="Avg Load Balance Score",
+            ylabel="Avg Load Balance Score",
+            compact=True,
+        )
+
+        y_top = ax.get_ylim()[1]
+        assert all(text.get_position()[1] <= y_top for text in ax.texts)
+    finally:
+        plt.close(fig)
