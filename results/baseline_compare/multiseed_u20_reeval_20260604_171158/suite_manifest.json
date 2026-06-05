@@ -1,0 +1,43 @@
+{
+  "suite_dir": "/home/pjpjq/LEO_switch/results/baseline_compare/multiseed_u20_reeval_20260604_171158",
+  "system_run_dir": "/home/pjpjq/LEO_switch/results/full_train_latency_priority_g1_300k_600s_u20_20260603_201842",
+  "learned_baselines_source": "/home/pjpjq/LEO_switch/results/baseline_compare/g1_300k_600s_u20_20260603_201842/learned_baselines",
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "episodes": 10,
+  "max_steps": 600,
+  "num_users": 20,
+  "device": "cuda",
+  "python_executable": "python",
+  "best_model_metric": "avg_delay",
+  "compare_ranking_metric": "avg_delay",
+  "plot_window": 5,
+  "baselines": [
+    "attn_mappo",
+    "mappo_no_han",
+    "random",
+    "min_distance",
+    "full_local",
+    "joint_greedy"
+  ],
+  "metrics": [
+    "avg_delay",
+    "task_success_rate",
+    "deadline_violation_rate",
+    "service_continuity_rate",
+    "handover_failure_rate",
+    "handover_frequency",
+    "energy_per_resolved_task",
+    "active_load_balance_score",
+    "mec_activity_score",
+    "mean_offload_ratio"
+  ],
+  "dry_run": false,
+  "overwrite": false,
+  "extra_compare_args": []
+}
