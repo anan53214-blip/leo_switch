@@ -17,6 +17,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +30,7 @@ import matplotlib.pyplot as plt
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PYTHON = r"C:\Users\19704\.conda\envs\satellite.env\python.exe"
+DEFAULT_PYTHON = sys.executable
 DEFAULT_USER_COUNTS = (20, 30, 40)
 DEFAULT_BASELINES = (
     "attn_mappo",

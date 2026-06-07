@@ -958,3 +958,15 @@ For compact legends, `mappo_no_han` is displayed as `MAPPO`; `maddpg` remains
 - `pytest tests/test_multiuser_scaling_suite.py -q`
 - `python scripts/run_multiuser_scaling_suite.py --run-id drycheck --python-executable C:\Users\19704\.conda\envs\satellite.env\python.exe --device cpu --dry-run`
 - `pytest tests/test_baseline_plotting.py tests/test_multiuser_scaling_suite.py -q`
+
+**2026-06-07 portability fix:** Changed the default
+`--python-executable` for `scripts/run_multiuser_scaling_suite.py` from a
+machine-specific Windows Conda path to `sys.executable`. Linux/Windows runs now
+inherit the Python interpreter that launched the suite, while still allowing an
+explicit `--python-executable` override.
+
+**Verification:**
+
+- `pytest tests/test_multiuser_scaling_suite.py::test_default_python_executable_uses_current_interpreter_without_personal_path -q`
+- `pytest tests/test_multiuser_scaling_suite.py tests/test_baseline_plotting.py -q`
+- `python scripts/run_multiuser_scaling_suite.py --run-id drycheck_py --device cpu --dry-run`

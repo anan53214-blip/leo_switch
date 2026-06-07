@@ -1,17 +1,27 @@
 import csv
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts.run_multiuser_scaling_suite import (
     DEFAULT_BASELINES,
+    DEFAULT_PYTHON,
     METHOD_DISPLAY_NAMES,
     MultiUserConfig,
     aggregate_user_summaries,
     build_compare_command,
     build_paths,
 )
+
+
+def test_default_python_executable_uses_current_interpreter_without_personal_path():
+    source = Path("scripts/run_multiuser_scaling_suite.py").read_text(encoding="utf-8")
+
+    assert r"C:\Users\19704" not in source
+    assert DEFAULT_PYTHON == sys.executable
+    assert MultiUserConfig(run_id="demo").python_executable == sys.executable
 
 
 def test_build_paths_keeps_each_user_count_isolated(tmp_path):
