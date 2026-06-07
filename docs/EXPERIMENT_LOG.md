@@ -930,3 +930,31 @@ claim without multi-seed confidence intervals.
 
 - `pytest tests/test_compare_system_baselines_config.py tests/test_env_metrics.py tests/test_reward_function.py tests/test_baseline_plotting.py -q`
 - `py_compile scripts/compare_system_baselines.py src/environment/gym_env.py`
+
+## 2026-06-07 - Multi-User Scaling Suite Script
+
+**Code change:** Added `scripts/run_multiuser_scaling_suite.py` to orchestrate
+user-count scaling experiments for `20`, `30`, and `40` users. For each user
+count, the script trains/reuses a HAN+MAPPO system run, then calls
+`scripts/compare_system_baselines.py --run-mode compare_only` with
+`attn_mappo`, `mappo_no_han`, `maddpg`, `pdqn`, `random`, `min_distance`,
+`full_local`, and `joint_greedy`. Results are isolated under
+`results/full_train_latency_priority_multiuser_u<users>_<run_id>` and
+`results/baseline_compare/multiuser_scaling_<run_id>/u<users>`.
+
+**Plotting/output change:** The script aggregates per-user
+`comparison_summary.csv` files into `multiuser_summary.csv`, then generates:
+
+- `multiuser_reward_convergence.png`
+- `multiuser_core_metrics.png`
+- `multiuser_resource_metrics.png`
+- `suite_manifest.json`
+
+For compact legends, `mappo_no_han` is displayed as `MAPPO`; `maddpg` remains
+`MADDPG`.
+
+**Verification:**
+
+- `pytest tests/test_multiuser_scaling_suite.py -q`
+- `python scripts/run_multiuser_scaling_suite.py --run-id drycheck --python-executable C:\Users\19704\.conda\envs\satellite.env\python.exe --device cpu --dry-run`
+- `pytest tests/test_baseline_plotting.py tests/test_multiuser_scaling_suite.py -q`

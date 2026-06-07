@@ -144,7 +144,7 @@ DISPLAY_NAME_MAP = {
     "dqn": "DQN",
     "maddpg": "MADDPG",
     "pdqn": "PDQN",
-    "mappo_no_han": "MAPPO (no HAN)",
+    "mappo_no_han": "MAPPO",
     "attn_mappo": "Attn+MAPPO",
     "han_maddpg": "HAN+MADDPG",
     "han_pdqn": "HAN+PDQN",
@@ -372,7 +372,7 @@ SCATTER_LABEL_OFFSETS = {
     "DQN": (10, 10),
     "MADDPG": (10, 12),
     "PDQN": (10, 12),
-    "MAPPO (no HAN)": (10, -14),
+    "MAPPO": (10, -14),
     "HAN+MADDPG": (10, 12),
     "HAN+PDQN": (10, 12),
 }
@@ -3315,7 +3315,7 @@ def method_tick_label(method: Dict) -> str:
         "Joint Greedy": "Joint\nGreedy",
         "Min-Distance": "Min-\nDistance",
         "Full-Local": "Full-\nLocal",
-        "MAPPO (no HAN)": "MAPPO\n(no HAN)",
+        "MAPPO": "MAPPO",
         "MADDPG": "MADDPG",
     }
     return replacements.get(label, label)
