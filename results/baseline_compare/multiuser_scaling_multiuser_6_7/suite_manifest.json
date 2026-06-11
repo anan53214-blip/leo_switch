@@ -1,0 +1,60 @@
+{
+  "run_id": "multiuser_6_7",
+  "generated_at": "2026-06-10T07:53:33",
+  "config": {
+    "run_id": "multiuser_6_7",
+    "user_counts": [
+      20,
+      30,
+      40
+    ],
+    "python_executable": "/home/pjpjq/miniconda3/envs/satellite.env/bin/python",
+    "seed": 42,
+    "device": "cuda",
+    "total_timesteps": 300000,
+    "max_steps": 600,
+    "n_steps": 1024,
+    "eval_interval": 50000,
+    "eval_episodes": 3,
+    "save_interval": 100000,
+    "graph_update_interval": 1,
+    "log_interval": 1,
+    "best_model_metric": "avg_delay",
+    "compare_ranking_metric": "avg_delay",
+    "compare_episodes": 3,
+    "plot_window": 5,
+    "early_stop_patience": 0,
+    "baselines": [
+      "attn_mappo",
+      "mappo_no_han",
+      "maddpg",
+      "pdqn",
+      "random",
+      "min_distance",
+      "full_local",
+      "joint_greedy"
+    ],
+    "skip_system_train": false,
+    "skip_compare": false,
+    "force_system_train": false,
+    "reuse_learned_checkpoints": false,
+    "dry_run": false
+  },
+  "method_display_names": {
+    "han_mappo": "HAN+MAPPO",
+    "attn_mappo": "Attn+MAPPO",
+    "mappo_no_han": "MAPPO",
+    "maddpg": "MADDPG",
+    "pdqn": "PDQN",
+    "random": "Random",
+    "min_distance": "Min-Distance",
+    "full_local": "Full-Local",
+    "joint_greedy": "Joint Greedy"
+  },
+  "generated_artifacts": [
+    "/home/pjpjq/LEO_switch/results/baseline_compare/multiuser_scaling_multiuser_6_7/multiuser_summary.csv",
+    "/home/pjpjq/LEO_switch/results/baseline_compare/multiuser_scaling_multiuser_6_7/multiuser_reward_convergence.png",
+    "/home/pjpjq/LEO_switch/results/baseline_compare/multiuser_scaling_multiuser_6_7/multiuser_core_metrics.png",
+    "/home/pjpjq/LEO_switch/results/baseline_compare/multiuser_scaling_multiuser_6_7/multiuser_resource_metrics.png"
+  ]
+}
