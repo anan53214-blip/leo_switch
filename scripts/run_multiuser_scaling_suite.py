@@ -31,12 +31,14 @@ import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PYTHON = sys.executable
-DEFAULT_USER_COUNTS = (20, 30, 40)
+DEFAULT_USER_COUNTS = (20, 25, 30, 35, 40)
 DEFAULT_BASELINES = (
     "attn_mappo",
     "mappo_no_han",
     "maddpg",
     "pdqn",
+    "han_maddpg",
+    "han_pdqn",
     "random",
     "min_distance",
     "full_local",
@@ -49,6 +51,8 @@ METHOD_DISPLAY_NAMES = {
     "mappo_no_han": "MAPPO",
     "maddpg": "MADDPG",
     "pdqn": "PDQN",
+    "han_maddpg": "HAN+MADDPG",
+    "han_pdqn": "HAN+PDQN",
     "random": "Random",
     "min_distance": "Min-Distance",
     "full_local": "Full-Local",
@@ -60,6 +64,8 @@ LEARNED_REWARD_METHODS = (
     "mappo_no_han",
     "maddpg",
     "pdqn",
+    "han_maddpg",
+    "han_pdqn",
 )
 CORE_SCALING_METRICS = (
     ("avg_delay", "Average Delay", "Average Delay (s)", 1.0),
@@ -107,6 +113,7 @@ class MultiUserConfig:
     skip_compare: bool = False
     force_system_train: bool = False
     reuse_learned_checkpoints: bool = False
+    aggregate_only: bool = False
     dry_run: bool = False
 
 
@@ -469,6 +476,38 @@ def write_manifest(
     return manifest_path
 
 
+def generate_aggregate_artifacts(
+    project_root: Path,
+    config: MultiUserConfig,
+    suite_dir: Path,
+) -> list[Path]:
+    summary_rows, summary_csv = aggregate_user_summaries(suite_dir, config.user_counts)
+    generated: list[Path] = [summary_csv]
+
+    reward_plot = plot_reward_convergence(project_root, config.run_id, config.user_counts, suite_dir)
+    if reward_plot is not None:
+        generated.append(reward_plot)
+    core_plot = plot_scaling_metrics(
+        summary_rows,
+        suite_dir,
+        CORE_SCALING_METRICS,
+        "multiuser_core_metrics.png",
+    )
+    if core_plot is not None:
+        generated.append(core_plot)
+    resource_plot = plot_scaling_metrics(
+        summary_rows,
+        suite_dir,
+        RESOURCE_SCALING_METRICS,
+        "multiuser_resource_metrics.png",
+    )
+    if resource_plot is not None:
+        generated.append(resource_plot)
+    manifest = write_manifest(suite_dir, config, generated)
+    generated.append(manifest)
+    return generated
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run user-count scaling experiments for HAN+MAPPO and comparison baselines."
@@ -501,6 +540,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--skip-system-train", action="store_true")
     parser.add_argument("--skip-compare", action="store_true")
     parser.add_argument("--reuse-learned-checkpoints", action="store_true")
+    parser.add_argument(
+        "--aggregate-only",
+        action="store_true",
+        help="Only rebuild suite-level CSV, figures, and manifest from existing u*/comparison_summary.csv files.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args(argv)
 
@@ -529,6 +573,7 @@ def config_from_args(args: argparse.Namespace) -> MultiUserConfig:
         skip_compare=args.skip_compare,
         force_system_train=args.force_system_train,
         reuse_learned_checkpoints=args.reuse_learned_checkpoints,
+        aggregate_only=args.aggregate_only,
         dry_run=args.dry_run,
     )
 
@@ -584,6 +629,15 @@ def main() -> None:
     print(f"User counts: {', '.join(str(count) for count in config.user_counts)}")
     print(f"Baselines: {', '.join(config.baselines)}")
 
+    suite_dir = build_paths(PROJECT_ROOT, config.run_id, config.user_counts[0]).suite_dir
+    if config.aggregate_only:
+        generated = generate_aggregate_artifacts(PROJECT_ROOT, config, suite_dir)
+        summary_csv = suite_dir / "multiuser_summary.csv"
+        print(f"Multi-user summary CSV: {summary_csv}")
+        for artifact in generated:
+            print(f"Generated artifact: {artifact}")
+        return
+
     first_paths: Optional[SuitePaths] = None
     for num_users in config.user_counts:
         paths = run_user_count(config, num_users)
@@ -594,30 +648,8 @@ def main() -> None:
         return
 
     assert first_paths is not None
-    summary_rows, summary_csv = aggregate_user_summaries(first_paths.suite_dir, config.user_counts)
-    generated: list[Path] = [summary_csv]
-
-    reward_plot = plot_reward_convergence(PROJECT_ROOT, config.run_id, config.user_counts, first_paths.suite_dir)
-    if reward_plot is not None:
-        generated.append(reward_plot)
-    core_plot = plot_scaling_metrics(
-        summary_rows,
-        first_paths.suite_dir,
-        CORE_SCALING_METRICS,
-        "multiuser_core_metrics.png",
-    )
-    if core_plot is not None:
-        generated.append(core_plot)
-    resource_plot = plot_scaling_metrics(
-        summary_rows,
-        first_paths.suite_dir,
-        RESOURCE_SCALING_METRICS,
-        "multiuser_resource_metrics.png",
-    )
-    if resource_plot is not None:
-        generated.append(resource_plot)
-    manifest = write_manifest(first_paths.suite_dir, config, generated)
-    generated.append(manifest)
+    generated = generate_aggregate_artifacts(PROJECT_ROOT, config, first_paths.suite_dir)
+    summary_csv = first_paths.suite_dir / "multiuser_summary.csv"
 
     print(f"Multi-user summary CSV: {summary_csv}")
     for artifact in generated:
