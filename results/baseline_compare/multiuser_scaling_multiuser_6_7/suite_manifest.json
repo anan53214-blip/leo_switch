@@ -1,16 +1,18 @@
 {
   "run_id": "multiuser_6_7",
-  "generated_at": "2026-06-10T07:53:33",
+  "generated_at": "2026-06-22T11:53:25",
   "config": {
     "run_id": "multiuser_6_7",
     "user_counts": [
       20,
+      25,
       30,
+      35,
       40
     ],
     "python_executable": "/home/pjpjq/miniconda3/envs/satellite.env/bin/python",
     "seed": 42,
-    "device": "cuda",
+    "device": "auto",
     "total_timesteps": 300000,
     "max_steps": 600,
     "n_steps": 1024,
@@ -29,6 +31,8 @@
       "mappo_no_han",
       "maddpg",
       "pdqn",
+      "han_maddpg",
+      "han_pdqn",
       "random",
       "min_distance",
       "full_local",
@@ -38,6 +42,7 @@
     "skip_compare": false,
     "force_system_train": false,
     "reuse_learned_checkpoints": false,
+    "aggregate_only": true,
     "dry_run": false
   },
   "method_display_names": {
@@ -46,6 +51,8 @@
     "mappo_no_han": "MAPPO",
     "maddpg": "MADDPG",
     "pdqn": "PDQN",
+    "han_maddpg": "HAN+MADDPG",
+    "han_pdqn": "HAN+PDQN",
     "random": "Random",
     "min_distance": "Min-Distance",
     "full_local": "Full-Local",
