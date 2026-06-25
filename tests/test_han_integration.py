@@ -106,6 +106,59 @@ def test_han_mappo_observation_includes_raw_obs_han_and_light_features():
         shutil.rmtree(log_path, ignore_errors=True)
 
 
+def test_han_attn_trainer_fuses_han_satellites_with_fast_load_features():
+    from scripts.train import HANCandidateAttentionMAPPOTrainer
+    from src.features.satellite_load import SATELLITE_LOAD_FEATURE_DIM
+
+    run_id = uuid4().hex
+    save_path = f"results/han_attn_obs_{run_id}"
+    log_path = f"results/han_attn_obs_logs_{run_id}"
+    config = TrainConfig(
+        num_users=2,
+        max_steps=10,
+        total_timesteps=64,
+        n_steps=16,
+        batch_size=16,
+        eval_episodes=0,
+        device="cpu",
+        save_path=save_path,
+        log_path=log_path,
+    )
+    trainer_obj = HANCandidateAttentionMAPPOTrainer(config)
+    try:
+        trainer_obj.env.reset(seed=trainer_obj.config.seed)
+        observations, satellite_tokens, available_actions, candidate_sat_ids = (
+            trainer_obj._encode_graph_state()
+        )
+
+        expected_sat_dim = trainer_obj.config.han_out_dim + SATELLITE_LOAD_FEATURE_DIM
+        assert trainer_obj.algorithm_name == "han_attn"
+        assert observations.shape == (trainer_obj.num_agents, trainer_obj.obs_dim)
+        assert satellite_tokens.shape == (trainer_obj.env.num_satellites, expected_sat_dim)
+        assert trainer_obj.mappo.config.sat_embed_dim == expected_sat_dim
+        assert available_actions.shape == (
+            trainer_obj.num_agents,
+            trainer_obj.max_candidates + 1,
+        )
+        assert candidate_sat_ids.shape == (trainer_obj.num_agents, trainer_obj.max_candidates)
+
+        actions, log_probs, value = trainer_obj.mappo.act(
+            observations,
+            available_actions,
+            satellite_embeddings=satellite_tokens,
+            candidate_sat_ids=candidate_sat_ids,
+        )
+
+        assert actions["handover"].shape == (trainer_obj.num_agents,)
+        assert actions["offload"].shape == (trainer_obj.num_agents,)
+        assert log_probs.shape == (trainer_obj.num_agents,)
+        assert np.isfinite(value)
+    finally:
+        trainer_obj.env.close()
+        shutil.rmtree(save_path, ignore_errors=True)
+        shutil.rmtree(log_path, ignore_errors=True)
+
+
 def test_han_pdqn_observation_includes_raw_obs_han_and_light_features():
     run_id = uuid4().hex
     save_path = f"results/han_pdqn_obs_{run_id}"

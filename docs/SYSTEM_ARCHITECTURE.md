@@ -122,7 +122,8 @@ Reward 主要由以下部分组成：
 - `task_completion_rate`
 - `task_resolution_rate`
 - `pending_task_rate`
-- `avg_load_balance_score`
+- `energy_per_successful_task`
+- `mec_load_fairness`
 
 ## 7. 运行入口
 

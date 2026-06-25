@@ -74,9 +74,8 @@ CORE_SCALING_METRICS = (
     ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)", 100.0),
 )
 RESOURCE_SCALING_METRICS = (
-    ("mec_activity_score", "MEC Activity Score", "MEC Activity Score", 1.0),
-    ("active_load_balance_score", "Active Load Balance Score", "Active Load Balance Score", 1.0),
-    ("energy_per_resolved_task", "Energy per Resolved Task", "Energy per Resolved Task", 1.0),
+    ("mec_load_fairness", "MEC Load Fairness", "MEC Load Fairness", 1.0),
+    ("energy_per_successful_task", "Energy per Successful Task", "Energy per Successful Task", 1.0),
 )
 
 

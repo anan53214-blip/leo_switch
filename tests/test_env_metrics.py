@@ -55,8 +55,13 @@ def test_stats_summary_uses_external_task_denominator_for_deadline_violation_rat
         assert math.isclose(stats['pending_task_rate'], 0.5)
         assert math.isclose(stats['deadline_violation_rate'], 0.2)
         assert math.isclose(stats['avg_delay'], 2.0)
+        assert math.isclose(stats['mec_load_fairness'], 0.9)
         assert math.isclose(stats['avg_load_balance_score'], 0.9)
         assert math.isclose(stats['active_load_balance_score'], 0.9)
+        assert math.isclose(stats['energy_per_successful_task'], 0.0)
+        assert 'mec_activity_score' not in stats
+        assert 'mec_load_mean' not in stats
+        assert 'service_downtime_rate' not in stats
     finally:
         env.close()
 
@@ -71,6 +76,7 @@ def test_task_success_metrics_distinguish_success_failure_and_settlement():
         "blocked_user_seconds": 0.0,
         "handover_interruption_seconds": 0.0,
         "service_interruption_seconds": 0.0,
+        "total_energy": 80.0,
     }
 
     summary = summarize_env_stats(stats)
@@ -83,6 +89,10 @@ def test_task_success_metrics_distinguish_success_failure_and_settlement():
     assert summary["task_resolution_rate"] == pytest.approx(0.95)
     assert summary["task_completion_rate"] == pytest.approx(40 / 95)
     assert summary["deadline_violation_rate"] == pytest.approx(0.55)
+    assert summary["energy_per_successful_task"] == pytest.approx(2.0)
+    assert "mec_activity_score" not in summary
+    assert "mec_load_mean" not in summary
+    assert "service_downtime_rate" not in summary
 
 
 def test_compare_summary_includes_task_success_metrics():
@@ -90,14 +100,18 @@ def test_compare_summary_includes_task_success_metrics():
     assert "task_failure_rate" in SUMMARY_METRIC_KEYS
     assert "task_settlement_rate" in SUMMARY_METRIC_KEYS
     assert "handover_frequency" in SUMMARY_METRIC_KEYS
-    assert "active_load_balance_score" in SUMMARY_METRIC_KEYS
-    assert "mec_activity_score" in SUMMARY_METRIC_KEYS
+    assert "mec_load_fairness" in SUMMARY_METRIC_KEYS
+    assert "energy_per_successful_task" in SUMMARY_METRIC_KEYS
+    assert "service_downtime_rate" not in SUMMARY_METRIC_KEYS
+    assert "mec_activity_score" not in SUMMARY_METRIC_KEYS
+    assert "mec_load_mean" not in SUMMARY_METRIC_KEYS
     assert HIGHER_IS_BETTER["task_success_rate"] is True
     assert HIGHER_IS_BETTER["task_failure_rate"] is False
     assert HIGHER_IS_BETTER["task_settlement_rate"] is True
     assert HIGHER_IS_BETTER["handover_frequency"] is False
-    assert HIGHER_IS_BETTER["active_load_balance_score"] is True
-    assert HIGHER_IS_BETTER["mec_activity_score"] is True
+    assert HIGHER_IS_BETTER["mec_load_fairness"] is True
+    assert HIGHER_IS_BETTER["energy_per_successful_task"] is False
+    assert "service_downtime_rate" not in HIGHER_IS_BETTER
 
 
 def test_load_balance_score_ignores_connection_only_distribution():
@@ -138,7 +152,7 @@ def test_load_balance_score_rewards_balanced_mec_workload():
         env.close()
 
 
-def test_active_load_balance_ignores_idle_satellites_when_mec_is_used():
+def test_mec_load_fairness_ignores_idle_satellites_when_mec_is_used():
     env = _build_single_user_env(num_users=2)
 
     try:
@@ -149,13 +163,12 @@ def test_active_load_balance_ignores_idle_satellites_when_mec_is_used():
         first.task_queue = [{} for _ in range(1)]
         second.task_queue = [{} for _ in range(1)]
 
-        assert env._compute_load_balance_score() == pytest.approx(1.0)
-        assert 0.0 < env._compute_mec_activity_score() < 1.0
+        assert env._compute_mec_load_fairness() == pytest.approx(1.0)
     finally:
         env.close()
 
 
-def test_mec_activity_score_tracks_usage_separately_from_balance():
+def test_summary_reports_mec_load_fairness_without_activity_or_mean_load():
     env = _build_single_user_env(num_users=2)
 
     try:
@@ -165,16 +178,15 @@ def test_mec_activity_score_tracks_usage_separately_from_balance():
         second = env.mec_manager.servers[1]
         first.task_queue = [{} for _ in range(1)]
         second.task_queue = [{} for _ in range(1)]
-        light_activity = env._compute_mec_activity_score()
-        light_balance = env._compute_load_balance_score()
+        env.stats['load_balance_sum'] = env._compute_mec_load_fairness()
+        env.stats['load_balance_samples'] = 1
 
-        first.task_queue = [{} for _ in range(3)]
-        second.task_queue = [{} for _ in range(3)]
-        heavy_activity = env._compute_mec_activity_score()
-        heavy_balance = env._compute_load_balance_score()
+        summary = env.get_stats_summary()
 
-        assert heavy_activity > light_activity
-        assert heavy_balance == pytest.approx(light_balance)
+        assert summary["mec_load_fairness"] == pytest.approx(1.0)
+        assert summary["active_load_balance_score"] == pytest.approx(1.0)
+        assert "mec_activity_score" not in summary
+        assert "mec_load_mean" not in summary
     finally:
         env.close()
 

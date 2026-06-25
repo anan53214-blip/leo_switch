@@ -4,7 +4,18 @@
 
 ## 1. 系统场景
 
-系统模拟一个 LEO 卫星 MEC 网络：
+系统模拟一个 LEO 卫星 MEC 网络，用于研究动态 LEO 拓扑下的多用户
+时延敏感任务卸载与服务切换问题。工业场景中，偏远地区、海上、
+灾害救援和空天地一体网络常面临地面基础设施不足、终端算力有限、
+回传云端时延高的问题；LEO-MEC 能把计算能力推近用户，但卫星高速
+移动、可见窗口短、链路质量快变、星上 MEC 资源有限，会使服务切换、
+任务卸载和队列拥塞耦合在一起。
+
+因此，本系统的目标不是让更多 MEC 服务器保持活跃，而是在多用户竞争
+和频繁切换风险下联合决定服务卫星、切换时机和卸载比例，使任务尽量
+按 deadline 成功完成、服务尽量不中断，并控制能耗和 MEC 热点拥塞。
+
+基础星座参数如下：
 
 - 共有 `6` 个轨道平面。
 - 每个轨道平面 `11` 颗卫星。
@@ -134,15 +145,19 @@ interruption_seconds / step_user_seconds`.
 | `task_settlement_rate` | 任务结算率 |
 | `task_resolution_rate` | 任务解析率 |
 | `pending_task_rate` | 未完成或排队任务比例 |
-| `energy_per_resolved_task` | 每个已解决任务的平均能耗 |
-| `active_load_balance_score` | 活跃 MEC 服务器之间的 queue/CPU utilization 均衡度 |
-| `avg_load_balance_score` | `active_load_balance_score` 的兼容别名 |
-| `mec_activity_score` | 全星座 MEC 使用强度 |
+| `energy_per_successful_task` | 每个成功任务的平均能耗 |
+| `energy_per_resolved_task` | 每个已解决任务的平均能耗，保留为历史兼容指标 |
+| `mec_load_fairness` | 活跃 MEC 服务器之间的 queue/CPU utilization Jain 公平性 |
+| `active_load_balance_score` | `mec_load_fairness` 的兼容别名 |
+| `avg_load_balance_score` | `mec_load_fairness` 的兼容别名 |
 
 `task_success_rate` is the primary task outcome metric and is computed as `completed_tasks / total_tasks`.
 `task_failure_rate` is computed as `deadline_violations / total_tasks`.
 `task_settlement_rate` is computed as `(completed_tasks + deadline_violations) / total_tasks`.
 The legacy `task_resolution_rate` is kept as an alias of `task_settlement_rate` for backward compatibility, but it should not be used as the main competitiveness metric because deadline failures are counted as settled tasks.
+`energy_per_successful_task` is computed as `total_energy / completed_tasks` and
+is preferred for paper claims because it avoids rewarding policies that save
+energy by completing few tasks.
 
 The custom composite scores `effective_latency_score` and
 `latency_priority_score` have been removed from the current evaluation
@@ -152,12 +167,14 @@ resource cost. Checkpoint selection defaults to `avg_delay`; final claims
 should use the full metric group and trade-off plots rather than a single
 aggregate score.
 
-`active_load_balance_score` is computed from MEC queue pressure and CPU
-utilization on active MEC servers only. Idle satellites are excluded from the
-fairness denominator so a small number of active MEC servers can still show
-meaningful balance differences. `mec_activity_score` is reported separately to
-show how much MEC work exists at all; local-compute policies should have low
-activity rather than a misleading high balance score.
+`mec_load_fairness` is computed from MEC queue pressure and CPU utilization on
+active MEC servers only using Jain's fairness index. Idle satellites are excluded
+from the fairness denominator so a small number of active MEC servers can still
+show meaningful balance differences. It is a resource-side diagnostic for
+explaining hotspot avoidance, not a primary ranking KPI. The previous
+`mec_activity_score` has been removed from the evaluation protocol because MEC
+activity does not directly imply better task success, service continuity, delay,
+or energy efficiency.
 
 ## 7. 与基线的关系
 
@@ -175,6 +192,6 @@ activity rather than a misleading high balance score.
 - 是否提升 `task_success_rate` 和 `service_continuity_rate`。
 - 是否降低 `deadline_violation_rate`、`handover_failure_rate` 和
   `handover_frequency`。
-- 是否保持可接受的 `energy_per_resolved_task`、`active_load_balance_score`
-  和 `mec_activity_score`。
+- 是否降低 `energy_per_successful_task`。
+- 是否在资源诊断中保持合理的 `mec_load_fairness`，避免 MEC 热点拥塞。
 - 是否优于 `mappo_no_han`，从而证明 HAN 结构有效。

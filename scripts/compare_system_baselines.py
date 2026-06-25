@@ -60,24 +60,28 @@ try:
     from scripts.train import (
         BEST_MODEL_METRIC_CHOICES,
         AttentionMAPPOTrainer,
+        HANCandidateAttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
         TrainConfig,
         compute_model_selection_score,
         energy_per_resolved_task,
+        energy_per_successful_task,
     )
 except ModuleNotFoundError:
     # Compatible with direct execution: python scripts/compare_system_baselines.py
     from train import (
         BEST_MODEL_METRIC_CHOICES,
         AttentionMAPPOTrainer,
+        HANCandidateAttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
         TrainConfig,
         compute_model_selection_score,
         energy_per_resolved_task,
+        energy_per_successful_task,
     )
 
 DelayOnlyEnv = None
@@ -108,8 +112,10 @@ DEFAULT_BASELINES = [
     "joint_greedy",
     "maddpg",
     "pdqn",
+    "han_mappo",
     "mappo_no_han",
     "attn_mappo",
+    "han_attn",
     "han_maddpg",
     "han_pdqn",
 ]
@@ -132,8 +138,7 @@ PRIMARY_COMPARE_METRICS = [
     ("service_continuity_rate", "Service Continuity"),
     ("handover_failure_rate", "Handover Failure"),
     ("handover_frequency", "Handover Frequency"),
-    ("energy_per_resolved_task", "Energy per Resolved Task"),
-    ("active_load_balance_score", "Active Load Balance"),
+    ("energy_per_successful_task", "Energy per Successful Task"),
 ]
 
 DISPLAY_NAME_MAP = {
@@ -144,8 +149,10 @@ DISPLAY_NAME_MAP = {
     "dqn": "DQN",
     "maddpg": "MADDPG",
     "pdqn": "PDQN",
+    "han_mappo": "HAN+MAPPO",
     "mappo_no_han": "MAPPO",
     "attn_mappo": "Attn+MAPPO",
+    "han_attn": "HAN+Attn",
     "han_maddpg": "HAN+MADDPG",
     "han_pdqn": "HAN+PDQN",
 }
@@ -165,15 +172,16 @@ SUMMARY_METRIC_KEYS = [
     "task_resolution_rate",
     "pending_task_rate",
     "handover_frequency",
+    "mec_load_fairness",
     "active_load_balance_score",
     "avg_load_balance_score",
-    "mec_activity_score",
     "resolved_tasks",
     "pending_tasks",
     "total_tasks",
     "completed_tasks",
     "deadline_violations",
     "deadline_violation_rate",
+    "energy_per_successful_task",
 ]
 
 ACTION_DIAGNOSTIC_KEYS = [
@@ -212,25 +220,26 @@ HIGHER_IS_BETTER = {
     "task_failure_rate": False,
     "task_settlement_rate": True,
     "task_resolution_rate": True,
+    "mec_load_fairness": True,
     "active_load_balance_score": True,
     "avg_load_balance_score": True,
-    "mec_activity_score": True,
     "handover_failure_rate": False,
     "handover_frequency": False,
     "forced_termination_rate": False,
     "avg_delay": False,
     "total_energy": False,
     "energy_per_resolved_task": False,
+    "energy_per_successful_task": False,
     "pending_task_rate": False,
     "deadline_violation_rate": False,
 }
 
 PAPER_METRIC_PLOTS = [
     ("avg_delay", "Average Delay", "Avg Delay (s)"),
+    ("task_success_rate", "Task Success", "Rate (%)"),
+    ("deadline_violation_rate", "Deadline Violation", "Rate (%)"),
     ("service_continuity_rate", "Service Continuity", "Rate (%)"),
-    ("service_availability_rate", "Service Availability", "Rate (%)"),
-    ("task_completion_rate", "Task Completion", "Rate (%)"),
-    ("total_energy", "Energy Consumption", "Total Energy (J)"),
+    ("energy_per_successful_task", "Energy per Successful Task", "Energy / Successful Task"),
     ("handover_failure_rate", "Handover Failure", "Rate (%)"),
 ]
 
@@ -239,8 +248,7 @@ CORE_BAR_METRICS = [
     ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
     ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)"),
     ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
-    ("energy_per_resolved_task", "Energy per Resolved Task", "Energy per Resolved Task"),
-    ("active_load_balance_score", "Active Load Balance Score", "Active Load Balance Score"),
+    ("energy_per_successful_task", "Energy per Successful Task", "Energy per Successful Task"),
 ]
 
 TRAINING_QOS_STEP_METRICS = [
@@ -251,9 +259,8 @@ TRAINING_QOS_STEP_METRICS = [
     ("task_settlement_rate", "Task Settlement", "Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation", "Rate (%)", 100.0),
     ("handover_frequency", "Handover Frequency", "Handovers / User-second", 1.0),
-    ("energy_per_resolved_task", "Energy per Resolved Task", "Energy / Task", 1.0),
-    ("active_load_balance_score", "Active Load Balance", "Score", 1.0),
-    ("mec_activity_score", "MEC Activity", "Score", 1.0),
+    ("energy_per_successful_task", "Energy per Successful Task", "Energy / Task", 1.0),
+    ("mec_load_fairness", "MEC Load Fairness", "Score", 1.0),
 ]
 
 REWARD_COMPONENT_STEP_METRICS = [
@@ -293,10 +300,10 @@ RADAR_METRICS = [
     ("service_continuity_rate", "Continuity", True),
     ("task_success_rate", "Task\nSuccess", True),
     ("task_completion_rate", "Completion", True),
-    ("active_load_balance_score", "Load\nBalance", True),
     ("avg_delay", "Low\nDelay", False),
     ("deadline_violation_rate", "Deadline\nReliability", False),
-    ("energy_per_resolved_task", "Energy\nEfficiency", False),
+    ("handover_failure_rate", "Handover\nReliability", False),
+    ("energy_per_successful_task", "Energy\nEfficiency", False),
 ]
 
 PAPER_DASHBOARD_LEFT_METRICS = [
@@ -307,8 +314,8 @@ PAPER_DASHBOARD_LEFT_METRICS = [
 
 PAPER_DASHBOARD_RIGHT_METRICS = [
     ("avg_delay", "Delay"),
-    ("total_energy", "Energy"),
-    ("active_load_balance_score", "Load Balance"),
+    ("energy_per_successful_task", "Energy / Success"),
+    ("mec_load_fairness", "MEC Fairness"),
 ]
 
 CORE_EPISODE_PLOTS = [
@@ -325,8 +332,7 @@ ADDITIONAL_EPISODE_METRICS = [
     ("handover_frequency", "Handover Frequency"),
     ("forced_termination_rate", "Forced Termination Rate"),
     ("deadline_violation_rate", "Deadline Violation Rate"),
-    ("active_load_balance_score", "Active Load Balance Score"),
-    ("mec_activity_score", "MEC Activity Score"),
+    ("mec_load_fairness", "MEC Load Fairness"),
 ]
 
 SYSTEM_STYLE = {
@@ -357,8 +363,10 @@ LEARNED_BASELINE_COLORS = {
     "dqn": "#4E79A7",
     "maddpg": "#AF7AA1",
     "pdqn": "#EDC948",
+    "han_mappo": "#E15759",
     "mappo_no_han": "#59A14F",
     "attn_mappo": "#1F77B4",
+    "han_attn": "#B07AA1",
     "han_maddpg": "#17BECF",
     "han_pdqn": "#F28E2B",
 }
@@ -1054,6 +1062,15 @@ def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -
         record["handover_frequency"] = float(
             summary.get("handover_frequency", compute_handover_frequency(summary))
         )
+        record["mec_load_fairness"] = float(
+            summary.get(
+                "mec_load_fairness",
+                summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0)),
+            )
+        )
+        record["active_load_balance_score"] = record["mec_load_fairness"]
+        record["avg_load_balance_score"] = record["mec_load_fairness"]
+        record["energy_per_successful_task"] = float(energy_per_successful_task(record))
         episode_records.append(record)
     return episode_records
 
@@ -1108,18 +1125,24 @@ def action_diagnostics(
 
 def ensure_action_diagnostic_fields(method: Dict) -> Dict:
     normalized = dict(method)
+    normalized.pop("mec_activity_score", None)
+    normalized.pop("mec_load_mean", None)
+    normalized.pop("service_downtime_rate", None)
     for key in ACTION_DIAGNOSTIC_KEYS:
         try:
             normalized[key] = float(normalized.get(key, 0.0))
         except (TypeError, ValueError):
             normalized[key] = 0.0
-    active_balance = float(
-        normalized.get("active_load_balance_score", normalized.get("avg_load_balance_score", 0.0))
+    mec_load_fairness = float(
+        normalized.get(
+            "mec_load_fairness",
+            normalized.get("active_load_balance_score", normalized.get("avg_load_balance_score", 0.0)),
+        )
         or 0.0
     )
-    normalized["active_load_balance_score"] = active_balance
-    normalized["avg_load_balance_score"] = active_balance
-    normalized["mec_activity_score"] = float(normalized.get("mec_activity_score", 0.0) or 0.0)
+    normalized["mec_load_fairness"] = mec_load_fairness
+    normalized["active_load_balance_score"] = mec_load_fairness
+    normalized["avg_load_balance_score"] = mec_load_fairness
     return normalized
 
 
@@ -1133,6 +1156,7 @@ def annotate_priority_metrics(methods: Sequence[Dict], metric_name: str) -> List
         method["selection_metric"] = metric_name
         method["selection_score"] = selection_score(method, metric_name)
         method["energy_per_resolved_task"] = float(energy_per_resolved_task(method))
+        method["energy_per_successful_task"] = float(energy_per_successful_task(method))
         method["primary_metric_wins"] = []
 
     for metric_key, metric_label in PRIMARY_COMPARE_METRICS:
@@ -2390,14 +2414,20 @@ def train_and_evaluate_pdqn_baseline(
                     "service_continuity_rate": summary.get("service_continuity_rate", 0.0),
                     "task_completion_rate": summary.get("task_completion_rate", 0.0),
                     "task_success_rate": summary.get("task_success_rate", 0.0),
-                    "avg_load_balance_score": summary.get("avg_load_balance_score", 0.0),
-                    "active_load_balance_score": summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0)),
-                    "mec_activity_score": summary.get("mec_activity_score", 0.0),
+                    "mec_load_fairness": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
+                    "avg_load_balance_score": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
+                    "active_load_balance_score": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
                     "total_energy": env_stats.get("total_energy", 0.0),
                     "energy_per_resolved_task": energy_per_resolved_task(
                         {
                             "total_energy": env_stats.get("total_energy", 0.0),
                             "resolved_tasks": summary.get("resolved_tasks", 0.0),
+                        }
+                    ),
+                    "energy_per_successful_task": energy_per_successful_task(
+                        {
+                            "total_energy": env_stats.get("total_energy", 0.0),
+                            "completed_tasks": env_stats.get("completed_tasks", 0.0),
                         }
                     ),
                 }
@@ -2554,8 +2584,11 @@ def trainer_class_for_objective(objective: str):
 
 
 def system_trainer_class_for_config(objective: str, config_data: Dict):
-    if str(config_data.get("algorithm", "mappo")) == "attn_mappo":
+    algorithm = str(config_data.get("algorithm", "mappo"))
+    if algorithm == "attn_mappo":
         return AttentionMAPPOTrainer
+    if algorithm == "han_attn":
+        return HANCandidateAttentionMAPPOTrainer
     return trainer_class_for_objective(objective)
 
 
@@ -2896,6 +2929,72 @@ def train_and_evaluate_no_han_mappo(
     return result
 
 
+def train_and_evaluate_han_mappo(
+    config_data: Dict,
+    objective: str,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+    reuse_checkpoint_if_available: bool = False,
+) -> Dict:
+    save_dir = output_dir / "learned_baselines" / "han_mappo"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    trainer_cls = trainer_class_for_objective(objective)
+    if reuse_checkpoint_if_available:
+        checkpoint = find_existing_checkpoint(save_dir)
+        if checkpoint is not None:
+            result = evaluate_mappo_checkpoint_with_trainer(
+                checkpoint=checkpoint,
+                config_data=config_data,
+                episodes=episodes,
+                device=resolve_device(device),
+                max_steps=max_steps,
+                trainer_cls=trainer_cls,
+                method_name="han_mappo",
+                is_system=False,
+            )
+            result["source"] = "han_mappo_checkpoint_eval"
+            result["checkpoint"] = str(checkpoint)
+            history_path = save_dir / "training_history.json"
+            if history_path.exists():
+                result["training_history"] = str(history_path)
+            return result
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        save_path=save_dir,
+        exp_name="han_mappo",
+    )
+    trainer = trainer_cls(config)
+    trainer.train()
+    checkpoint = save_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = save_dir / "final_model.pt"
+    result = evaluate_mappo_checkpoint_with_trainer(
+        checkpoint=checkpoint,
+        config_data=asdict(config),
+        episodes=episodes,
+        device=resolve_device(device),
+        max_steps=max_steps,
+        trainer_cls=trainer_cls,
+        method_name="han_mappo",
+        is_system=False,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint)
+    history_path = save_dir / "training_history.json"
+    if history_path.exists():
+        result["training_history"] = str(history_path)
+    return result
+
+
 def train_and_evaluate_attention_mappo(
     config_data: Dict,
     output_dir: Path,
@@ -2960,6 +3059,80 @@ def train_and_evaluate_attention_mappo(
         max_steps=max_steps,
         trainer_cls=AttentionMAPPOTrainer,
         method_name="attn_mappo",
+        is_system=False,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint)
+    history_path = save_dir / "training_history.json"
+    if history_path.exists():
+        result["training_history"] = str(history_path)
+    return result
+
+
+def train_and_evaluate_han_attn_mappo(
+    config_data: Dict,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+    reuse_checkpoint_if_available: bool = False,
+) -> Dict:
+    save_dir = output_dir / "learned_baselines" / "han_attn"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    if reuse_checkpoint_if_available:
+        checkpoint = find_existing_checkpoint(save_dir)
+        if checkpoint is not None:
+            config = train_config_from_dict(
+                config_data,
+                device=device,
+                max_steps=max_steps,
+                episodes=episodes,
+                save_path=checkpoint.parent,
+                load_path=checkpoint,
+            )
+            config.algorithm = "han_attn"
+            result = evaluate_mappo_checkpoint_with_trainer(
+                checkpoint=checkpoint,
+                config_data=asdict(config),
+                episodes=episodes,
+                device=resolve_device(device),
+                max_steps=max_steps,
+                trainer_cls=HANCandidateAttentionMAPPOTrainer,
+                method_name="han_attn",
+                is_system=False,
+            )
+            result["source"] = "han_attn_checkpoint_eval"
+            result["checkpoint"] = str(checkpoint)
+            history_path = save_dir / "training_history.json"
+            if history_path.exists():
+                result["training_history"] = str(history_path)
+            return result
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        save_path=save_dir,
+        exp_name="han_attn",
+    )
+    config.algorithm = "han_attn"
+    trainer = HANCandidateAttentionMAPPOTrainer(config)
+    trainer.train()
+    checkpoint = save_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = save_dir / "final_model.pt"
+    result = evaluate_mappo_checkpoint_with_trainer(
+        checkpoint=checkpoint,
+        config_data=asdict(config),
+        episodes=episodes,
+        device=resolve_device(device),
+        max_steps=max_steps,
+        trainer_cls=HANCandidateAttentionMAPPOTrainer,
+        method_name="han_attn",
         is_system=False,
     )
     result["trained_timesteps"] = int(total_timesteps)
@@ -3152,15 +3325,16 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "task_resolution_rate": float(best_record.get("task_resolution_rate", 0.0)),
         "pending_task_rate": float(best_record.get("pending_task_rate", 0.0)),
         "handover_frequency": float(best_record.get("handover_frequency", compute_handover_frequency(best_record))),
-        "active_load_balance_score": float(best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0))),
-        "avg_load_balance_score": float(best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0))),
-        "mec_activity_score": float(best_record.get("mec_activity_score", 0.0)),
+        "mec_load_fairness": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
+        "active_load_balance_score": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
+        "avg_load_balance_score": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
         "resolved_tasks": float(best_record.get("resolved_tasks", 0.0)),
         "pending_tasks": float(best_record.get("pending_tasks", 0.0)),
         "total_tasks": float(best_record.get("total_tasks", 0.0)),
         "completed_tasks": float(best_record.get("completed_tasks", 0.0)),
         "deadline_violations": float(best_record.get("deadline_violations", 0.0)),
         "deadline_violation_rate": compute_deadline_violation_rate(best_record),
+        "energy_per_successful_task": float(energy_per_successful_task(best_record)),
         "episode_metrics": [],
         "training_history": str(history_path),
         "source": f"training_history_best_{selection_metric_name}",
@@ -3205,10 +3379,11 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "pending_task_rate",
         "deadline_violation_rate",
         "handover_frequency",
+        "mec_load_fairness",
         "active_load_balance_score",
         "avg_load_balance_score",
-        "mec_activity_score",
         "energy_per_resolved_task",
+        "energy_per_successful_task",
         *ACTION_DIAGNOSTIC_KEYS,
         *REWARD_BREAKDOWN_KEYS,
         "selection_metric",
@@ -3252,13 +3427,14 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
                 "handover_frequency": float(record.get("handover_frequency", compute_handover_frequency(record))),
-                "active_load_balance_score": float(record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0))),
-                "avg_load_balance_score": float(record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0))),
-                "mec_activity_score": float(record.get("mec_activity_score", 0.0)),
+                "mec_load_fairness": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
+                "active_load_balance_score": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
+                "avg_load_balance_score": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
                 "deadline_violation_rate": float(record.get("deadline_violation_rate", 0.0)),
                 "resolved_tasks": float(record.get("resolved_tasks", 0.0)),
                 "completed_tasks": float(record.get("completed_tasks", 0.0)),
                 "deadline_violations": float(record.get("deadline_violations", 0.0)),
+                "energy_per_successful_task": float(record.get("energy_per_successful_task", energy_per_successful_task(record))),
                 **{key: float(record.get(key, 0.0)) for key in REWARD_BREAKDOWN_KEYS},
                 "selected_offload": method.get("selected_offload", ""),
             }
@@ -3815,7 +3991,7 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
 
     styles = build_method_styles(ordered)
     x_values = np.array([paper_metric_value(method, "avg_delay") for method in ordered], dtype=float)
-    y_values = np.array([float(method.get("energy_per_resolved_task", 0.0)) for method in ordered], dtype=float)
+    y_values = np.array([float(method.get("energy_per_successful_task", 0.0)) for method in ordered], dtype=float)
     if len(x_values) == 0 or len(y_values) == 0:
         return None
 
@@ -3909,7 +4085,7 @@ def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -
         style = styles[str(method.get("method", ""))]
         x_value = float(method.get("task_success_rate", method.get("task_completion_rate", 0.0))) * 100.0
         y_value = float(method.get("service_continuity_rate", 0.0)) * 100.0
-        load_balance = float(method.get("active_load_balance_score", method.get("avg_load_balance_score", 0.0)))
+        load_balance = float(method.get("mec_load_fairness", method.get("active_load_balance_score", method.get("avg_load_balance_score", 0.0))))
         size = 90.0 + 360.0 * np.clip(load_balance, 0.0, 1.0)
         if method.get("is_system"):
             size *= 1.20
@@ -3948,7 +4124,7 @@ def normalized_metric_values(methods: Sequence[Dict], metric_key: str, higher_is
     values = np.array([float(method.get(metric_key, 0.0)) for method in methods], dtype=float)
     if len(values) == 0:
         return values
-    if metric_key.endswith("_rate") or metric_key in {"active_load_balance_score", "avg_load_balance_score", "mec_activity_score"}:
+    if metric_key.endswith("_rate") or metric_key in {"mec_load_fairness", "active_load_balance_score", "avg_load_balance_score"}:
         bounded = np.clip(values, 0.0, 1.0)
         return bounded if higher_is_better else 1.0 - bounded
 
@@ -4071,9 +4247,9 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="active_load_balance_score",
-        title="Active Load Balance Score",
-        ylabel="Active Load Balance Score",
+        metric_key="mec_load_fairness",
+        title="MEC Load Fairness",
+        ylabel="MEC Load Fairness",
         compact=True,
     )
     add_panel_label(ax_energy, "(d)")
@@ -4389,6 +4565,19 @@ def main() -> None:
                 reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
             result.setdefault("source", "mappo_no_han_train_eval")
+        elif baseline_name == "han_mappo":
+            result = train_and_evaluate_han_mappo(
+                config_data=config_data,
+                objective=objective,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
+                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
+            )
+            result.setdefault("source", "han_mappo_train_eval")
         elif baseline_name == "attn_mappo":
             result = train_and_evaluate_attention_mappo(
                 config_data=config_data,
@@ -4401,6 +4590,18 @@ def main() -> None:
                 reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
             result.setdefault("source", "attn_mappo_train_eval")
+        elif baseline_name == "han_attn":
+            result = train_and_evaluate_han_attn_mappo(
+                config_data=config_data,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
+                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
+            )
+            result.setdefault("source", "han_attn_train_eval")
         elif baseline_name == "han_maddpg":
             result = train_and_evaluate_han_maddpg_baseline(
                 config_data=config_data,

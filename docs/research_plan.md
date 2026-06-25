@@ -74,8 +74,8 @@ action_i = (handover_action_i, offload_ratio_i)
 - 服务连续性/切换：`service_continuity_rate`,
   `service_availability_rate`, `handover_success_rate`,
   `handover_failure_rate`, `handover_frequency`
-- 资源代价：`energy_per_resolved_task`, `total_energy`,
-  `active_load_balance_score`, `mec_activity_score`
+- 能耗代价：`energy_per_successful_task`, `total_energy`
+- 资源诊断：`mec_load_fairness`
 
 辅助指标：
 

@@ -140,14 +140,12 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     )
 
     summary = stats.copy()
-    active_load_balance_score = (
+    mec_load_fairness = (
         float(stats.get('load_balance_sum', 0.0)) /
         max(int(stats.get('load_balance_samples', 0)), 1)
     )
-    mec_activity_score = (
-        float(stats.get('mec_activity_sum', 0.0)) /
-        max(int(stats.get('load_balance_samples', 0)), 1)
-    )
+    total_energy = float(stats.get('total_energy', 0.0))
+    energy_per_successful_task = total_energy / max(completed_count, 1.0)
 
     summary.update({
         'resolved_tasks': resolved_tasks,
@@ -178,9 +176,10 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         ),
         'handover_frequency': handover_frequency,
         'avg_delay': avg_delay,
-        'active_load_balance_score': active_load_balance_score,
-        'avg_load_balance_score': active_load_balance_score,
-        'mec_activity_score': mec_activity_score,
+        'energy_per_successful_task': energy_per_successful_task,
+        'mec_load_fairness': mec_load_fairness,
+        'active_load_balance_score': mec_load_fairness,
+        'avg_load_balance_score': mec_load_fairness,
     })
     return summary
 
@@ -260,7 +259,6 @@ class LEOSatelliteEnv(gym.Env):
         # 统计信息
         self.stats = self._build_stats()
         self._last_load_balance_score = 1.0
-        self._last_mec_activity_score = 0.0
 
     def _make_task_arrival_rng(self, seed: Optional[int]) -> np.random.Generator:
         """Build a task-arrival RNG that is independent of action outcomes."""
@@ -374,7 +372,6 @@ class LEOSatelliteEnv(gym.Env):
             'penalty_failed_handover': 0.0,
             'penalty_handover_cost': 0.0,
             'load_balance_sum': 0.0,
-            'mec_activity_sum': 0.0,
             'load_balance_samples': 0,
         }
 
@@ -563,7 +560,6 @@ class LEOSatelliteEnv(gym.Env):
         self._invalidate_visibility_cache()
         self.stats = self._build_stats()
         self._last_load_balance_score = 1.0
-        self._last_mec_activity_score = 0.0
         
         # 初始连接：为每个用户选择最佳卫星
         self._initial_connection()
@@ -644,11 +640,8 @@ class LEOSatelliteEnv(gym.Env):
         # 4. 计算全局奖励
         total_reward = np.mean(user_rewards)
         load_balance_score = self._compute_load_balance_score()
-        mec_activity_score = self._compute_mec_activity_score()
         self._last_load_balance_score = load_balance_score
-        self._last_mec_activity_score = mec_activity_score
         self.stats['load_balance_sum'] += load_balance_score
-        self.stats['mec_activity_sum'] += mec_activity_score
         self.stats['load_balance_samples'] += 1
 
         step_user_seconds = float(self.num_users) * float(self.config.time_step_sec)
@@ -822,7 +815,7 @@ class LEOSatelliteEnv(gym.Env):
             )
         return np.asarray(mec_loads, dtype=np.float32)
 
-    def _compute_load_balance_score(self) -> float:
+    def _compute_mec_load_fairness(self) -> float:
         """Measure load fairness among MEC servers with nonzero work."""
         loads = self._compute_mec_loads()
         if len(loads) == 0:
@@ -842,12 +835,9 @@ class LEOSatelliteEnv(gym.Env):
         )
         return float(np.clip(fairness, 0.0, 1.0))
 
-    def _compute_mec_activity_score(self) -> float:
-        """Measure total MEC usage separately from active-server balance."""
-        loads = self._compute_mec_loads()
-        if len(loads) == 0:
-            return 0.0
-        return float(np.clip(float(np.mean(loads)) / 0.05, 0.0, 1.0))
+    def _compute_load_balance_score(self) -> float:
+        """Backward-compatible reward hook for MEC load fairness."""
+        return self._compute_mec_load_fairness()
 
     def _compute_task_reward(
         self,
@@ -1467,7 +1457,7 @@ class LEOSatelliteEnv(gym.Env):
             'time': self.current_time,
             'stats': stats_summary,
             'load_balance_score': self._last_load_balance_score,
-            'mec_activity_score': self._last_mec_activity_score,
+            'mec_load_fairness': self._last_load_balance_score,
             'mean_reward': np.mean(self.episode_rewards) if self.episode_rewards else 0.0,
             'user_rewards': self.last_user_rewards.copy(),
         }

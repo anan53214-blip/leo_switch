@@ -85,9 +85,8 @@ def test_aggregate_only_rebuilds_suite_artifacts_without_running_user_counts(tmp
                     "task_success_rate",
                     "deadline_violation_rate",
                     "service_continuity_rate",
-                    "mec_activity_score",
-                    "active_load_balance_score",
-                    "energy_per_resolved_task",
+                    "mec_load_fairness",
+                    "energy_per_successful_task",
                 ],
             )
             writer.writeheader()
@@ -99,9 +98,8 @@ def test_aggregate_only_rebuilds_suite_artifacts_without_running_user_counts(tmp
                     "task_success_rate": 0.9,
                     "deadline_violation_rate": 0.1,
                     "service_continuity_rate": 0.95,
-                    "mec_activity_score": 0.2,
-                    "active_load_balance_score": 0.3,
-                    "energy_per_resolved_task": 1.1,
+                    "mec_load_fairness": 0.3,
+                    "energy_per_successful_task": 1.1,
                 }
             )
 
@@ -167,9 +165,8 @@ def test_aggregate_user_summaries_writes_scaling_csv_and_uses_short_names(tmp_pa
                     "task_success_rate",
                     "deadline_violation_rate",
                     "service_continuity_rate",
-                    "mec_activity_score",
-                    "active_load_balance_score",
-                    "energy_per_resolved_task",
+                    "mec_load_fairness",
+                    "energy_per_successful_task",
                 ],
             )
             writer.writeheader()
@@ -181,9 +178,8 @@ def test_aggregate_user_summaries_writes_scaling_csv_and_uses_short_names(tmp_pa
                     "task_success_rate": 0.9,
                     "deadline_violation_rate": 0.1,
                     "service_continuity_rate": 0.95,
-                    "mec_activity_score": 0.2,
-                    "active_load_balance_score": 0.3,
-                    "energy_per_resolved_task": 1.1,
+                    "mec_load_fairness": 0.3,
+                    "energy_per_successful_task": 1.1,
                 }
             )
             writer.writerow(
@@ -194,9 +190,8 @@ def test_aggregate_user_summaries_writes_scaling_csv_and_uses_short_names(tmp_pa
                     "task_success_rate": 0.85,
                     "deadline_violation_rate": 0.15,
                     "service_continuity_rate": 0.9,
-                    "mec_activity_score": 0.15,
-                    "active_load_balance_score": 0.25,
-                    "energy_per_resolved_task": 1.3,
+                    "mec_load_fairness": 0.25,
+                    "energy_per_successful_task": 1.3,
                 }
             )
         (user_dir / "comparison_summary.json").write_text(

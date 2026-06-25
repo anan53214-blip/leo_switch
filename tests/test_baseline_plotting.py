@@ -139,11 +139,10 @@ def test_comparison_summary_outputs_action_diagnostics_for_legacy_methods(tmp_pa
                 "service_continuity_rate": 1.0,
                 "task_completion_rate": 1.0,
                 "task_success_rate": 1.0,
-                "active_load_balance_score": 0.5,
-                "avg_load_balance_score": 0.5,
-                "mec_activity_score": 0.2,
+                "mec_load_fairness": 0.5,
                 "total_energy": 1.0,
                 "resolved_tasks": 1.0,
+                "completed_tasks": 1.0,
             }
         ],
         "avg_delay",
@@ -158,18 +157,37 @@ def test_comparison_summary_outputs_action_diagnostics_for_legacy_methods(tmp_pa
     assert method["local_compute_rate"] == pytest.approx(0.0)
     assert method["mean_offload_ratio"] == pytest.approx(0.0)
     assert method["handover_frequency"] == pytest.approx(0.2)
+    assert method["mec_load_fairness"] == pytest.approx(0.5)
     assert method["active_load_balance_score"] == pytest.approx(0.5)
-    assert method["mec_activity_score"] == pytest.approx(0.2)
+    assert method["energy_per_successful_task"] == pytest.approx(1.0)
+    assert "mec_activity_score" not in method
+    assert "mec_load_mean" not in method
 
     csv_text = csv_path.read_text(encoding="utf-8")
     header = csv_text.splitlines()[0]
     assert "handover_action_rate" in header
     assert "handover_frequency" in header
+    assert "mec_load_fairness" in header
+    assert "energy_per_successful_task" in header
+    assert "service_downtime_rate" not in header
     assert "active_load_balance_score" in header
-    assert "mec_activity_score" in header
+    assert "mec_activity_score" not in header
+    assert "mec_load_mean" not in header
     assert "effective_latency_score" not in header
     assert "latency_priority_score" not in header
     assert ",0.0,0.0,0.0," in csv_text
+
+
+def test_han_attn_baseline_uses_compact_display_name():
+    from scripts.compare_system_baselines import (
+        DEFAULT_BASELINES,
+        DISPLAY_NAME_MAP,
+        pretty_method_name,
+    )
+
+    assert "han_attn" in DEFAULT_BASELINES
+    assert DISPLAY_NAME_MAP["han_attn"] == "HAN+Attn"
+    assert pretty_method_name("han_attn", is_system=False) == "HAN+Attn"
 
 
 def test_core_metric_comparison_uses_paper_kpis_without_custom_composite_score():
@@ -180,11 +198,12 @@ def test_core_metric_comparison_uses_paper_kpis_without_custom_composite_score()
         "task_success_rate",
         "deadline_violation_rate",
         "service_continuity_rate",
-        "energy_per_resolved_task",
-        "active_load_balance_score",
+        "energy_per_successful_task",
     ]
     assert "effective_latency_score" not in metric_keys
     assert "latency_priority_score" not in metric_keys
+    assert "active_load_balance_score" not in metric_keys
+    assert "mec_activity_score" not in metric_keys
 
 
 def test_tiny_load_balance_bar_labels_stay_inside_axes():
@@ -193,20 +212,20 @@ def test_tiny_load_balance_bar_labels_stay_inside_axes():
             "method": "han_mappo",
             "display_name": "HAN+MAPPO",
             "is_system": True,
-            "active_load_balance_score": 0.001235,
-            "episode_metrics": [{"active_load_balance_score": 0.0011}, {"active_load_balance_score": 0.0013}],
+            "mec_load_fairness": 0.001235,
+            "episode_metrics": [{"mec_load_fairness": 0.0011}, {"mec_load_fairness": 0.0013}],
         },
         {
             "method": "attn_mappo",
             "display_name": "Attn+MAPPO",
-            "active_load_balance_score": 0.001097,
-            "episode_metrics": [{"active_load_balance_score": 0.0010}, {"active_load_balance_score": 0.0012}],
+            "mec_load_fairness": 0.001097,
+            "episode_metrics": [{"mec_load_fairness": 0.0010}, {"mec_load_fairness": 0.0012}],
         },
         {
             "method": "full_local",
             "display_name": "Full-Local",
-            "active_load_balance_score": 0.0,
-            "episode_metrics": [{"active_load_balance_score": 0.0}, {"active_load_balance_score": 0.0}],
+            "mec_load_fairness": 0.0,
+            "episode_metrics": [{"mec_load_fairness": 0.0}, {"mec_load_fairness": 0.0}],
         },
     ]
 
@@ -215,14 +234,14 @@ def test_tiny_load_balance_bar_labels_stay_inside_axes():
         draw_metric_bar_panel(
             ax,
             methods,
-            metric_key="active_load_balance_score",
-            title="Active Load Balance Score",
-            ylabel="Active Load Balance Score",
+            metric_key="mec_load_fairness",
+            title="MEC Load Fairness",
+            ylabel="MEC Load Fairness",
             compact=True,
         )
 
         y_top = ax.get_ylim()[1]
-        assert ax.get_title() == "Active Load Balance Score"
+        assert ax.get_title() == "MEC Load Fairness"
         assert all(text.get_position()[1] <= y_top for text in ax.texts)
     finally:
         plt.close(fig)

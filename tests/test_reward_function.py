@@ -49,6 +49,41 @@ def test_g1_u20_latency_suite_defaults_match_run_label():
     assert "u20" in str(paths.compare_output_dir)
 
 
+def test_g1_u30_new_metrics_suite_defaults_train_han_attn_and_compare_core_methods():
+    from scripts.run_latency_priority_g1_300k_600s_u30_new_metrics_suite import (
+        DEFAULT_BASELINES,
+        RUN_LABEL,
+        SuiteConfig,
+        build_compare_command,
+        build_paths,
+        build_train_command,
+    )
+
+    config = SuiteConfig(run_id="unit")
+    paths = build_paths(project_root=Path("project"), run_id=config.run_id)
+    train_command = build_train_command(Path("project"), paths, config)
+    compare_command = build_compare_command(Path("project"), paths, config)
+
+    assert RUN_LABEL == "g1_300k_600s_u30_new_metrics"
+    assert config.exp_name == "han_attn_latency_priority_g1_300k_600s_u30_new_metrics"
+    assert config.algorithm == "han_attn"
+    assert config.num_users == 30
+    assert DEFAULT_BASELINES == (
+        "han_mappo",
+        "mappo_no_han",
+        "attn_mappo",
+        "random",
+        "min_distance",
+        "full_local",
+        "joint_greedy",
+    )
+    assert train_command[train_command.index("--algorithm") + 1] == "han_attn"
+    assert train_command[train_command.index("--num_users") + 1] == "30"
+    assert compare_command[compare_command.index("--baselines") + 1 :] == list(DEFAULT_BASELINES)
+    assert "u30_new_metrics" in str(paths.system_run_dir)
+    assert "u30_new_metrics" in str(paths.compare_output_dir)
+
+
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
     params = {
         "num_users": 1,

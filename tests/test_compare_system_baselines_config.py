@@ -53,3 +53,38 @@ def test_no_han_mappo_can_reuse_existing_checkpoint_without_training(tmp_path, m
     assert captured["checkpoint"] == checkpoint
     assert captured["trainer_cls"] is UnexpectedTrainer
     assert result["source"] == "mappo_no_han_checkpoint_eval"
+
+
+def test_han_mappo_baseline_can_reuse_existing_checkpoint_without_training(tmp_path, monkeypatch):
+    save_dir = tmp_path / "learned_baselines" / "han_mappo"
+    save_dir.mkdir(parents=True)
+    checkpoint = save_dir / "best_model.pt"
+    checkpoint.write_bytes(b"checkpoint")
+
+    class UnexpectedTrainer:
+        pass
+
+    captured = {}
+
+    def fake_evaluate(**kwargs):
+        captured.update(kwargs)
+        return {"method": "han_mappo"}
+
+    monkeypatch.setattr(compare, "trainer_class_for_objective", lambda objective: UnexpectedTrainer)
+    monkeypatch.setattr(compare, "evaluate_mappo_checkpoint_with_trainer", fake_evaluate)
+
+    result = compare.train_and_evaluate_han_mappo(
+        config_data={},
+        objective="multi_objective",
+        output_dir=tmp_path,
+        device="cpu",
+        episodes=3,
+        max_steps=600,
+        total_timesteps=300000,
+        early_stop_patience=0,
+        reuse_checkpoint_if_available=True,
+    )
+
+    assert captured["checkpoint"] == checkpoint
+    assert captured["trainer_cls"] is UnexpectedTrainer
+    assert result["source"] == "han_mappo_checkpoint_eval"
