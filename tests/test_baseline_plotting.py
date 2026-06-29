@@ -190,6 +190,87 @@ def test_han_attn_baseline_uses_compact_display_name():
     assert pretty_method_name("han_attn", is_system=False) == "HAN+Attn"
 
 
+def test_han_attn_system_run_uses_han_attn_display_name():
+    from scripts.compare_system_baselines import pretty_method_name
+
+    assert (
+        pretty_method_name(
+            "han_attn_latency_priority_g1_300k_600s_u30_new_metrics",
+            is_system=True,
+        )
+        == "HAN+Attn"
+    )
+
+
+def test_method_comparison_title_uses_system_display_name(monkeypatch, tmp_path):
+    import scripts.compare_system_baselines as baseline_script
+
+    captured = {}
+
+    def capture_figure(fig, output_path):
+        captured["title"] = fig._suptitle.get_text()
+        plt.close(fig)
+        return output_path
+
+    monkeypatch.setattr(baseline_script, "save_figure", capture_figure)
+    methods = [
+        {
+            "method": "han_attn_latency_priority_g1_300k_600s_u30_new_metrics",
+            "display_name": "HAN+Attn",
+            "is_system": True,
+            "avg_delay": 2.7,
+            "task_success_rate": 0.82,
+            "deadline_violation_rate": 0.18,
+            "service_continuity_rate": 0.95,
+            "energy_per_successful_task": 0.31,
+            "episode_metrics": [],
+        }
+    ]
+
+    baseline_script.plot_method_comparison(methods, tmp_path)
+
+    assert captured["title"] == "HAN+Attn vs. Baselines: Core Metrics"
+
+
+def test_reward_curve_uses_system_display_name_for_training_label(tmp_path):
+    import scripts.compare_system_baselines as baseline_script
+
+    history_path = tmp_path / "training_history.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "training": [
+                    {"total_steps": 100, "mean_reward": -10.0},
+                    {"total_steps": 200, "mean_reward": -8.0},
+                ],
+                "evaluation": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    methods = [
+        {
+            "method": "han_attn_latency_priority_g1_300k_600s_u30_new_metrics",
+            "display_name": "HAN+Attn",
+            "is_system": True,
+        }
+    ]
+
+    fig, ax = plt.subplots()
+    try:
+        assert baseline_script.draw_reward_curve_panel(
+            ax,
+            history_path,
+            methods,
+            window=3,
+        )
+        _, labels = ax.get_legend_handles_labels()
+        assert "HAN+Attn" in labels
+        assert "HAN+MAPPO" not in labels
+    finally:
+        plt.close(fig)
+
+
 def test_core_metric_comparison_uses_paper_kpis_without_custom_composite_score():
     metric_keys = [metric[0] for metric in CORE_BAR_METRICS]
 

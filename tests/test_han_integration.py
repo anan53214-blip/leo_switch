@@ -159,6 +159,100 @@ def test_han_attn_trainer_fuses_han_satellites_with_fast_load_features():
         shutil.rmtree(log_path, ignore_errors=True)
 
 
+def test_cpq_han_attn_trainer_appends_shared_constraints_and_context_features():
+    from scripts.train import CPQHANCandidateAttentionMAPPOTrainer
+    from src.features.satellite_load import (
+        SATELLITE_CONTEXT_FEATURE_DIM,
+        SHARED_CONSTRAINT_DIM,
+    )
+
+    run_id = uuid4().hex
+    save_path = f"results/cpq_han_attn_obs_{run_id}"
+    log_path = f"results/cpq_han_attn_obs_logs_{run_id}"
+    config = TrainConfig(
+        num_users=2,
+        max_steps=10,
+        total_timesteps=64,
+        n_steps=16,
+        batch_size=16,
+        eval_episodes=0,
+        device="cpu",
+        save_path=save_path,
+        log_path=log_path,
+        algorithm="han_attn_cpq",
+    )
+    trainer_obj = CPQHANCandidateAttentionMAPPOTrainer(config)
+    try:
+        trainer_obj.env.reset(seed=trainer_obj.config.seed)
+        observations, satellite_tokens, available_actions, candidate_sat_ids = (
+            trainer_obj._encode_graph_state()
+        )
+
+        expected_obs_dim = (
+            trainer_obj.raw_obs_dim
+            + trainer_obj.config.han_out_dim
+            + 5
+            + SHARED_CONSTRAINT_DIM
+        )
+        expected_sat_dim = trainer_obj.config.han_out_dim + SATELLITE_CONTEXT_FEATURE_DIM
+        assert trainer_obj.algorithm_name == "han_attn_cpq"
+        assert trainer_obj.obs_dim == expected_obs_dim
+        assert observations.shape == (trainer_obj.num_agents, expected_obs_dim)
+        assert satellite_tokens.shape == (trainer_obj.env.num_satellites, expected_sat_dim)
+        assert trainer_obj.mappo.config.sat_embed_dim == expected_sat_dim
+        assert available_actions.shape == (
+            trainer_obj.num_agents,
+            trainer_obj.max_candidates + 1,
+        )
+        assert candidate_sat_ids.shape == (trainer_obj.num_agents, trainer_obj.max_candidates)
+    finally:
+        trainer_obj.env.close()
+        shutil.rmtree(save_path, ignore_errors=True)
+        shutil.rmtree(log_path, ignore_errors=True)
+
+
+def test_cpq_han_attn_trainer_act_path_accepts_augmented_shapes():
+    from scripts.train import CPQHANCandidateAttentionMAPPOTrainer
+
+    run_id = uuid4().hex
+    save_path = f"results/cpq_han_attn_act_{run_id}"
+    log_path = f"results/cpq_han_attn_act_logs_{run_id}"
+    config = TrainConfig(
+        num_users=2,
+        max_steps=10,
+        total_timesteps=64,
+        n_steps=16,
+        batch_size=16,
+        eval_episodes=0,
+        device="cpu",
+        save_path=save_path,
+        log_path=log_path,
+        algorithm="han_attn_cpq",
+    )
+    trainer_obj = CPQHANCandidateAttentionMAPPOTrainer(config)
+    try:
+        trainer_obj.env.reset(seed=trainer_obj.config.seed)
+        observations, satellite_tokens, available_actions, candidate_sat_ids = (
+            trainer_obj._encode_graph_state()
+        )
+
+        actions, log_probs, value = trainer_obj.mappo.act(
+            observations,
+            available_actions,
+            satellite_embeddings=satellite_tokens,
+            candidate_sat_ids=candidate_sat_ids,
+        )
+
+        assert actions["handover"].shape == (trainer_obj.num_agents,)
+        assert actions["offload"].shape == (trainer_obj.num_agents,)
+        assert log_probs.shape == (trainer_obj.num_agents,)
+        assert np.isfinite(value)
+    finally:
+        trainer_obj.env.close()
+        shutil.rmtree(save_path, ignore_errors=True)
+        shutil.rmtree(log_path, ignore_errors=True)
+
+
 def test_han_pdqn_observation_includes_raw_obs_han_and_light_features():
     run_id = uuid4().hex
     save_path = f"results/han_pdqn_obs_{run_id}"

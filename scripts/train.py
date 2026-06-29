@@ -53,7 +53,14 @@ sys.path.insert(0, str(project_root / 'src'))
 
 # 导入项目模块
 from src.environment.gym_env import LEOSatelliteEnv, EnvConfig, summarize_env_stats
-from src.features.satellite_load import SATELLITE_LOAD_FEATURE_DIM, build_satellite_load_features
+from src.features.satellite_load import (
+    SATELLITE_CONTEXT_FEATURE_DIM,
+    SATELLITE_LOAD_FEATURE_DIM,
+    SHARED_CONSTRAINT_DIM,
+    build_satellite_context_features,
+    build_satellite_load_features,
+    build_shared_constraint_vector,
+)
 from src.graph.builder import HeteroGraphBuilder
 from src.graph.features import FeatureExtractor
 from src.model.hetero_gnn import HANEncoder, HANConfig
@@ -1545,6 +1552,80 @@ class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
         return observations, satellite_tokens, available_actions, candidate_sat_ids
 
 
+class CPQHANCandidateAttentionMAPPOTrainer(HANCandidateAttentionMAPPOTrainer):
+    """Constraint-aware predictive queue-risk HAN+Attention MAPPO."""
+
+    algorithm_name = "han_attn_cpq"
+
+    def _init_environment(self):
+        super()._init_environment()
+        self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5 + SHARED_CONSTRAINT_DIM
+        self.global_state_dim = self.num_agents * self.obs_dim
+        self.logger.info(
+            f"  - CPQ policy observation dim: {self.obs_dim} "
+            f"(base HAN+MAPPO obs + shared constraints {SHARED_CONSTRAINT_DIM})"
+        )
+        self.logger.info(f"  - CPQ global state dim: {self.global_state_dim}")
+
+    def _init_mappo(self):
+        self.logger.info("Initializing CPQ-HAN+Attn MAPPO...")
+
+        fused_sat_dim = self.config.han_out_dim + SATELLITE_CONTEXT_FEATURE_DIM
+        mappo_config = MAPPOConfig(
+            num_agents=self.num_agents,
+            obs_dim=self.obs_dim,
+            global_state_dim=self.global_state_dim,
+            max_candidates=self.max_candidates,
+            sat_embed_dim=fused_sat_dim,
+            risk_feature_start=self.config.han_out_dim + SATELLITE_LOAD_FEATURE_DIM,
+            risk_feature_dim=SATELLITE_CONTEXT_FEATURE_DIM - SATELLITE_LOAD_FEATURE_DIM,
+            actor_hidden_dims=list(self.config.actor_hidden_dims),
+            critic_hidden_dims=list(self.config.critic_hidden_dims),
+            clip_range=self.config.clip_range,
+            clip_range_vf=self.config.clip_range_vf,
+            value_loss_coef=self.config.value_loss_coef,
+            value_loss_type=self.config.value_loss_type,
+            normalize_returns=self.config.normalize_returns,
+            value_huber_beta=self.config.value_huber_beta,
+            entropy_coef=self.config.entropy_coef,
+            entropy_schedule=self.config.entropy_schedule,
+            learning_rate=self.config.learning_rate,
+            max_grad_norm=self.config.max_grad_norm,
+            n_epochs=self.config.n_epochs,
+            batch_size=self.config.batch_size,
+            gamma=self.config.gamma,
+            gae_lambda=self.config.gae_lambda,
+            device=self.config.device,
+        )
+
+        self.mappo = AttentionMAPPO(mappo_config)
+        actor_params = sum(p.numel() for p in self.mappo.actor.parameters())
+        critic_params = sum(p.numel() for p in self.mappo.critic.parameters())
+        self.logger.info(f"  - CPQ-HAN+Attn Actor params: {actor_params:,}")
+        self.logger.info(f"  - Critic params: {critic_params:,}")
+
+    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        observations, han_satellites, available_actions, candidate_sat_ids = (
+            HANMAPPOTrainer._encode_graph_state(self)
+        )
+        context_features = build_satellite_context_features(self.env, self.num_agents)
+        shared_constraints = build_shared_constraint_vector(self.env, self.num_agents)
+        shared_repeated = np.repeat(
+            shared_constraints[None, :],
+            self.num_agents,
+            axis=0,
+        )
+        observations = np.concatenate(
+            [observations, shared_repeated],
+            axis=1,
+        ).astype(np.float32, copy=False)
+        satellite_tokens = np.concatenate(
+            [han_satellites, context_features],
+            axis=1,
+        ).astype(np.float32, copy=False)
+        return observations, satellite_tokens, available_actions, candidate_sat_ids
+
+
 class HANMADDPGTrainer(HANMAPPOTrainer):
     """HAN feature encoder with off-policy MADDPG on cached no-grad user embeddings."""
 
@@ -2129,8 +2210,8 @@ def parse_args():
         "--algorithm",
         type=str,
         default="mappo",
-        choices=["mappo", "attn_mappo", "han_attn", "maddpg", "pdqn"],
-        help="Training algorithm: mappo, attn_mappo, han_attn, maddpg, or pdqn",
+        choices=["mappo", "attn_mappo", "han_attn", "han_attn_cpq", "maddpg", "pdqn"],
+        help="Training algorithm: mappo, attn_mappo, han_attn, han_attn_cpq, maddpg, or pdqn",
     )
     
     # 环境参数
@@ -2286,6 +2367,7 @@ def main():
         "mappo": HANMAPPOTrainer,
         "attn_mappo": AttentionMAPPOTrainer,
         "han_attn": HANCandidateAttentionMAPPOTrainer,
+        "han_attn_cpq": CPQHANCandidateAttentionMAPPOTrainer,
         "maddpg": HANMADDPGTrainer,
         "pdqn": HANPDQNTrainer,
     }[config.algorithm]

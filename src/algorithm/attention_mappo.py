@@ -23,17 +23,23 @@ class AttentionMAPPO(MAPPO):
         self.config = config
         self.device = torch.device(config.device)
 
+        num_heads = 4
         hidden_dim = config.sat_embed_dim
         if config.actor_hidden_dims:
             hidden_dim = max(config.sat_embed_dim, int(config.actor_hidden_dims[-1] // 2))
+        remainder = hidden_dim % num_heads
+        if remainder:
+            hidden_dim += num_heads - remainder
 
         actor_config = CandidateAttentionConfig(
             user_obs_dim=config.obs_dim,
             sat_feature_dim=config.sat_embed_dim,
             hidden_dim=hidden_dim,
-            num_heads=4,
+            num_heads=num_heads,
             max_candidates=config.max_candidates,
             dropout=0.1,
+            risk_feature_start=config.risk_feature_start,
+            risk_feature_dim=config.risk_feature_dim,
         )
         self.actor = CandidateAttentionActor(actor_config).to(self.device)
 

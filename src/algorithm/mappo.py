@@ -70,6 +70,8 @@ class MAPPOConfig:
     global_state_dim: int = 128         # 全局状态维度
     max_candidates: int = 10            # 最大候选卫星数
     sat_embed_dim: int = 64             # 卫星嵌入维度（HAN输出维度）
+    risk_feature_start: int = 8         # CandidateAttention risk feature offset
+    risk_feature_dim: int = 0           # CandidateAttention risk feature width
     
     # ---------- 网络参数 ----------
     actor_hidden_dims: List[int] = field(default_factory=lambda: [256, 128])

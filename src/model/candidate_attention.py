@@ -21,6 +21,8 @@ class CandidateAttentionConfig:
     num_heads: int = 4
     max_candidates: int = 10
     dropout: float = 0.1
+    risk_feature_start: int = 8
+    risk_feature_dim: int = 0
 
 
 class SatelliteLoadEncoder(nn.Module):
@@ -100,6 +102,14 @@ class CandidateAttentionActor(nn.Module):
             nn.ReLU(),
             nn.LayerNorm(config.hidden_dim),
         )
+        if config.risk_feature_dim > 0:
+            self.risk_proj = nn.Sequential(
+                nn.Linear(config.risk_feature_dim, config.hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(config.hidden_dim),
+            )
+        else:
+            self.risk_proj = None
         self.cross_attn = nn.MultiheadAttention(
             config.hidden_dim,
             config.num_heads,
@@ -167,6 +177,17 @@ class CandidateAttentionActor(nn.Module):
         candidate_tokens = self.candidate_fuse(
             torch.cat([candidate_global, candidate_link], dim=-1)
         )
+        risk_end = self.config.risk_feature_start + self.config.risk_feature_dim
+        if self.risk_proj is not None and satellite_features.size(-1) >= risk_end:
+            gathered_raw = self._gather_candidate_tokens(
+                satellite_features,
+                candidate_sat_ids,
+            )
+            risk_features = gathered_raw[
+                ...,
+                self.config.risk_feature_start:risk_end,
+            ]
+            candidate_tokens = candidate_tokens + self.risk_proj(risk_features)
 
         if candidate_masks is not None:
             valid_candidates = candidate_masks[:, 1:].to(candidate_tokens.device) > 0
