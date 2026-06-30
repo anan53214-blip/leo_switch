@@ -132,7 +132,7 @@ def test_han_attn_trainer_fuses_han_satellites_with_fast_load_features():
         )
 
         expected_sat_dim = trainer_obj.config.han_out_dim + SATELLITE_LOAD_FEATURE_DIM
-        assert trainer_obj.algorithm_name == "han_attn"
+        assert trainer_obj.algorithm_name == "han_attn_legacy"
         assert observations.shape == (trainer_obj.num_agents, trainer_obj.obs_dim)
         assert satellite_tokens.shape == (trainer_obj.env.num_satellites, expected_sat_dim)
         assert trainer_obj.mappo.config.sat_embed_dim == expected_sat_dim
@@ -195,7 +195,7 @@ def test_cpq_han_attn_trainer_appends_shared_constraints_and_context_features():
             + SHARED_CONSTRAINT_DIM
         )
         expected_sat_dim = trainer_obj.config.han_out_dim + SATELLITE_CONTEXT_FEATURE_DIM
-        assert trainer_obj.algorithm_name == "han_attn_cpq"
+        assert trainer_obj.algorithm_name == "han_attn"
         assert trainer_obj.obs_dim == expected_obs_dim
         assert observations.shape == (trainer_obj.num_agents, expected_obs_dim)
         assert satellite_tokens.shape == (trainer_obj.env.num_satellites, expected_sat_dim)

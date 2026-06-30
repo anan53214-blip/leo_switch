@@ -1501,9 +1501,9 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
 
 
 class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
-    """HAN encoder plus candidate-attention MAPPO policy."""
+    """Legacy HAN encoder plus candidate-attention MAPPO policy."""
 
-    algorithm_name = "han_attn"
+    algorithm_name = "han_attn_legacy"
 
     def _init_mappo(self):
         self.logger.info("Initializing HAN+Attn MAPPO...")
@@ -1553,22 +1553,22 @@ class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
 
 
 class CPQHANCandidateAttentionMAPPOTrainer(HANCandidateAttentionMAPPOTrainer):
-    """Constraint-aware predictive queue-risk HAN+Attention MAPPO."""
+    """Final HAN+Attention MAPPO with predictive queue-risk context."""
 
-    algorithm_name = "han_attn_cpq"
+    algorithm_name = "han_attn"
 
     def _init_environment(self):
         super()._init_environment()
         self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5 + SHARED_CONSTRAINT_DIM
         self.global_state_dim = self.num_agents * self.obs_dim
         self.logger.info(
-            f"  - CPQ policy observation dim: {self.obs_dim} "
+            f"  - HAN+Attn policy observation dim: {self.obs_dim} "
             f"(base HAN+MAPPO obs + shared constraints {SHARED_CONSTRAINT_DIM})"
         )
-        self.logger.info(f"  - CPQ global state dim: {self.global_state_dim}")
+        self.logger.info(f"  - HAN+Attn global state dim: {self.global_state_dim}")
 
     def _init_mappo(self):
-        self.logger.info("Initializing CPQ-HAN+Attn MAPPO...")
+        self.logger.info("Initializing HAN+Attn MAPPO with context-aware candidate features...")
 
         fused_sat_dim = self.config.han_out_dim + SATELLITE_CONTEXT_FEATURE_DIM
         mappo_config = MAPPOConfig(
@@ -1601,7 +1601,7 @@ class CPQHANCandidateAttentionMAPPOTrainer(HANCandidateAttentionMAPPOTrainer):
         self.mappo = AttentionMAPPO(mappo_config)
         actor_params = sum(p.numel() for p in self.mappo.actor.parameters())
         critic_params = sum(p.numel() for p in self.mappo.critic.parameters())
-        self.logger.info(f"  - CPQ-HAN+Attn Actor params: {actor_params:,}")
+        self.logger.info(f"  - HAN+Attn Actor params: {actor_params:,}")
         self.logger.info(f"  - Critic params: {critic_params:,}")
 
     def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -2210,8 +2210,11 @@ def parse_args():
         "--algorithm",
         type=str,
         default="mappo",
-        choices=["mappo", "attn_mappo", "han_attn", "han_attn_cpq", "maddpg", "pdqn"],
-        help="Training algorithm: mappo, attn_mappo, han_attn, han_attn_cpq, maddpg, or pdqn",
+        choices=["mappo", "attn_mappo", "han_attn", "han_attn_legacy", "han_attn_cpq", "maddpg", "pdqn"],
+        help=(
+            "Training algorithm: mappo, attn_mappo, han_attn, "
+            "han_attn_legacy, han_attn_cpq (deprecated alias), maddpg, or pdqn"
+        ),
     )
     
     # 环境参数
@@ -2366,7 +2369,8 @@ def main():
     trainer_cls = {
         "mappo": HANMAPPOTrainer,
         "attn_mappo": AttentionMAPPOTrainer,
-        "han_attn": HANCandidateAttentionMAPPOTrainer,
+        "han_attn": CPQHANCandidateAttentionMAPPOTrainer,
+        "han_attn_legacy": HANCandidateAttentionMAPPOTrainer,
         "han_attn_cpq": CPQHANCandidateAttentionMAPPOTrainer,
         "maddpg": HANMADDPGTrainer,
         "pdqn": HANPDQNTrainer,

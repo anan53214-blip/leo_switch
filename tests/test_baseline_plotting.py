@@ -202,6 +202,25 @@ def test_han_attn_system_run_uses_han_attn_display_name():
     )
 
 
+def test_deprecated_cpq_han_attn_system_run_uses_final_han_attn_display_name():
+    from scripts.compare_system_baselines import pretty_method_name
+
+    assert (
+        pretty_method_name(
+            "han_attn_cpq_latency_priority_g1_300k_600s_u30",
+            is_system=True,
+        )
+        == "HAN+Attn"
+    )
+
+
+def test_legacy_han_attn_uses_explicit_legacy_display_name():
+    from scripts.compare_system_baselines import DISPLAY_NAME_MAP, pretty_method_name
+
+    assert DISPLAY_NAME_MAP["han_attn_legacy"] == "HAN+Attn (legacy)"
+    assert pretty_method_name("han_attn_legacy", is_system=False) == "HAN+Attn (legacy)"
+
+
 def test_method_comparison_title_uses_system_display_name(monkeypatch, tmp_path):
     import scripts.compare_system_baselines as baseline_script
 

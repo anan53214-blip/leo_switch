@@ -155,7 +155,8 @@ DISPLAY_NAME_MAP = {
     "mappo_no_han": "MAPPO",
     "attn_mappo": "Attn+MAPPO",
     "han_attn": "HAN+Attn",
-    "han_attn_cpq": "CPQ-HAN+Attn",
+    "han_attn_legacy": "HAN+Attn (legacy)",
+    "han_attn_cpq": "HAN+Attn",
     "han_maddpg": "HAN+MADDPG",
     "han_pdqn": "HAN+PDQN",
 }
@@ -1028,7 +1029,8 @@ def load_run_config(checkpoint: Optional[Path], history_path: Optional[Path]) ->
 def pretty_method_name(name: str, is_system: bool) -> str:
     base_name = name.split("(", 1)[0]
     normalized_name = base_name.strip().lower().replace("-", "_")
-    for method_name, display_name in DISPLAY_NAME_MAP.items():
+    for method_name in sorted(DISPLAY_NAME_MAP, key=len, reverse=True):
+        display_name = DISPLAY_NAME_MAP[method_name]
         if normalized_name == method_name or normalized_name.startswith(f"{method_name}_"):
             return display_name
     if is_system:
@@ -1045,6 +1047,27 @@ def system_display_name(methods: Sequence[Dict], fallback: str = "HAN+MAPPO") ->
 
 def normalize_baseline_name(name: str) -> str:
     return name.strip().lower().replace("-", "_")
+
+
+def canonical_algorithm_name(name: str) -> str:
+    normalized = normalize_baseline_name(name)
+    if normalized in {"han_attn", "han_attn_cpq"}:
+        return "han_attn"
+    return normalized
+
+
+def filter_duplicate_system_baselines(
+    baselines: Sequence[str],
+    config_data: Dict,
+) -> List[str]:
+    system_algorithm = canonical_algorithm_name(str(config_data.get("algorithm", "")))
+    if not system_algorithm:
+        return list(baselines)
+    return [
+        baseline
+        for baseline in baselines
+        if canonical_algorithm_name(baseline) != system_algorithm
+    ]
 
 
 def compute_deadline_violation_rate(summary: Dict) -> float:
@@ -2601,11 +2624,18 @@ def system_trainer_class_for_config(objective: str, config_data: Dict):
     algorithm = str(config_data.get("algorithm", "mappo"))
     if algorithm == "attn_mappo":
         return AttentionMAPPOTrainer
-    if algorithm == "han_attn":
+    if algorithm == "han_attn_legacy":
         return HANCandidateAttentionMAPPOTrainer
-    if algorithm == "han_attn_cpq":
+    if algorithm in {"han_attn", "han_attn_cpq"}:
         return CPQHANCandidateAttentionMAPPOTrainer
     return trainer_class_for_objective(objective)
+
+
+def baseline_config_data(config_data: Dict, algorithm: str) -> Dict:
+    """Copy run config and set the algorithm owned by a baseline."""
+    sanitized = dict(config_data)
+    sanitized["algorithm"] = algorithm
+    return sanitized
 
 
 class NoHANTrainerMixin:
@@ -2890,6 +2920,7 @@ def train_and_evaluate_no_han_mappo(
     early_stop_patience: int,
     reuse_checkpoint_if_available: bool = False,
 ) -> Dict:
+    config_data = baseline_config_data(config_data, "mappo")
     save_dir = output_dir / "learned_baselines" / "mappo_no_han"
     save_dir.mkdir(parents=True, exist_ok=True)
     trainer_cls = no_han_trainer_class_for_objective(objective)
@@ -2956,6 +2987,7 @@ def train_and_evaluate_han_mappo(
     early_stop_patience: int,
     reuse_checkpoint_if_available: bool = False,
 ) -> Dict:
+    config_data = baseline_config_data(config_data, "mappo")
     save_dir = output_dir / "learned_baselines" / "han_mappo"
     save_dir.mkdir(parents=True, exist_ok=True)
     trainer_cls = trainer_class_for_objective(objective)
@@ -3095,6 +3127,7 @@ def train_and_evaluate_han_attn_mappo(
     early_stop_patience: int,
     reuse_checkpoint_if_available: bool = False,
 ) -> Dict:
+    config_data = baseline_config_data(config_data, "han_attn")
     save_dir = output_dir / "learned_baselines" / "han_attn"
     save_dir.mkdir(parents=True, exist_ok=True)
     if reuse_checkpoint_if_available:
@@ -3108,14 +3141,13 @@ def train_and_evaluate_han_attn_mappo(
                 save_path=checkpoint.parent,
                 load_path=checkpoint,
             )
-            config.algorithm = "han_attn"
             result = evaluate_mappo_checkpoint_with_trainer(
                 checkpoint=checkpoint,
                 config_data=asdict(config),
                 episodes=episodes,
                 device=resolve_device(device),
                 max_steps=max_steps,
-                trainer_cls=HANCandidateAttentionMAPPOTrainer,
+                trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
                 method_name="han_attn",
                 is_system=False,
             )
@@ -3135,8 +3167,7 @@ def train_and_evaluate_han_attn_mappo(
         save_path=save_dir,
         exp_name="han_attn",
     )
-    config.algorithm = "han_attn"
-    trainer = HANCandidateAttentionMAPPOTrainer(config)
+    trainer = CPQHANCandidateAttentionMAPPOTrainer(config)
     trainer.train()
     checkpoint = save_dir / "best_model.pt"
     if not checkpoint.exists():
@@ -3147,7 +3178,7 @@ def train_and_evaluate_han_attn_mappo(
         episodes=episodes,
         device=resolve_device(device),
         max_steps=max_steps,
-        trainer_cls=HANCandidateAttentionMAPPOTrainer,
+        trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
         method_name="han_attn",
         is_system=False,
     )
@@ -3169,6 +3200,7 @@ def train_and_evaluate_cpq_han_attn_mappo(
     early_stop_patience: int,
     reuse_checkpoint_if_available: bool = False,
 ) -> Dict:
+    config_data = baseline_config_data(config_data, "han_attn")
     save_dir = output_dir / "learned_baselines" / "han_attn_cpq"
     save_dir.mkdir(parents=True, exist_ok=True)
     if reuse_checkpoint_if_available:
@@ -3182,7 +3214,6 @@ def train_and_evaluate_cpq_han_attn_mappo(
                 save_path=checkpoint.parent,
                 load_path=checkpoint,
             )
-            config.algorithm = "han_attn_cpq"
             result = evaluate_mappo_checkpoint_with_trainer(
                 checkpoint=checkpoint,
                 config_data=asdict(config),
@@ -3209,7 +3240,6 @@ def train_and_evaluate_cpq_han_attn_mappo(
         save_path=save_dir,
         exp_name="han_attn_cpq",
     )
-    config.algorithm = "han_attn_cpq"
     trainer = CPQHANCandidateAttentionMAPPOTrainer(config)
     trainer.train()
     checkpoint = save_dir / "best_model.pt"
@@ -3223,6 +3253,79 @@ def train_and_evaluate_cpq_han_attn_mappo(
         max_steps=max_steps,
         trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
         method_name="han_attn_cpq",
+        is_system=False,
+    )
+    result["trained_timesteps"] = int(total_timesteps)
+    result["checkpoint"] = str(checkpoint)
+    history_path = save_dir / "training_history.json"
+    if history_path.exists():
+        result["training_history"] = str(history_path)
+    return result
+
+
+def train_and_evaluate_legacy_han_attn_mappo(
+    config_data: Dict,
+    output_dir: Path,
+    device: str,
+    episodes: int,
+    max_steps: Optional[int],
+    total_timesteps: int,
+    early_stop_patience: int,
+    reuse_checkpoint_if_available: bool = False,
+) -> Dict:
+    config_data = baseline_config_data(config_data, "han_attn_legacy")
+    save_dir = output_dir / "learned_baselines" / "han_attn_legacy"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    if reuse_checkpoint_if_available:
+        checkpoint = find_existing_checkpoint(save_dir)
+        if checkpoint is not None:
+            config = train_config_from_dict(
+                config_data,
+                device=device,
+                max_steps=max_steps,
+                episodes=episodes,
+                save_path=checkpoint.parent,
+                load_path=checkpoint,
+            )
+            result = evaluate_mappo_checkpoint_with_trainer(
+                checkpoint=checkpoint,
+                config_data=asdict(config),
+                episodes=episodes,
+                device=resolve_device(device),
+                max_steps=max_steps,
+                trainer_cls=HANCandidateAttentionMAPPOTrainer,
+                method_name="han_attn_legacy",
+                is_system=False,
+            )
+            result["source"] = "han_attn_legacy_checkpoint_eval"
+            result["checkpoint"] = str(checkpoint)
+            history_path = save_dir / "training_history.json"
+            if history_path.exists():
+                result["training_history"] = str(history_path)
+            return result
+    config = train_config_from_dict(
+        config_data,
+        device=device,
+        max_steps=max_steps,
+        episodes=episodes,
+        total_timesteps=total_timesteps,
+        early_stop_patience=early_stop_patience,
+        save_path=save_dir,
+        exp_name="han_attn_legacy",
+    )
+    trainer = HANCandidateAttentionMAPPOTrainer(config)
+    trainer.train()
+    checkpoint = save_dir / "best_model.pt"
+    if not checkpoint.exists():
+        checkpoint = save_dir / "final_model.pt"
+    result = evaluate_mappo_checkpoint_with_trainer(
+        checkpoint=checkpoint,
+        config_data=asdict(config),
+        episodes=episodes,
+        device=resolve_device(device),
+        max_steps=max_steps,
+        trainer_cls=HANCandidateAttentionMAPPOTrainer,
+        method_name="han_attn_legacy",
         is_system=False,
     )
     result["trained_timesteps"] = int(total_timesteps)
@@ -4569,6 +4672,12 @@ def main() -> None:
             "compare_only mode requires an existing --system-run-dir or --system-checkpoint with training artifacts."
         )
 
+    requested_baselines = list(baselines)
+    baselines = filter_duplicate_system_baselines(baselines, config_data)
+    duplicate_system_baselines = [
+        baseline for baseline in requested_baselines if baseline not in baselines
+    ]
+
     if checkpoint and not args.skip_system_eval:
         system_method = evaluate_system_checkpoint(
             checkpoint=checkpoint,
@@ -4593,7 +4702,7 @@ def main() -> None:
             load_reused_methods(
                 sources=args.reuse_methods_from,
                 include_methods=args.reuse_methods,
-                exclude_methods=baselines,
+                exclude_methods=[*baselines, *duplicate_system_baselines],
             )
         )
 
@@ -4697,6 +4806,18 @@ def main() -> None:
                 reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
             result.setdefault("source", "han_attn_train_eval")
+        elif baseline_name == "han_attn_legacy":
+            result = train_and_evaluate_legacy_han_attn_mappo(
+                config_data=config_data,
+                output_dir=output_dir,
+                device=args.device,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                total_timesteps=args.total_timesteps,
+                early_stop_patience=args.early_stop_patience,
+                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
+            )
+            result.setdefault("source", "han_attn_legacy_train_eval")
         elif baseline_name == "han_attn_cpq":
             result = train_and_evaluate_cpq_han_attn_mappo(
                 config_data=config_data,

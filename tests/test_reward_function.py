@@ -121,6 +121,41 @@ def test_g1_u30_cpq_suite_defaults_train_cpq_han_attn_and_compare_core_methods()
     assert "u30_cpq" in str(paths.compare_output_dir)
 
 
+def test_g1_u30_attn_han_final_suite_defaults_train_final_han_attn_only():
+    from scripts.run_latency_priority_g1_300k_600s_u30_attn_han_final_suite import (
+        DEFAULT_BASELINES,
+        RUN_LABEL,
+        SuiteConfig,
+        build_compare_command,
+        build_paths,
+        build_train_command,
+    )
+
+    config = SuiteConfig(run_id="unit")
+    paths = build_paths(project_root=Path("project"), run_id=config.run_id)
+    train_command = build_train_command(Path("project"), paths, config)
+    compare_command = build_compare_command(Path("project"), paths, config)
+
+    assert RUN_LABEL == "g1_300k_600s_u30_attn_han_final"
+    assert config.exp_name == "han_attn_latency_priority_g1_300k_600s_u30_final"
+    assert config.algorithm == "han_attn"
+    assert "han_attn" not in DEFAULT_BASELINES
+    assert "han_attn_legacy" not in DEFAULT_BASELINES
+    assert DEFAULT_BASELINES == (
+        "attn_mappo",
+        "han_mappo",
+        "mappo_no_han",
+        "min_distance",
+        "random",
+        "joint_greedy",
+        "full_local",
+    )
+    assert train_command[train_command.index("--algorithm") + 1] == "han_attn"
+    assert compare_command[compare_command.index("--baselines") + 1 :] == list(DEFAULT_BASELINES)
+    assert "attn_han_final" in str(paths.system_run_dir)
+    assert "attn_han_final" in str(paths.compare_output_dir)
+
+
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
     params = {
         "num_users": 1,

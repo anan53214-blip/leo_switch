@@ -1,7 +1,8 @@
-"""Run the u30 CPQ-HAN+Attn latency-priority suite.
+"""Run the final u30 HAN+Attn latency-priority suite.
 
-This suite trains the CPQ-HAN+Attn system run and compares it with the core
-HAN+Attn, Attn+MAPPO, HAN+MAPPO, MAPPO, and rule-based baselines.
+This suite treats the enhanced queue/context-aware HAN+Attention policy as the
+official HAN+Attn method. The comparison excludes legacy HAN+Attn variants so
+the main table stays focused on HAN, attention, MAPPO, and heuristic baselines.
 """
 
 from __future__ import annotations
@@ -16,9 +17,8 @@ from typing import Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RUN_LABEL = "g1_300k_600s_u30_cpq"
+RUN_LABEL = "g1_300k_600s_u30_attn_han_final"
 DEFAULT_BASELINES = (
-    "han_attn",
     "attn_mappo",
     "han_mappo",
     "mappo_no_han",
@@ -41,8 +41,8 @@ class SuitePaths:
 class SuiteConfig:
     run_id: str
     python_executable: str = "python"
-    exp_name: str = "han_attn_cpq_latency_priority_g1_300k_600s_u30"
-    algorithm: str = "han_attn_cpq"
+    exp_name: str = "han_attn_latency_priority_g1_300k_600s_u30_final"
+    algorithm: str = "han_attn"
     seed: int = 42
     device: str = "auto"
     num_users: int = 30
@@ -56,7 +56,7 @@ class SuiteConfig:
     log_interval: int = 1
     best_model_metric: str = "avg_delay"
     compare_ranking_metric: str = "avg_delay"
-    compare_episodes: int = 3
+    compare_episodes: int = 10
     plot_window: int = 5
     early_stop_patience: int = 0
     baselines: tuple[str, ...] = DEFAULT_BASELINES
@@ -178,8 +178,8 @@ def run_command(command: Sequence[str], cwd: Path, dry_run: bool) -> None:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Train the u30 CPQ-HAN+Attn latency-priority run, then compare it "
-            "with HAN+Attn, Attn+MAPPO, HAN+MAPPO, MAPPO, and rule baselines."
+            "Train the final u30 HAN+Attn latency-priority run, then compare it "
+            "with Attn+MAPPO, HAN+MAPPO, MAPPO, and rule baselines."
         )
     )
     parser.add_argument("--run-id", type=str, default=None)
@@ -200,7 +200,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=1,
     )
-    parser.add_argument("--compare-episodes", type=int, default=3)
+    parser.add_argument("--compare-episodes", type=int, default=10)
     parser.add_argument("--baselines", nargs="+", default=list(DEFAULT_BASELINES))
     parser.add_argument("--best-model-metric", type=str, default="avg_delay")
     parser.add_argument("--compare-ranking-metric", type=str, default="avg_delay")

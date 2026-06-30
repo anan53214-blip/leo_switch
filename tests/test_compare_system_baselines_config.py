@@ -20,6 +20,24 @@ def test_train_config_from_dict_rewrites_stale_log_path_with_save_path(tmp_path)
     assert Path(config.log_path) == PROJECT_ROOT / "results" / "logs"
 
 
+def test_filter_duplicate_system_baselines_removes_han_attn_aliases():
+    filtered = compare.filter_duplicate_system_baselines(
+        ["han_attn", "han_attn_cpq", "han_attn_legacy", "attn_mappo"],
+        {"algorithm": "han_attn"},
+    )
+
+    assert filtered == ["han_attn_legacy", "attn_mappo"]
+
+
+def test_filter_duplicate_system_baselines_keeps_other_systems_intact():
+    filtered = compare.filter_duplicate_system_baselines(
+        ["han_attn", "attn_mappo", "han_mappo"],
+        {"algorithm": "mappo"},
+    )
+
+    assert filtered == ["han_attn", "attn_mappo", "han_mappo"]
+
+
 def test_no_han_mappo_can_reuse_existing_checkpoint_without_training(tmp_path, monkeypatch):
     save_dir = tmp_path / "learned_baselines" / "mappo_no_han"
     save_dir.mkdir(parents=True)
@@ -53,6 +71,7 @@ def test_no_han_mappo_can_reuse_existing_checkpoint_without_training(tmp_path, m
     assert captured["checkpoint"] == checkpoint
     assert captured["trainer_cls"] is UnexpectedTrainer
     assert result["source"] == "mappo_no_han_checkpoint_eval"
+    assert captured["config_data"]["algorithm"] == "mappo"
 
 
 def test_han_mappo_baseline_can_reuse_existing_checkpoint_without_training(tmp_path, monkeypatch):
@@ -74,7 +93,7 @@ def test_han_mappo_baseline_can_reuse_existing_checkpoint_without_training(tmp_p
     monkeypatch.setattr(compare, "evaluate_mappo_checkpoint_with_trainer", fake_evaluate)
 
     result = compare.train_and_evaluate_han_mappo(
-        config_data={},
+        config_data={"algorithm": "han_attn"},
         objective="multi_objective",
         output_dir=tmp_path,
         device="cpu",
@@ -88,3 +107,4 @@ def test_han_mappo_baseline_can_reuse_existing_checkpoint_without_training(tmp_p
     assert captured["checkpoint"] == checkpoint
     assert captured["trainer_cls"] is UnexpectedTrainer
     assert result["source"] == "han_mappo_checkpoint_eval"
+    assert captured["config_data"]["algorithm"] == "mappo"
