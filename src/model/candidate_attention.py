@@ -241,6 +241,26 @@ class CandidateAttentionActor(nn.Module):
             logits = logits.masked_fill(~mask, -1e9)
         return logits
 
+    def _offload_distribution_from_features(
+        self,
+        user_context: torch.Tensor,
+        candidate_tokens: torch.Tensor,
+    ) -> Beta:
+        keep_context = user_context.unsqueeze(1)
+        action_contexts = torch.cat([keep_context, candidate_tokens], dim=1)
+        expanded_user = user_context.unsqueeze(1).expand_as(action_contexts)
+        alpha_beta = F.softplus(
+            self.offload_head(torch.cat([expanded_user, action_contexts], dim=-1))
+        ) + 1.0
+        return Beta(alpha_beta[..., 0], alpha_beta[..., 1])
+
+    @staticmethod
+    def _select_action_values(
+        values: torch.Tensor,
+        handover: torch.Tensor,
+    ) -> torch.Tensor:
+        return values.gather(1, handover.long().unsqueeze(-1)).squeeze(-1)
+
     def forward(
         self,
         observations: torch.Tensor,
@@ -260,11 +280,10 @@ class CandidateAttentionActor(nn.Module):
             candidate_masks,
         )
         handover_dist = Categorical(logits=logits)
-        pooled_candidates = candidate_tokens.mean(dim=1)
-        alpha_beta = F.softplus(
-            self.offload_head(torch.cat([user_context, pooled_candidates], dim=-1))
-        ) + 1.0
-        offload_dist = Beta(alpha_beta[:, 0], alpha_beta[:, 1])
+        offload_dist = self._offload_distribution_from_features(
+            user_context,
+            candidate_tokens,
+        )
         return handover_dist, offload_dist
 
     def sample_all(
@@ -286,12 +305,21 @@ class CandidateAttentionActor(nn.Module):
         )
         if deterministic:
             handover = handover_dist.probs.argmax(dim=-1)
-            offload = offload_dist.mean
+            offload = self._select_action_values(offload_dist.mean, handover)
+            selected_offload_log_prob = self._select_action_values(
+                offload_dist.log_prob(offload.unsqueeze(1).expand_as(offload_dist.mean)),
+                handover,
+            )
         else:
             handover = handover_dist.sample()
-            offload = offload_dist.sample()
+            offload_samples = offload_dist.sample()
+            offload = self._select_action_values(offload_samples, handover)
+            selected_offload_log_prob = self._select_action_values(
+                offload_dist.log_prob(offload_samples),
+                handover,
+            )
         offload = offload.clamp(1e-6, 1.0 - 1e-6)
-        log_prob = handover_dist.log_prob(handover) + offload_dist.log_prob(offload)
+        log_prob = handover_dist.log_prob(handover) + selected_offload_log_prob
         return {
             "handover": handover,
             "offload": offload,
@@ -314,9 +342,18 @@ class CandidateAttentionActor(nn.Module):
             candidate_sat_ids,
         )
         offload = actions_continuous.squeeze(-1).clamp(1e-6, 1.0 - 1e-6)
+        expanded_offload = offload.unsqueeze(1).expand_as(offload_dist.mean)
+        selected_offload_log_prob = self._select_action_values(
+            offload_dist.log_prob(expanded_offload),
+            actions_discrete,
+        )
+        selected_offload_entropy = self._select_action_values(
+            offload_dist.entropy(),
+            actions_discrete,
+        )
         log_prob = (
             handover_dist.log_prob(actions_discrete.long())
-            + offload_dist.log_prob(offload)
+            + selected_offload_log_prob
         )
-        entropy = handover_dist.entropy() + offload_dist.entropy()
+        entropy = handover_dist.entropy() + selected_offload_entropy
         return log_prob, entropy

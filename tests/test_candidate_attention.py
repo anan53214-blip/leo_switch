@@ -201,6 +201,41 @@ def test_candidate_attention_logits_change_when_satellite_load_changes():
     assert not torch.allclose(logits_low, logits_high)
 
 
+def test_candidate_attention_offload_distribution_is_conditioned_per_handover_action():
+    from src.model.candidate_attention import (
+        CandidateAttentionActor,
+        CandidateAttentionConfig,
+    )
+
+    max_candidates = 2
+    obs_dim = 3 + 1 + 5 + max_candidates * 6 + 4
+    actor = CandidateAttentionActor(
+        CandidateAttentionConfig(
+            user_obs_dim=obs_dim,
+            sat_feature_dim=8,
+            hidden_dim=32,
+            num_heads=4,
+            max_candidates=max_candidates,
+            dropout=0.0,
+        )
+    )
+    actor.eval()
+
+    observations = torch.zeros(1, obs_dim)
+    candidate_masks = torch.ones(1, max_candidates + 1)
+    satellite_features = torch.randn(3, 8)
+    candidate_sat_ids = torch.tensor([[0, 1]], dtype=torch.long)
+
+    _, offload_dist = actor.forward(
+        observations,
+        candidate_masks,
+        satellite_features,
+        candidate_sat_ids,
+    )
+
+    assert offload_dist.mean.shape == (1, max_candidates + 1)
+
+
 def test_satellite_load_encoder_accepts_global_satellite_tokens():
     from src.model.candidate_attention import SatelliteLoadEncoder
 
