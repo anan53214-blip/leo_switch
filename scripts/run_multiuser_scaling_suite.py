@@ -113,6 +113,8 @@ class MultiUserConfig:
     force_system_train: bool = False
     reuse_learned_checkpoints: bool = False
     aggregate_only: bool = False
+    include_methods: tuple[str, ...] = ()
+    output_suffix: str = ""
     dry_run: bool = False
 
 
@@ -261,6 +263,37 @@ def method_display_name(method: str, fallback: str = "") -> str:
     return fallback or method
 
 
+def _normalize_method_selector(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def normalize_output_suffix(value: str) -> str:
+    normalized = value.strip().strip("_").replace("-", "_").replace(" ", "_")
+    return "".join(char if char.isalnum() or char == "_" else "_" for char in normalized)
+
+
+def suffixed_filename(filename: str, output_suffix: str = "") -> str:
+    suffix = normalize_output_suffix(output_suffix)
+    if not suffix:
+        return filename
+    path = Path(filename)
+    return f"{path.stem}_{suffix}{path.suffix}"
+
+
+def method_matches_include(row: dict[str, str], include_methods: Sequence[str]) -> bool:
+    if not include_methods:
+        return True
+    allowed = {_normalize_method_selector(method) for method in include_methods}
+    method = row.get("method", "")
+    display_name = row.get("display_name", "")
+    candidates = {
+        _normalize_method_selector(method),
+        _normalize_method_selector(display_name),
+        _normalize_method_selector(method_display_name(method, display_name)),
+    }
+    return bool(candidates & allowed)
+
+
 def _read_comparison_rows(summary_csv: Path, num_users: int) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     with summary_csv.open("r", encoding="utf-8", newline="") as handle:
@@ -277,13 +310,24 @@ def _read_comparison_rows(summary_csv: Path, num_users: int) -> list[dict[str, s
 def aggregate_user_summaries(
     suite_dir: Path,
     user_counts: Sequence[int],
+    include_methods: Sequence[str] = (),
+    output_suffix: str = "",
 ) -> tuple[list[dict[str, str]], Path]:
     rows: list[dict[str, str]] = []
     for num_users in user_counts:
         summary_csv = suite_dir / f"u{num_users}" / "comparison_summary.csv"
         if not summary_csv.exists():
             raise FileNotFoundError(f"Missing comparison summary: {summary_csv}")
-        rows.extend(_read_comparison_rows(summary_csv, num_users))
+        rows.extend(
+            row
+            for row in _read_comparison_rows(summary_csv, num_users)
+            if method_matches_include(row, include_methods)
+        )
+    if include_methods and not rows:
+        raise ValueError(
+            "No methods matched --include-methods: "
+            f"{', '.join(include_methods)}"
+        )
 
     fieldnames: list[str] = ["num_users", "method", "display_name"]
     for row in rows:
@@ -291,7 +335,7 @@ def aggregate_user_summaries(
             if key not in fieldnames:
                 fieldnames.append(key)
 
-    output_csv = suite_dir / "multiuser_summary.csv"
+    output_csv = suite_dir / suffixed_filename("multiuser_summary.csv", output_suffix)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with output_csv.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -343,6 +387,7 @@ def plot_scaling_metrics(
     suite_dir: Path,
     metric_specs: Sequence[tuple[str, str, str, float]],
     filename: str,
+    output_suffix: str = "",
 ) -> Optional[Path]:
     if not rows:
         return None
@@ -383,7 +428,7 @@ def plot_scaling_metrics(
     if handles:
         fig.legend(handles, labels, loc="upper center", ncol=min(5, len(labels)), frameon=True)
         fig.subplots_adjust(top=0.88)
-    output_path = suite_dir / filename
+    output_path = suite_dir / suffixed_filename(filename, output_suffix)
     fig.savefig(output_path)
     plt.close(fig)
     return output_path
@@ -417,6 +462,8 @@ def plot_reward_convergence(
     run_id: str,
     user_counts: Sequence[int],
     suite_dir: Path,
+    include_methods: Sequence[str] = (),
+    output_suffix: str = "",
 ) -> Optional[Path]:
     setup_plot_style()
     fig, axes = plt.subplots(1, len(user_counts), figsize=(5.2 * len(user_counts), 4.2), squeeze=False)
@@ -426,7 +473,15 @@ def plot_reward_convergence(
     for axis_index, num_users in enumerate(user_counts):
         ax = axes.flat[axis_index]
         paths = build_paths(project_root, run_id, num_users)
-        for method_index, method in enumerate(LEARNED_REWARD_METHODS):
+        reward_methods = [
+            method
+            for method in LEARNED_REWARD_METHODS
+            if method_matches_include(
+                {"method": method, "display_name": method_display_name(method)},
+                include_methods,
+            )
+        ]
+        for method_index, method in enumerate(reward_methods):
             history_path = training_history_path(paths, method)
             steps, rewards = _load_training_curve(history_path)
             if not steps:
@@ -451,7 +506,7 @@ def plot_reward_convergence(
     if not plotted_any:
         plt.close(fig)
         return None
-    output_path = suite_dir / "multiuser_reward_convergence.png"
+    output_path = suite_dir / suffixed_filename("multiuser_reward_convergence.png", output_suffix)
     fig.savefig(output_path)
     plt.close(fig)
     return output_path
@@ -462,7 +517,7 @@ def write_manifest(
     config: MultiUserConfig,
     generated_paths: Iterable[Path],
 ) -> Path:
-    manifest_path = suite_dir / "suite_manifest.json"
+    manifest_path = suite_dir / suffixed_filename("suite_manifest.json", config.output_suffix)
     payload = {
         "run_id": config.run_id,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -480,10 +535,22 @@ def generate_aggregate_artifacts(
     config: MultiUserConfig,
     suite_dir: Path,
 ) -> list[Path]:
-    summary_rows, summary_csv = aggregate_user_summaries(suite_dir, config.user_counts)
+    summary_rows, summary_csv = aggregate_user_summaries(
+        suite_dir,
+        config.user_counts,
+        include_methods=config.include_methods,
+        output_suffix=config.output_suffix,
+    )
     generated: list[Path] = [summary_csv]
 
-    reward_plot = plot_reward_convergence(project_root, config.run_id, config.user_counts, suite_dir)
+    reward_plot = plot_reward_convergence(
+        project_root,
+        config.run_id,
+        config.user_counts,
+        suite_dir,
+        include_methods=config.include_methods,
+        output_suffix=config.output_suffix,
+    )
     if reward_plot is not None:
         generated.append(reward_plot)
     core_plot = plot_scaling_metrics(
@@ -491,6 +558,7 @@ def generate_aggregate_artifacts(
         suite_dir,
         CORE_SCALING_METRICS,
         "multiuser_core_metrics.png",
+        output_suffix=config.output_suffix,
     )
     if core_plot is not None:
         generated.append(core_plot)
@@ -499,6 +567,7 @@ def generate_aggregate_artifacts(
         suite_dir,
         RESOURCE_SCALING_METRICS,
         "multiuser_resource_metrics.png",
+        output_suffix=config.output_suffix,
     )
     if resource_plot is not None:
         generated.append(resource_plot)
@@ -540,6 +609,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--skip-compare", action="store_true")
     parser.add_argument("--reuse-learned-checkpoints", action="store_true")
     parser.add_argument(
+        "--include-methods",
+        nargs="+",
+        default=[],
+        help=(
+            "Only include these method names when rebuilding aggregate CSV and figures "
+            "from existing comparison summaries, e.g. han_mappo mappo_no_han random."
+        ),
+    )
+    parser.add_argument(
+        "--output-suffix",
+        type=str,
+        default="",
+        help=(
+            "Append this suffix before aggregate artifact extensions, e.g. "
+            "--output-suffix selected writes multiuser_core_metrics_selected.png."
+        ),
+    )
+    parser.add_argument(
         "--aggregate-only",
         action="store_true",
         help="Only rebuild suite-level CSV, figures, and manifest from existing u*/comparison_summary.csv files.",
@@ -573,6 +660,8 @@ def config_from_args(args: argparse.Namespace) -> MultiUserConfig:
         force_system_train=args.force_system_train,
         reuse_learned_checkpoints=args.reuse_learned_checkpoints,
         aggregate_only=args.aggregate_only,
+        include_methods=tuple(getattr(args, "include_methods", [])),
+        output_suffix=normalize_output_suffix(getattr(args, "output_suffix", "")),
         dry_run=args.dry_run,
     )
 
@@ -627,11 +716,15 @@ def main() -> None:
     print(f"Run id: {config.run_id}")
     print(f"User counts: {', '.join(str(count) for count in config.user_counts)}")
     print(f"Baselines: {', '.join(config.baselines)}")
+    if config.include_methods:
+        print(f"Included methods: {', '.join(config.include_methods)}")
+    if config.output_suffix:
+        print(f"Output suffix: {config.output_suffix}")
 
     suite_dir = build_paths(PROJECT_ROOT, config.run_id, config.user_counts[0]).suite_dir
     if config.aggregate_only:
         generated = generate_aggregate_artifacts(PROJECT_ROOT, config, suite_dir)
-        summary_csv = suite_dir / "multiuser_summary.csv"
+        summary_csv = suite_dir / suffixed_filename("multiuser_summary.csv", config.output_suffix)
         print(f"Multi-user summary CSV: {summary_csv}")
         for artifact in generated:
             print(f"Generated artifact: {artifact}")
@@ -648,7 +741,7 @@ def main() -> None:
 
     assert first_paths is not None
     generated = generate_aggregate_artifacts(PROJECT_ROOT, config, first_paths.suite_dir)
-    summary_csv = first_paths.suite_dir / "multiuser_summary.csv"
+    summary_csv = first_paths.suite_dir / suffixed_filename("multiuser_summary.csv", config.output_suffix)
 
     print(f"Multi-user summary CSV: {summary_csv}")
     for artifact in generated:

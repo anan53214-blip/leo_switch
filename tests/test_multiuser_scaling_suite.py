@@ -17,6 +17,9 @@ from scripts.run_multiuser_scaling_suite import (
     aggregate_user_summaries,
     build_compare_command,
     build_paths,
+    config_from_args,
+    parse_args,
+    generate_aggregate_artifacts,
 )
 
 
@@ -68,6 +71,26 @@ def test_default_suite_includes_intermediate_user_counts_and_han_offpolicy_metho
     assert METHOD_DISPLAY_NAMES["han_pdqn"] == "HAN+PDQN"
     assert "han_maddpg" in LEARNED_REWARD_METHODS
     assert "han_pdqn" in LEARNED_REWARD_METHODS
+
+
+def test_parse_args_accepts_include_methods_for_plot_only_filtering():
+    args = parse_args(
+        [
+            "--run-id",
+            "demo",
+            "--aggregate-only",
+            "--include-methods",
+            "han_mappo",
+            "mappo_no_han",
+            "random",
+            "--output-suffix",
+            "selected",
+        ]
+    )
+    config = config_from_args(args)
+
+    assert config.include_methods == ("han_mappo", "mappo_no_han", "random")
+    assert config.output_suffix == "selected"
 
 
 def test_aggregate_only_rebuilds_suite_artifacts_without_running_user_counts(tmp_path, monkeypatch):
@@ -207,3 +230,152 @@ def test_aggregate_user_summaries_writes_scaling_csv_and_uses_short_names(tmp_pa
     mappo_rows = [row for row in rows if row["method"] == "mappo_no_han"]
     assert {row["display_name"] for row in mappo_rows} == {"MAPPO"}
     assert float(mappo_rows[0]["avg_delay"]) == pytest.approx(2.8)
+
+
+def test_aggregate_user_summaries_filters_selected_methods(tmp_path):
+    suite_dir = tmp_path / "suite"
+    for num_users in (20, 30):
+        user_dir = suite_dir / f"u{num_users}"
+        user_dir.mkdir(parents=True)
+        with (user_dir / "comparison_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "method",
+                    "display_name",
+                    "avg_delay",
+                    "task_success_rate",
+                    "deadline_violation_rate",
+                    "service_continuity_rate",
+                    "mec_load_fairness",
+                    "energy_per_successful_task",
+                ],
+            )
+            writer.writeheader()
+            for method, display_name, delay in [
+                ("han_mappo", "HAN+MAPPO", 2.4),
+                ("mappo_no_han", "MAPPO (no HAN)", 2.8),
+                ("random", "Random", 3.5),
+            ]:
+                writer.writerow(
+                    {
+                        "method": method,
+                        "display_name": display_name,
+                        "avg_delay": delay,
+                        "task_success_rate": 0.9,
+                        "deadline_violation_rate": 0.1,
+                        "service_continuity_rate": 0.95,
+                        "mec_load_fairness": 0.3,
+                        "energy_per_successful_task": 1.1,
+                    }
+                )
+
+    rows, csv_path = aggregate_user_summaries(
+        suite_dir=suite_dir,
+        user_counts=(20, 30),
+        include_methods=("han_mappo", "mappo_no_han"),
+    )
+
+    assert [row["method"] for row in rows] == [
+        "han_mappo",
+        "mappo_no_han",
+        "han_mappo",
+        "mappo_no_han",
+    ]
+    written_rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+    assert {row["display_name"] for row in written_rows} == {"HAN+MAPPO", "MAPPO"}
+    assert "random" not in {row["method"] for row in written_rows}
+
+
+def test_aggregate_user_summaries_uses_output_suffix_without_default_csv(tmp_path):
+    suite_dir = tmp_path / "suite"
+    for num_users in (20, 30):
+        user_dir = suite_dir / f"u{num_users}"
+        user_dir.mkdir(parents=True)
+        with (user_dir / "comparison_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "method",
+                    "display_name",
+                    "avg_delay",
+                    "task_success_rate",
+                    "deadline_violation_rate",
+                    "service_continuity_rate",
+                    "mec_load_fairness",
+                    "energy_per_successful_task",
+                ],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "method": "han_mappo",
+                    "display_name": "HAN+MAPPO",
+                    "avg_delay": 2.4,
+                    "task_success_rate": 0.9,
+                    "deadline_violation_rate": 0.1,
+                    "service_continuity_rate": 0.95,
+                    "mec_load_fairness": 0.3,
+                    "energy_per_successful_task": 1.1,
+                }
+            )
+
+    _rows, csv_path = aggregate_user_summaries(
+        suite_dir=suite_dir,
+        user_counts=(20, 30),
+        output_suffix="selected",
+    )
+
+    assert csv_path == suite_dir / "multiuser_summary_selected.csv"
+    assert csv_path.exists()
+    assert not (suite_dir / "multiuser_summary.csv").exists()
+
+
+def test_generate_aggregate_artifacts_uses_output_suffix_for_figures_and_manifest(tmp_path):
+    suite_dir = tmp_path / "results" / "baseline_compare" / "multiuser_scaling_demo"
+    for num_users in (20, 30):
+        user_dir = suite_dir / f"u{num_users}"
+        user_dir.mkdir(parents=True)
+        with (user_dir / "comparison_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "method",
+                    "display_name",
+                    "avg_delay",
+                    "task_success_rate",
+                    "deadline_violation_rate",
+                    "service_continuity_rate",
+                    "mec_load_fairness",
+                    "energy_per_successful_task",
+                ],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "method": "han_mappo",
+                    "display_name": "HAN+MAPPO",
+                    "avg_delay": 2.4 + num_users / 100,
+                    "task_success_rate": 0.9,
+                    "deadline_violation_rate": 0.1,
+                    "service_continuity_rate": 0.95,
+                    "mec_load_fairness": 0.3,
+                    "energy_per_successful_task": 1.1,
+                }
+            )
+
+    config = MultiUserConfig(
+        run_id="demo",
+        user_counts=(20, 30),
+        output_suffix="selected",
+    )
+
+    generated = generate_aggregate_artifacts(tmp_path, config, suite_dir)
+
+    assert suite_dir / "multiuser_summary_selected.csv" in generated
+    assert suite_dir / "multiuser_core_metrics_selected.png" in generated
+    assert suite_dir / "multiuser_resource_metrics_selected.png" in generated
+    assert suite_dir / "suite_manifest_selected.json" in generated
+    assert not (suite_dir / "multiuser_summary.csv").exists()
+    assert not (suite_dir / "multiuser_core_metrics.png").exists()
+    assert not (suite_dir / "suite_manifest.json").exists()

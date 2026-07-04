@@ -970,3 +970,62 @@ explicit `--python-executable` override.
 - `pytest tests/test_multiuser_scaling_suite.py::test_default_python_executable_uses_current_interpreter_without_personal_path -q`
 - `pytest tests/test_multiuser_scaling_suite.py tests/test_baseline_plotting.py -q`
 - `python scripts/run_multiuser_scaling_suite.py --run-id drycheck_py --device cpu --dry-run`
+
+## 2026-07-04 - Plot-Only Training Artifact Script
+
+**Code change:** Added `scripts/plot_training_artifacts.py` as a plot-only
+entry point for existing artifacts. It reads repeated `training_history.json`
+inputs, optionally labeled as `LABEL=PATH`, or an existing
+`comparison_summary.json`, then writes normalized `comparison_summary.json`,
+`comparison_summary.csv`, `plot_manifest.json`, and comparison PNGs without
+starting training, checkpoint loading, or environment evaluation.
+
+**Plotting/output change:** The script can regenerate method bars, reward
+convergence, training QoS curves, reward component curves, delay-energy
+scatter, success-continuity scatter, normalized radar, and a dashboard from
+artifact data alone. The first `--history` input is treated as the system
+method by default; existing summary files preserve their stored `is_system`
+flags. Multi-user scaling remains available through
+`scripts/run_multiuser_scaling_suite.py --aggregate-only`, which already
+rebuilds suite-level CSV and figures from existing per-user comparison CSVs.
+
+**Verification:**
+
+- `python scripts/plot_training_artifacts.py --help`
+- `python -m py_compile scripts/plot_training_artifacts.py`
+- `pytest tests/test_plot_training_artifacts.py tests/test_multiuser_scaling_suite.py -q`
+
+## 2026-07-04 - Multi-User Aggregate Method Filter
+
+**Code change:** Added `--include-methods` to
+`scripts/run_multiuser_scaling_suite.py`. The option filters methods while
+rebuilding aggregate artifacts from existing per-user `comparison_summary.csv`
+files, so selected-method figures can be regenerated without retraining or
+re-evaluating policies.
+
+**Plotting/output change:** `aggregate_user_summaries()` now applies the
+method filter before writing `multiuser_summary.csv`, and the same filter is
+used for `multiuser_core_metrics.png`, `multiuser_resource_metrics.png`, and
+`multiuser_reward_convergence.png`. Method selectors use the CSV `method`
+names such as `han_mappo`, `mappo_no_han`, `random`, `min_distance`,
+`full_local`, and `joint_greedy`.
+
+**Verification:**
+
+- `pytest tests/test_multiuser_scaling_suite.py -q`
+- `python scripts/run_multiuser_scaling_suite.py --help`
+- `python -m py_compile scripts/run_multiuser_scaling_suite.py`
+
+**2026-07-04 suffix update:** Added `--output-suffix` for plot-only aggregate
+regeneration. When provided, aggregate artifacts are written with the suffix
+before the extension, for example `multiuser_core_metrics_selected.png`,
+`multiuser_resource_metrics_selected.png`, `multiuser_summary_selected.csv`,
+and `suite_manifest_selected.json`. This keeps the default aggregate files
+untouched while generating selected-method figures in the same suite
+directory.
+
+**Verification:**
+
+- `pytest tests/test_multiuser_scaling_suite.py -q`
+- `python scripts/run_multiuser_scaling_suite.py --help`
+- `python -m py_compile scripts/run_multiuser_scaling_suite.py`
