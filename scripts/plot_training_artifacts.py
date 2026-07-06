@@ -31,6 +31,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.load_balance_metrics import normalize_load_balance_metrics
+
 
 HistorySpec = Tuple[Optional[str], Path]
 DEFAULT_SELECTION_METRIC = "avg_delay"
@@ -38,7 +40,7 @@ PRIMARY_COMPARE_METRICS = (
     ("avg_delay", "Average Delay"),
     ("service_continuity_rate", "Service Continuity"),
     ("task_completion_rate", "Task Completion"),
-    ("mec_load_fairness", "MEC Load Fairness"),
+    ("mec_load_fairness", "Load Balance Coef."),
 )
 HIGHER_IS_BETTER = {
     "reward": True,
@@ -48,6 +50,8 @@ HIGHER_IS_BETTER = {
     "service_continuity_rate": True,
     "service_availability_rate": True,
     "handover_failure_rate": False,
+    "load_balance_variance": False,
+    "load_balance_coefficient": True,
     "mec_load_fairness": True,
     "avg_load_balance_score": True,
     "active_load_balance_score": True,
@@ -104,6 +108,9 @@ CSV_FIELDS = [
     "pending_task_rate",
     "deadline_violation_rate",
     "handover_frequency",
+    "load_balance_variance",
+    "load_balance_coefficient",
+    "load_variance_sample_count",
     "mec_load_fairness",
     "active_load_balance_score",
     "avg_load_balance_score",
@@ -215,11 +222,17 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
     if metric_name == "task_failure_rate":
         return -_float(record, "task_failure_rate", _float(record, "deadline_violation_rate"))
     if metric_name == "mec_load_fairness":
-        return _float(record, "mec_load_fairness", _float(record, "avg_load_balance_score"))
+        normalized = normalize_load_balance_metrics(record)
+        return _float(normalized, "mec_load_fairness", _float(normalized, "avg_load_balance_score"))
+    if metric_name == "load_balance_coefficient":
+        normalized = normalize_load_balance_metrics(record)
+        return _float(normalized, "load_balance_coefficient", _float(normalized, "mec_load_fairness"))
     if metric_name == "avg_load_balance_score":
-        return _float(record, "avg_load_balance_score", _float(record, "mec_load_fairness"))
+        normalized = normalize_load_balance_metrics(record)
+        return _float(normalized, "avg_load_balance_score", _float(normalized, "mec_load_fairness"))
     if metric_name == "active_load_balance_score":
-        return _float(record, "active_load_balance_score", _float(record, "mec_load_fairness"))
+        normalized = normalize_load_balance_metrics(record)
+        return _float(normalized, "active_load_balance_score", _float(normalized, "mec_load_fairness"))
     if HIGHER_IS_BETTER.get(metric_name, True):
         return _float(record, metric_name)
     return -_float(record, metric_name)
@@ -271,6 +284,7 @@ def method_from_history(
     selected = _best_record(evaluation_records or training_records, metric)
     if selected is None:
         raise ValueError(f"No training or evaluation records in: {history_path}")
+    selected = normalize_load_balance_metrics(selected)
 
     method_name = _method_name(config, history_path)
     display_name = label or pretty_method_name(method_name, is_system=is_system)
@@ -319,6 +333,9 @@ def method_from_history(
         "task_resolution_rate": _float(selected, "task_resolution_rate"),
         "pending_task_rate": _float(selected, "pending_task_rate"),
         "handover_frequency": _float(selected, "handover_frequency", compute_handover_frequency(selected)),
+        "load_balance_variance": _float(selected, "load_balance_variance"),
+        "load_balance_coefficient": _float(selected, "load_balance_coefficient", load_balance),
+        "load_variance_sample_count": _float(selected, "load_variance_sample_count"),
         "mec_load_fairness": load_balance,
         "active_load_balance_score": load_balance,
         "avg_load_balance_score": load_balance,
@@ -341,12 +358,15 @@ def method_from_history(
         "training_history": str(history_path),
         "source": f"training_history_{source_section}_best_{metric}",
     }
-    return method
+    return normalize_load_balance_metrics(method)
 
 
 def _normalize_summary_methods(summary_path: Path) -> Tuple[List[Dict[str, Any]], Optional[Path], Dict[str, Any]]:
     payload = _load_json(summary_path)
-    methods = [dict(method) for method in payload.get("methods", [])]
+    methods = [
+        normalize_load_balance_metrics(method)
+        for method in payload.get("methods", [])
+    ]
     for method in methods:
         method.setdefault("display_name", pretty_method_name(str(method.get("method", "")), bool(method.get("is_system"))))
         history = method.get("training_history") or method.get("history_path")
@@ -367,7 +387,7 @@ def _append_path(paths: List[Path], path: Optional[Path]) -> None:
 
 
 def annotate_priority_metrics(methods: Sequence[Dict[str, Any]], metric_name: str) -> List[Dict[str, Any]]:
-    annotated = [dict(method) for method in methods]
+    annotated = [normalize_load_balance_metrics(method) for method in methods]
     for method in annotated:
         method["selection_metric"] = metric_name
         method["selection_score"] = compute_model_selection_score(method, metric_name)

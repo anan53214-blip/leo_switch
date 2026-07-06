@@ -7,7 +7,7 @@
 【模块结构】
 - buffer.py   : 经验回放缓冲区（Rollout Buffer）
 - mappo.py    : MAPPO算法实现
-- runner.py   : 训练运行器（环境交互+训练循环）
+- replay_buffer.py : Off-policy replay buffer
 
 【MAPPO简介】
 MAPPO是PPO算法在多智能体场景的扩展，采用CTDE范式：
@@ -24,10 +24,7 @@ MAPPO是PPO算法在多智能体场景的扩展，采用CTDE范式：
 (Yu et al., NeurIPS 2021)
 """
 
-from .buffer import (
-    RolloutBuffer,
-    MultiAgentRolloutBuffer
-)
+from .buffer import MultiAgentRolloutBuffer
 
 from .replay_buffer import MultiAgentReplayBuffer
 
@@ -53,13 +50,7 @@ from .pdqn import (
     PDQNAlgorithm,
 )
 
-from .runner import (
-    RunnerConfig,
-    Runner
-)
-
 __all__ = [
-    'RolloutBuffer',
     'MultiAgentRolloutBuffer',
     'MultiAgentReplayBuffer',
     'MAPPOConfig',
@@ -74,6 +65,4 @@ __all__ = [
     'PDQNParameterNet',
     'PDQNParameterNets',
     'PDQNAlgorithm',
-    'RunnerConfig',
-    'Runner',
 ]

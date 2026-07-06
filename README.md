@@ -34,13 +34,12 @@ LEO_switch/
 │   └── algorithm/                  # RL 算法
 │       ├── mappo.py                #   MAPPO (PPO-Clip + GAE)
 │       ├── buffer.py               #   多智能体 Rollout Buffer
-│       └── runner.py               #   数据收集器
+│       └── replay_buffer.py        #   Off-policy 经验回放
 ├── scripts/
 │   ├── train.py                    # 训练入口
-│   ├── run_server_training.py      # 服务器批量训练 (4 种方案)
-│   ├── plot_results.py             # 训练曲线可视化 (8 种图表)
-│   ├── baseline_eval.py            # 基线算法评估
-│   └── baseline_report.py          # 基线对比报告
+│   ├── compare_system_baselines.py  # 系统与基线统一对比
+│   ├── plot_training_artifacts.py   # 从训练/对比产物重画图表
+│   └── run_multiuser_scaling_suite.py # 多用户扩展聚合
 ├── tests/                          # 单元测试
 └── results/                        # 训练输出 (模型/日志/图表)
 ```
@@ -88,14 +87,14 @@ conda create -n satellite python=3.10 -y && conda activate satellite
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 pip install numpy scipy matplotlib gymnasium pyyaml
 
-# 快速验证 (~15 分钟)
-python scripts/run_server_training.py --plan quick
+# 快速验证
+python scripts/train.py --total_timesteps 100000 --max_steps 600 --eval_episodes 1
 
-# 标准训练 (~2-3 小时，3090)
-python scripts/run_server_training.py --plan standard
+# 标准训练
+python scripts/train.py --total_timesteps 1000000 --max_steps 600
 
 # 生成图表
-python scripts/plot_results.py --input results/full_train/training_history.json
+python scripts/plot_training_artifacts.py --comparison-summary results/baseline_compare/<run_id> --output-dir results/baseline_compare/<run_id>/replot
 ```
 
 详见 [`docs/TRAINING_GUIDE.md`](docs/TRAINING_GUIDE.md)。

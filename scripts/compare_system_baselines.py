@@ -56,12 +56,17 @@ from src.algorithm.maddpg import (
 )
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
+from scripts.load_balance_metrics import (
+    empirical_cdf,
+    normalize_load_balance_metrics,
+    summarize_load_variance_samples,
+)
+
 try:
     from scripts.train import (
         BEST_MODEL_METRIC_CHOICES,
         AttentionMAPPOTrainer,
         CPQHANCandidateAttentionMAPPOTrainer,
-        HANCandidateAttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
@@ -76,7 +81,6 @@ except ModuleNotFoundError:
         BEST_MODEL_METRIC_CHOICES,
         AttentionMAPPOTrainer,
         CPQHANCandidateAttentionMAPPOTrainer,
-        HANCandidateAttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
@@ -85,27 +89,6 @@ except ModuleNotFoundError:
         energy_per_resolved_task,
         energy_per_successful_task,
     )
-
-DelayOnlyEnv = None
-DelayOnlyTrainer = None
-try:
-    from scripts.train_delay_only import DelayOnlyEnv, DelayOnlyTrainer
-except ModuleNotFoundError:
-    try:
-        from train_delay_only import DelayOnlyEnv, DelayOnlyTrainer
-    except ModuleNotFoundError:
-        pass
-
-EnergyOnlyEnv = None
-EnergyOnlyTrainer = None
-try:
-    from scripts.train_energy_only import EnergyOnlyEnv, EnergyOnlyTrainer
-except ModuleNotFoundError:
-    try:
-        from train_energy_only import EnergyOnlyEnv, EnergyOnlyTrainer
-    except ModuleNotFoundError:
-        pass
-
 
 DEFAULT_BASELINES = [
     "random",
@@ -155,7 +138,6 @@ DISPLAY_NAME_MAP = {
     "mappo_no_han": "MAPPO",
     "attn_mappo": "Attn+MAPPO",
     "han_attn": "HAN+Attn",
-    "han_attn_legacy": "HAN+Attn (legacy)",
     "han_attn_cpq": "HAN+Attn",
     "han_maddpg": "HAN+MADDPG",
     "han_pdqn": "HAN+PDQN",
@@ -167,6 +149,12 @@ SUMMARY_METRIC_KEYS = [
     "handover_success_rate",
     "handover_failure_rate",
     "forced_termination_rate",
+    "total_user_seconds",
+    "blocked_user_seconds",
+    "handover_interruption_seconds",
+    "service_interruption_seconds",
+    "total_handovers",
+    "failed_handovers",
     "service_continuity_rate",
     "service_availability_rate",
     "task_completion_rate",
@@ -176,6 +164,9 @@ SUMMARY_METRIC_KEYS = [
     "task_resolution_rate",
     "pending_task_rate",
     "handover_frequency",
+    "load_balance_variance",
+    "load_balance_coefficient",
+    "load_variance_sample_count",
     "mec_load_fairness",
     "active_load_balance_score",
     "avg_load_balance_score",
@@ -224,6 +215,8 @@ HIGHER_IS_BETTER = {
     "task_failure_rate": False,
     "task_settlement_rate": True,
     "task_resolution_rate": True,
+    "load_balance_variance": False,
+    "load_balance_coefficient": True,
     "mec_load_fairness": True,
     "active_load_balance_score": True,
     "avg_load_balance_score": True,
@@ -249,10 +242,10 @@ PAPER_METRIC_PLOTS = [
 
 CORE_BAR_METRICS = [
     ("avg_delay", "Average Delay", "Average Delay (ms)"),
-    ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
+    ("total_energy", "Average Energy", "Average Energy (J)"),
     ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)"),
+    ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
     ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
-    ("energy_per_successful_task", "Energy per Successful Task", "Energy per Successful Task"),
 ]
 
 TRAINING_QOS_STEP_METRICS = [
@@ -402,16 +395,6 @@ PAPER_COLORS = {
 
 
 def detect_objective(config: Dict) -> str:
-    combined = " ".join(
-        [
-            str(config.get("exp_name", "")).lower(),
-            str(config.get("save_path", "")).lower(),
-        ]
-    )
-    if "delay_only" in combined:
-        return "delay_only"
-    if "energy_only" in combined:
-        return "energy_only"
     return "multi_objective"
 
 
@@ -850,33 +833,6 @@ def build_env_for_objective(
     max_steps: Optional[int],
 ) -> LEOSatelliteEnv:
     env_config = build_env_config_from_train_config(config, seed=seed, max_steps=max_steps)
-    if objective == "delay_only":
-        if DelayOnlyEnv is None:
-            raise ModuleNotFoundError("delay_only objective requires scripts/train_delay_only.py")
-        env_config.reward_delay_weight = 1.0
-        env_config.reward_energy_weight = 0.0
-        env_config.reward_handover_weight = 0.0
-        env_config.reward_load_balance_weight = 0.0
-        env_config.reward_qos_weight = 0.0
-        return DelayOnlyEnv(
-            env_config,
-            delay_violation_penalty=float(config.get("delay_violation_penalty", 5.0)),
-            failed_handover_penalty=float(config.get("failed_handover_penalty", 1.0)),
-        )
-    if objective == "energy_only":
-        if EnergyOnlyEnv is None:
-            raise ModuleNotFoundError("energy_only objective requires scripts/train_energy_only.py")
-        env_config.reward_delay_weight = 0.0
-        env_config.reward_energy_weight = 1.0
-        env_config.reward_handover_weight = 0.0
-        env_config.reward_load_balance_weight = 0.0
-        env_config.reward_qos_weight = 0.0
-        return EnergyOnlyEnv(
-            env_config,
-            qos_unmet_task_penalty=float(config.get("qos_unmet_task_penalty", 0.5)),
-            delay_violation_penalty=float(config.get("delay_violation_penalty", 1.0)),
-            failed_handover_penalty=float(config.get("failed_handover_penalty", 0.5)),
-        )
     return LEOSatelliteEnv(env_config)
 
 
@@ -894,34 +850,17 @@ def build_default_train_config(
     config["total_timesteps"] = DEFAULT_TOTAL_TIMESTEPS
     config["save_path"] = str(DEFAULT_SYSTEM_RUN_DIR)
     config["best_model_metric"] = best_model_metric
-    if objective == "delay_only":
-        config["exp_name"] = "han_mappo_delay_only"
-        config["reward_delay_weight"] = 1.0
-        config["reward_energy_weight"] = 0.0
-        config["reward_handover_weight"] = 0.0
-        config["reward_load_balance_weight"] = 0.0
-        config["reward_qos_weight"] = 0.0
-        config["reward_service_continuity_weight"] = 0.0
-    elif objective == "energy_only":
-        config["exp_name"] = "han_mappo_energy_only"
-        config["reward_delay_weight"] = 0.0
-        config["reward_energy_weight"] = 1.0
-        config["reward_handover_weight"] = 0.0
-        config["reward_load_balance_weight"] = 0.0
-        config["reward_qos_weight"] = 0.0
-        config["reward_service_continuity_weight"] = 0.0
-    else:
-        config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
-        config["reward_delay_weight"] = 0.35
-        config["reward_energy_weight"] = 0.05
-        config["reward_handover_weight"] = 0.10
-        config["reward_load_balance_weight"] = 0.05
-        config["reward_qos_weight"] = 0.40
-        config["reward_service_continuity_weight"] = 0.15
-        config["reward_deadline_slack_weight"] = 0.25
-        config["reward_enqueue_bonus"] = 0.0
-        config["reward_deadline_penalty"] = 1.00
-        config["reward_failed_task_penalty"] = 0.80
+    config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
+    config["reward_delay_weight"] = 0.25
+    config["reward_energy_weight"] = 0.30
+    config["reward_handover_weight"] = 0.10
+    config["reward_load_balance_weight"] = 0.05
+    config["reward_qos_weight"] = 0.25
+    config["reward_service_continuity_weight"] = 0.15
+    config["reward_deadline_slack_weight"] = 0.10
+    config["reward_enqueue_bonus"] = 0.0
+    config["reward_deadline_penalty"] = 0.70
+    config["reward_failed_task_penalty"] = 0.60
     return config
 
 
@@ -1082,9 +1021,17 @@ def compute_handover_frequency(summary: Dict) -> float:
     return float(summary.get("total_handovers", 0.0)) / total_user_seconds
 
 
+def summarize_env_stats_with_load_balance(env_stats: Dict) -> Dict:
+    summary = summarize_env_stats(env_stats)
+    if "load_variance_samples" in env_stats:
+        summary["load_variance_samples"] = env_stats.get("load_variance_samples", [])
+    return normalize_load_balance_metrics(summary)
+
+
 def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -> List[Dict]:
     episode_records: List[Dict] = []
     for episode_index, (reward, summary) in enumerate(zip(rewards, summaries), start=1):
+        summary = normalize_load_balance_metrics(summary)
         record = {
             "episode": episode_index,
             "reward": float(reward),
@@ -1107,6 +1054,7 @@ def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -
         )
         record["active_load_balance_score"] = record["mec_load_fairness"]
         record["avg_load_balance_score"] = record["mec_load_fairness"]
+        record["load_balance_coefficient"] = record["mec_load_fairness"]
         record["energy_per_successful_task"] = float(energy_per_successful_task(record))
         episode_records.append(record)
     return episode_records
@@ -1120,6 +1068,11 @@ def summarize_results(
     is_system: bool = False,
 ) -> Dict:
     episode_metrics = build_episode_records(rewards, summaries)
+    variance_samples: List[float] = []
+    for summary in summaries:
+        samples = summary.get("load_variance_samples")
+        if samples is not None:
+            variance_samples.extend(float(value) for value in samples)
     result = {
         "method": name,
         "display_name": pretty_method_name(name, is_system=is_system),
@@ -1137,6 +1090,9 @@ def summarize_results(
         result[key] = float(np.mean(values)) if values else 0.0
     if extra:
         result.update(extra)
+    if variance_samples:
+        result.update(summarize_load_variance_samples(variance_samples))
+    result = normalize_load_balance_metrics(result)
     return result
 
 
@@ -1161,7 +1117,7 @@ def action_diagnostics(
 
 
 def ensure_action_diagnostic_fields(method: Dict) -> Dict:
-    normalized = dict(method)
+    normalized = normalize_load_balance_metrics(method)
     normalized.pop("mec_activity_score", None)
     normalized.pop("mec_load_mean", None)
     normalized.pop("service_downtime_rate", None)
@@ -1170,16 +1126,6 @@ def ensure_action_diagnostic_fields(method: Dict) -> Dict:
             normalized[key] = float(normalized.get(key, 0.0))
         except (TypeError, ValueError):
             normalized[key] = 0.0
-    mec_load_fairness = float(
-        normalized.get(
-            "mec_load_fairness",
-            normalized.get("active_load_balance_score", normalized.get("avg_load_balance_score", 0.0)),
-        )
-        or 0.0
-    )
-    normalized["mec_load_fairness"] = mec_load_fairness
-    normalized["active_load_balance_score"] = mec_load_fairness
-    normalized["avg_load_balance_score"] = mec_load_fairness
     return normalized
 
 
@@ -1428,12 +1374,6 @@ class JointGreedyPolicy(BasePolicy):
         return float(success_prob * success_value + (1.0 - success_prob) * failure_value)
 
     def _task_score(self, env: LEOSatelliteEnv, total_delay: float, total_energy: float, max_delay: float) -> float:
-        if self.objective == "delay_only":
-            penalty = getattr(env, "delay_violation_penalty", 5.0) if total_delay > max_delay else 0.0
-            return -float(total_delay + penalty)
-        if self.objective == "energy_only":
-            penalty = getattr(env, "delay_violation_penalty", 1.0) if total_delay > max_delay else 0.0
-            return -float(total_energy + penalty)
         reward_value, _ = env._compute_task_reward(total_delay, total_energy, max_delay)
         return float(reward_value)
 
@@ -1465,8 +1405,7 @@ class JointGreedyPolicy(BasePolicy):
             fallback_delay = env.offload_calc.compute_local_delay(task.computation)
             fallback_energy = env.offload_calc.compute_local_energy(task.computation)
             reward_value = self._task_score(env, fallback_delay, fallback_energy, task.max_delay)
-            if self.objective == "multi_objective":
-                reward_value -= float(env.config.reward_queue_full_penalty)
+            reward_value -= float(env.config.reward_queue_full_penalty)
             return float(reward_value), 0.0
 
         offload_cycles = offload_ratio * task.computation
@@ -1492,11 +1431,10 @@ class JointGreedyPolicy(BasePolicy):
         total_energy = local_energy + upload_energy
 
         reward_value = self._task_score(env, total_delay, total_energy, task.max_delay)
-        if self.objective == "multi_objective":
-            reward_value += env.config.reward_enqueue_bonus * max(
-                1.0 - (predicted_queue_len / max(server.config.max_queue_size, 1)),
-                0.0,
-            )
+        reward_value += env.config.reward_enqueue_bonus * max(
+            1.0 - (predicted_queue_len / max(server.config.max_queue_size, 1)),
+            0.0,
+        )
         return float(reward_value), float(offload_cycles)
 
     def _score_candidate(
@@ -2434,7 +2372,7 @@ def train_and_evaluate_pdqn_baseline(
             episode_count += 1
             recent_episode_rewards.append(episode_reward)
             env_stats = env.get_stats_summary()
-            summary = summarize_env_stats(env_stats)
+            summary = summarize_env_stats_with_load_balance(env_stats)
             training_records.append(
                 {
                     "update": episode_count,
@@ -2467,6 +2405,9 @@ def train_and_evaluate_pdqn_baseline(
                             "completed_tasks": env_stats.get("completed_tasks", 0.0),
                         }
                     ),
+                    "load_balance_variance": summary.get("load_balance_variance", 0.0),
+                    "load_balance_coefficient": summary.get("load_balance_coefficient", summary.get("mec_load_fairness", 0.0)),
+                    "load_variance_sample_count": summary.get("load_variance_sample_count", 0),
                 }
             )
             observations, _ = env.reset(seed=seed + step_idx + 1)
@@ -2609,14 +2550,6 @@ def evaluate_simple_heuristic_with_offload_search(
 
 
 def trainer_class_for_objective(objective: str):
-    if objective == "delay_only":
-        if DelayOnlyTrainer is None:
-            raise ModuleNotFoundError("delay_only objective requires scripts/train_delay_only.py")
-        return DelayOnlyTrainer
-    if objective == "energy_only":
-        if EnergyOnlyTrainer is None:
-            raise ModuleNotFoundError("energy_only objective requires scripts/train_energy_only.py")
-        return EnergyOnlyTrainer
     return HANMAPPOTrainer
 
 
@@ -2624,8 +2557,6 @@ def system_trainer_class_for_config(objective: str, config_data: Dict):
     algorithm = str(config_data.get("algorithm", "mappo"))
     if algorithm == "attn_mappo":
         return AttentionMAPPOTrainer
-    if algorithm == "han_attn_legacy":
-        return HANCandidateAttentionMAPPOTrainer
     if algorithm in {"han_attn", "han_attn_cpq"}:
         return CPQHANCandidateAttentionMAPPOTrainer
     return trainer_class_for_objective(objective)
@@ -3263,79 +3194,6 @@ def train_and_evaluate_cpq_han_attn_mappo(
     return result
 
 
-def train_and_evaluate_legacy_han_attn_mappo(
-    config_data: Dict,
-    output_dir: Path,
-    device: str,
-    episodes: int,
-    max_steps: Optional[int],
-    total_timesteps: int,
-    early_stop_patience: int,
-    reuse_checkpoint_if_available: bool = False,
-) -> Dict:
-    config_data = baseline_config_data(config_data, "han_attn_legacy")
-    save_dir = output_dir / "learned_baselines" / "han_attn_legacy"
-    save_dir.mkdir(parents=True, exist_ok=True)
-    if reuse_checkpoint_if_available:
-        checkpoint = find_existing_checkpoint(save_dir)
-        if checkpoint is not None:
-            config = train_config_from_dict(
-                config_data,
-                device=device,
-                max_steps=max_steps,
-                episodes=episodes,
-                save_path=checkpoint.parent,
-                load_path=checkpoint,
-            )
-            result = evaluate_mappo_checkpoint_with_trainer(
-                checkpoint=checkpoint,
-                config_data=asdict(config),
-                episodes=episodes,
-                device=resolve_device(device),
-                max_steps=max_steps,
-                trainer_cls=HANCandidateAttentionMAPPOTrainer,
-                method_name="han_attn_legacy",
-                is_system=False,
-            )
-            result["source"] = "han_attn_legacy_checkpoint_eval"
-            result["checkpoint"] = str(checkpoint)
-            history_path = save_dir / "training_history.json"
-            if history_path.exists():
-                result["training_history"] = str(history_path)
-            return result
-    config = train_config_from_dict(
-        config_data,
-        device=device,
-        max_steps=max_steps,
-        episodes=episodes,
-        total_timesteps=total_timesteps,
-        early_stop_patience=early_stop_patience,
-        save_path=save_dir,
-        exp_name="han_attn_legacy",
-    )
-    trainer = HANCandidateAttentionMAPPOTrainer(config)
-    trainer.train()
-    checkpoint = save_dir / "best_model.pt"
-    if not checkpoint.exists():
-        checkpoint = save_dir / "final_model.pt"
-    result = evaluate_mappo_checkpoint_with_trainer(
-        checkpoint=checkpoint,
-        config_data=asdict(config),
-        episodes=episodes,
-        device=resolve_device(device),
-        max_steps=max_steps,
-        trainer_cls=HANCandidateAttentionMAPPOTrainer,
-        method_name="han_attn_legacy",
-        is_system=False,
-    )
-    result["trained_timesteps"] = int(total_timesteps)
-    result["checkpoint"] = str(checkpoint)
-    history_path = save_dir / "training_history.json"
-    if history_path.exists():
-        result["training_history"] = str(history_path)
-    return result
-
-
 def evaluate_han_offpolicy_checkpoint(
     checkpoint: Path,
     config_data: Dict,
@@ -3492,6 +3350,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         evaluation_records,
         key=lambda record: compute_model_selection_score(record, selection_metric_name),
     )
+    best_record = normalize_load_balance_metrics(best_record)
     handover_success_rate = float(best_record.get("handover_success_rate", 0.0))
     service_continuity_rate = float(best_record.get("service_continuity_rate", 0.0))
     result = {
@@ -3509,6 +3368,12 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "handover_success_rate": handover_success_rate,
         "handover_failure_rate": float(best_record.get("handover_failure_rate", max(0.0, 1.0 - handover_success_rate))),
         "forced_termination_rate": float(best_record.get("forced_termination_rate", max(0.0, 1.0 - service_continuity_rate))),
+        "total_user_seconds": float(best_record.get("total_user_seconds", 0.0)),
+        "blocked_user_seconds": float(best_record.get("blocked_user_seconds", 0.0)),
+        "handover_interruption_seconds": float(best_record.get("handover_interruption_seconds", 0.0)),
+        "service_interruption_seconds": float(best_record.get("service_interruption_seconds", 0.0)),
+        "total_handovers": float(best_record.get("total_handovers", 0.0)),
+        "failed_handovers": float(best_record.get("failed_handovers", 0.0)),
         "service_continuity_rate": service_continuity_rate,
         "service_availability_rate": float(best_record.get("service_availability_rate", service_continuity_rate)),
         "task_completion_rate": float(best_record.get("task_completion_rate", 0.0)),
@@ -3518,6 +3383,9 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "task_resolution_rate": float(best_record.get("task_resolution_rate", 0.0)),
         "pending_task_rate": float(best_record.get("pending_task_rate", 0.0)),
         "handover_frequency": float(best_record.get("handover_frequency", compute_handover_frequency(best_record))),
+        "load_balance_variance": float(best_record.get("load_balance_variance", 0.0)),
+        "load_balance_coefficient": float(best_record.get("load_balance_coefficient", best_record.get("mec_load_fairness", 0.0))),
+        "load_variance_sample_count": float(best_record.get("load_variance_sample_count", 0.0)),
         "mec_load_fairness": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
         "active_load_balance_score": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
         "avg_load_balance_score": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
@@ -3528,6 +3396,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "deadline_violations": float(best_record.get("deadline_violations", 0.0)),
         "deadline_violation_rate": compute_deadline_violation_rate(best_record),
         "energy_per_successful_task": float(energy_per_successful_task(best_record)),
+        "energy_per_resolved_task": float(energy_per_resolved_task(best_record)),
         "episode_metrics": [],
         "training_history": str(history_path),
         "source": f"training_history_best_{selection_metric_name}",
@@ -3562,6 +3431,12 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "handover_success_rate",
         "handover_failure_rate",
         "forced_termination_rate",
+        "total_user_seconds",
+        "blocked_user_seconds",
+        "handover_interruption_seconds",
+        "service_interruption_seconds",
+        "total_handovers",
+        "failed_handovers",
         "service_continuity_rate",
         "service_availability_rate",
         "task_completion_rate",
@@ -3572,6 +3447,9 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "pending_task_rate",
         "deadline_violation_rate",
         "handover_frequency",
+        "load_balance_variance",
+        "load_balance_coefficient",
+        "load_variance_sample_count",
         "mec_load_fairness",
         "active_load_balance_score",
         "avg_load_balance_score",
@@ -3611,6 +3489,12 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "handover_success_rate": float(record.get("handover_success_rate", 0.0)),
                 "handover_failure_rate": float(record.get("handover_failure_rate", 0.0)),
                 "forced_termination_rate": float(record.get("forced_termination_rate", 0.0)),
+                "total_user_seconds": float(record.get("total_user_seconds", 0.0)),
+                "blocked_user_seconds": float(record.get("blocked_user_seconds", 0.0)),
+                "handover_interruption_seconds": float(record.get("handover_interruption_seconds", 0.0)),
+                "service_interruption_seconds": float(record.get("service_interruption_seconds", 0.0)),
+                "total_handovers": float(record.get("total_handovers", 0.0)),
+                "failed_handovers": float(record.get("failed_handovers", 0.0)),
                 "service_continuity_rate": float(record.get("service_continuity_rate", 0.0)),
                 "service_availability_rate": float(record.get("service_availability_rate", 0.0)),
                 "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
@@ -3620,6 +3504,9 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
                 "handover_frequency": float(record.get("handover_frequency", compute_handover_frequency(record))),
+                "load_balance_variance": float(record.get("load_balance_variance", 0.0)),
+                "load_balance_coefficient": float(record.get("load_balance_coefficient", record.get("mec_load_fairness", 0.0))),
+                "load_variance_sample_count": float(record.get("load_variance_sample_count", 0.0)),
                 "mec_load_fairness": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
                 "active_load_balance_score": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
                 "avg_load_balance_score": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
@@ -3788,6 +3675,174 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
     style_axes_frame(ax)
 
 
+def load_variance_samples_for_plot(method: Dict) -> List[float]:
+    raw_samples = method.get("load_variance_samples")
+    if isinstance(raw_samples, list) and raw_samples:
+        samples = []
+        for value in raw_samples:
+            try:
+                sample = float(value)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(sample):
+                samples.append(float(np.clip(sample, 0.0, 0.25)))
+        if samples:
+            return samples
+
+    cdf_points = method.get("load_variance_cdf")
+    if isinstance(cdf_points, list) and cdf_points:
+        samples = []
+        for point in cdf_points:
+            if isinstance(point, dict) and "x" in point:
+                try:
+                    sample = float(point["x"])
+                except (TypeError, ValueError):
+                    continue
+                if np.isfinite(sample):
+                    samples.append(float(np.clip(sample, 0.0, 0.25)))
+        if samples:
+            return samples
+    return []
+
+
+def draw_load_variance_cdf_panel(ax, methods: Sequence[Dict], compact: bool = False) -> None:
+    ordered = order_methods(methods)
+    styles = build_method_styles(ordered)
+    plotted = False
+    for method in ordered:
+        samples = load_variance_samples_for_plot(method)
+        if not samples:
+            continue
+        points = empirical_cdf(samples)
+        if not points:
+            continue
+        x_values = [points[0]["x"], *[point["x"] for point in points]]
+        y_values = [0.0, *[point["cdf"] for point in points]]
+        style = styles[str(method.get("method", ""))]
+        ax.step(
+            x_values,
+            y_values,
+            where="post",
+            color=style["color"],
+            linestyle=style.get("linestyle", "-"),
+            linewidth=2.0 if compact else 2.3,
+            label=method.get("display_name", method.get("method", "")),
+        )
+        plotted = True
+
+    ax.set_title("Load Variance CDF")
+    ax.set_xlabel("Load Variance")
+    ax.set_ylabel("CDF")
+    ax.set_ylim(0.0, 1.03)
+    ax.set_xlim(left=0.0)
+    if plotted:
+        ax.legend(fontsize=8.5 if compact else 9.5, ncol=1 if compact else 2)
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "No load variance data",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            color=PAPER_COLORS["muted"],
+        )
+    style_axes_frame(ax)
+
+
+def _infer_num_users_from_output_dir(output_dir: Optional[Path]) -> Optional[int]:
+    if output_dir is None:
+        return None
+    name = output_dir.name.lower()
+    if len(name) >= 2 and name[0] == "u" and name[1:].isdigit():
+        return int(name[1:])
+    return None
+
+
+def _default_user_seconds_from_output_dir(output_dir: Path) -> Optional[float]:
+    summary_path = output_dir / "comparison_summary.json"
+    if summary_path.exists():
+        try:
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            env_config = payload.get("env_config", {}) or {}
+            num_users = float(env_config.get("num_users", 0.0))
+            max_steps = float(env_config.get("max_steps", 0.0))
+            time_step_sec = float(env_config.get("time_step_sec", EnvConfig.time_step_sec))
+            if num_users > 0.0 and max_steps > 0.0:
+                return num_users * max_steps * max(time_step_sec, 1e-9)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+    inferred_users = _infer_num_users_from_output_dir(output_dir)
+    if inferred_users is None:
+        return None
+    return float(inferred_users) * float(EnvConfig.max_steps) * float(EnvConfig.time_step_sec)
+
+
+def _estimated_interruption_count(record: Dict, default_user_seconds: Optional[float]) -> float:
+    raw_seconds = record.get("service_interruption_seconds")
+    try:
+        if raw_seconds is not None and raw_seconds != "":
+            return max(float(raw_seconds), 0.0) / max(float(EnvConfig.time_step_sec), 1e-9)
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        total_user_seconds = float(record.get("total_user_seconds", 0.0))
+    except (TypeError, ValueError):
+        total_user_seconds = 0.0
+    if total_user_seconds <= 0.0 and default_user_seconds is not None:
+        total_user_seconds = float(default_user_seconds)
+    if total_user_seconds <= 0.0:
+        return 0.0
+    continuity = float(record.get("service_continuity_rate", 1.0))
+    interruption_seconds = max(0.0, 1.0 - continuity) * total_user_seconds
+    return interruption_seconds / max(float(EnvConfig.time_step_sec), 1e-9)
+
+
+def plot_cumulative_interruption_counts(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+    plottable = methods_with_episode_metrics(methods)
+    if not plottable:
+        return None
+
+    default_user_seconds = _default_user_seconds_from_output_dir(output_dir)
+    ordered = order_methods(plottable)
+    styles = build_method_styles(ordered)
+    fig, ax = plt.subplots(figsize=(11, 6.4), dpi=220)
+    plotted = False
+    for method in ordered:
+        records = sorted(method.get("episode_metrics", []), key=lambda item: int(item.get("episode", 0)))
+        if not records:
+            continue
+        counts = [_estimated_interruption_count(record, default_user_seconds) for record in records]
+        if not counts:
+            continue
+        cumulative = np.cumsum(np.asarray(counts, dtype=float))
+        episodes = [int(record.get("episode", index + 1)) for index, record in enumerate(records)]
+        style = styles[str(method.get("method", ""))]
+        ax.plot(
+            episodes,
+            cumulative,
+            marker="o",
+            color=style["color"],
+            linestyle=style.get("linestyle", "-"),
+            linewidth=2.0,
+            label=method.get("display_name", method.get("method", "")),
+        )
+        plotted = True
+
+    if not plotted:
+        plt.close(fig)
+        return None
+    ax.set_title("Cumulative Service Interruption Count")
+    ax.set_xlabel("Evaluation Episode")
+    ax.set_ylabel("Cumulative Interruptions")
+    ax.legend(fontsize=9.5, ncol=2)
+    style_axes_frame(ax)
+    fig.tight_layout()
+    return save_figure(fig, output_dir / "cumulative_interruption_counts.png")
+
+
 def draw_reward_curve_panel(
     ax,
     history_path: Optional[Path],
@@ -3899,6 +3954,8 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
     fig, axes = plt.subplots(2, 3, figsize=(18, 11), dpi=220)
     for axis, (metric_key, title, ylabel) in zip(axes.flatten(), CORE_BAR_METRICS):
         draw_metric_bar_panel(axis, methods, metric_key=metric_key, title=title, ylabel=ylabel)
+    if len(CORE_BAR_METRICS) < len(axes.flatten()):
+        draw_load_variance_cdf_panel(axes.flatten()[len(CORE_BAR_METRICS)], methods)
 
     fig.suptitle(
         f"{system_display_name(methods)} vs. Baselines: Core Metrics",
@@ -4430,27 +4487,24 @@ def plot_paper_dashboard(
     )
     add_panel_label(ax_delay, "(b)")
 
-    ax_task = fig.add_subplot(grid[1, 1])
-    draw_metric_bar_panel(
-        ax_task,
-        methods,
-        metric_key="task_completion_rate",
-        title="Task Completion Rate",
-        ylabel="Task Completion Rate (%)",
-        compact=True,
-    )
-    add_panel_label(ax_task, "(c)")
-
-    ax_energy = fig.add_subplot(grid[1, 2])
+    ax_energy = fig.add_subplot(grid[1, 1])
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="mec_load_fairness",
-        title="MEC Load Fairness",
-        ylabel="MEC Load Fairness",
+        metric_key="total_energy",
+        title="Average Energy",
+        ylabel="Average Energy (J)",
         compact=True,
     )
-    add_panel_label(ax_energy, "(d)")
+    add_panel_label(ax_energy, "(c)")
+
+    ax_load_cdf = fig.add_subplot(grid[1, 2])
+    draw_load_variance_cdf_panel(
+        ax_load_cdf,
+        methods,
+        compact=True,
+    )
+    add_panel_label(ax_load_cdf, "(d)")
 
     fig.suptitle("Publication-Style Baseline Comparison", fontsize=15, fontweight="bold", y=0.985)
     fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.26, hspace=0.32)
@@ -4583,7 +4637,7 @@ def parse_args() -> argparse.Namespace:
                         choices=list(BEST_MODEL_METRIC_CHOICES),
                         help="Metric used to pick heuristic offload variants and sort methods in the report.")
     parser.add_argument("--objective", type=str, default="multi_objective",
-                        choices=["multi_objective", "delay_only", "energy_only"],
+                        choices=["multi_objective"],
                         help="Objective used when no system run is provided.")
     parser.add_argument("--num-users", type=int, default=10,
                         help="User count used when no system run is provided.")
@@ -4806,18 +4860,6 @@ def main() -> None:
                 reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
             result.setdefault("source", "han_attn_train_eval")
-        elif baseline_name == "han_attn_legacy":
-            result = train_and_evaluate_legacy_han_attn_mappo(
-                config_data=config_data,
-                output_dir=output_dir,
-                device=args.device,
-                episodes=args.episodes,
-                max_steps=args.max_steps,
-                total_timesteps=args.total_timesteps,
-                early_stop_patience=args.early_stop_patience,
-                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
-            )
-            result.setdefault("source", "han_attn_legacy_train_eval")
         elif baseline_name == "han_attn_cpq":
             result = train_and_evaluate_cpq_han_attn_mappo(
                 config_data=config_data,
@@ -4907,6 +4949,7 @@ def main() -> None:
     radar_plot = plot_performance_radar(methods, output_dir)
     reward_distribution_plot = plot_reward_distribution(methods, output_dir)
     dashboard_plot = plot_paper_dashboard(history_path, methods, output_dir, window=args.plot_window)
+    interruption_plot = plot_cumulative_interruption_counts(methods, output_dir)
 
     print(json.dumps(methods, ensure_ascii=False, indent=2))
     print(f"Summary JSON saved to: {json_path}")
@@ -4931,6 +4974,8 @@ def main() -> None:
         print(f"Reward distribution figure: {reward_distribution_plot}")
     if dashboard_plot is not None:
         print(f"Paper dashboard figure: {dashboard_plot}")
+    if interruption_plot is not None:
+        print(f"Cumulative interruption figure: {interruption_plot}")
 
 
 if __name__ == "__main__":

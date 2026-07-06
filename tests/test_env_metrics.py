@@ -10,6 +10,7 @@ from scripts.compare_system_baselines import (
     HIGHER_IS_BETTER,
     REWARD_BREAKDOWN_KEYS,
     SUMMARY_METRIC_KEYS,
+    load_variance_samples_for_plot,
     summarize_results,
 )
 
@@ -152,6 +153,21 @@ def test_load_balance_score_rewards_balanced_mec_workload():
         env.close()
 
 
+def test_time_point_load_variance_penalizes_single_busy_mec_among_idle_servers():
+    env = _build_single_user_env(num_users=2)
+
+    try:
+        env.reset(seed=11)
+
+        first = env.mec_manager.servers[0]
+        first.task_queue = [{} for _ in range(3)]
+        first.available_freq_ghz = 0.0
+
+        assert env._compute_load_balance_variance() > 0.0
+    finally:
+        env.close()
+
+
 def test_mec_load_fairness_ignores_idle_satellites_when_mec_is_used():
     env = _build_single_user_env(num_users=2)
 
@@ -189,6 +205,42 @@ def test_summary_reports_mec_load_fairness_without_activity_or_mean_load():
         assert "mec_load_mean" not in summary
     finally:
         env.close()
+
+
+def test_env_records_only_active_time_point_load_variance_samples_for_cdf():
+    env = _build_single_user_env(num_users=2)
+
+    try:
+        env.reset(seed=11)
+
+        env._record_load_balance_metrics()
+        assert env.get_stats_summary()["load_variance_sample_count"] == 0
+
+        first = env.mec_manager.servers[0]
+        first.task_queue = [{} for _ in range(3)]
+        first.available_freq_ghz = 0.0
+        env._record_load_balance_metrics()
+
+        summary = env.get_stats_summary()
+
+        assert summary["load_variance_sample_count"] == 1
+        assert len(summary["load_variance_samples"]) == 1
+        assert summary["load_variance_samples"][0] > 0.0
+        assert len(summary["load_variance_cdf"]) == 1
+    finally:
+        env.close()
+
+
+def test_load_variance_cdf_plot_requires_real_variance_samples():
+    assert load_variance_samples_for_plot({"avg_load_balance_score": 0.5}) == []
+    assert load_variance_samples_for_plot(
+        {
+            "load_variance_cdf": [
+                {"x": 0.03, "cdf": 0.5},
+                {"x": 0.05, "cdf": 1.0},
+            ]
+        }
+    ) == pytest.approx([0.03, 0.05])
 
 
 def test_compare_summary_preserves_reward_breakdown_metrics():

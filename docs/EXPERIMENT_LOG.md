@@ -16,6 +16,47 @@ including failed or inconclusive runs.
 - Interpretation: what improved, what regressed, and likely root cause
 - Follow-up decision: keep, revert, tune, or rerun
 
+## 2026-07-05 - Repository Slimming Cleanup
+
+**Code change:** removed historical one-off suite wrappers, the old
+`plot_results.py` plotting entry, stale artifact-regeneration/cleanup scripts,
+plot-wrapper tests, the broken `delay_only`/`energy_only` comparison branches,
+the unused legacy `han_attn_legacy` trainer/baseline, the unused generic
+`Runner`, and the unused single-agent `RolloutBuffer`.
+
+**Current active entry points:** `scripts/train.py`,
+`scripts/compare_system_baselines.py`, `scripts/plot_training_artifacts.py`,
+and `scripts/run_multiuser_scaling_suite.py`.
+
+**Validation:** `C:\Users\19704\.conda\envs\satellite.env\python.exe -m
+pytest -q` passed with 86 tests. Full Python compilation via
+`python -m py_compile` over all `*.py` files also passed.
+
+**Follow-up:** keep historical commands in this log as provenance, but use the
+active entry points above for new runs and plotting.
+
+## 2026-07-05 - Paper-Style Load Balance Metric
+
+**Code change:** added `scripts/load_balance_metrics.py` and wired training,
+comparison, and plot-only artifact summaries to use the paper-style load
+balance variance metric. When `load_balance_variance` or
+`load_variance_samples` is available, `mec_load_fairness`,
+`active_load_balance_score`, and `avg_load_balance_score` are compatibility
+aliases for the coefficient `(1 - 4B) / (1 + 4B)`. Summaries also preserve
+`load_balance_variance`, `load_balance_coefficient`,
+`load_variance_sample_count`, and JSON CDF points from time-point variance
+samples.
+
+**Validation:** `python -m pytest tests\test_load_balance_metrics.py
+tests\test_plot_training_artifacts.py -q` passed, and `python -m py_compile`
+passed for `scripts/load_balance_metrics.py`, `scripts/plot_training_artifacts.py`,
+`scripts/compare_system_baselines.py`, and `scripts/train.py`.
+
+**Follow-up:** when the environment source is available, emit
+`load_variance_samples` from each evaluation episode so Figure-9-style CDF
+plots use all per-time-step load variance samples rather than only per-episode
+mean values.
+
 ## 2026-05-10 01:07:57 - Baseline Compare, Latency Priority
 
 **Experiment directory:** `results/baseline_compare/20260510_010757`

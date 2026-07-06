@@ -22,11 +22,11 @@ def test_train_config_from_dict_rewrites_stale_log_path_with_save_path(tmp_path)
 
 def test_filter_duplicate_system_baselines_removes_han_attn_aliases():
     filtered = compare.filter_duplicate_system_baselines(
-        ["han_attn", "han_attn_cpq", "han_attn_legacy", "attn_mappo"],
+        ["han_attn", "han_attn_cpq", "attn_mappo"],
         {"algorithm": "han_attn"},
     )
 
-    assert filtered == ["han_attn_legacy", "attn_mappo"]
+    assert filtered == ["attn_mappo"]
 
 
 def test_filter_duplicate_system_baselines_keeps_other_systems_intact():

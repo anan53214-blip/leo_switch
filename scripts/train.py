@@ -51,6 +51,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'src'))
 
+from scripts.load_balance_metrics import normalize_load_balance_metrics
+
 # 导入项目模块
 from src.environment.gym_env import LEOSatelliteEnv, EnvConfig, summarize_env_stats
 from src.features.satellite_load import (
@@ -72,7 +74,6 @@ from src.algorithm.buffer import MultiAgentRolloutBuffer
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
 from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
-from src.algorithm.runner import Runner, RunnerConfig
 
 
 BEST_MODEL_METRIC_CHOICES = (
@@ -82,6 +83,8 @@ BEST_MODEL_METRIC_CHOICES = (
     "service_continuity_rate",
     "service_availability_rate",
     "handover_failure_rate",
+    "load_balance_coefficient",
+    "load_balance_variance",
     "mec_load_fairness",
     "avg_load_balance_score",
     "energy_per_successful_task",
@@ -98,6 +101,8 @@ BEST_MODEL_METRIC_LABELS = {
     "service_continuity_rate": "service continuity",
     "service_availability_rate": "service availability",
     "handover_failure_rate": "handover failure rate",
+    "load_balance_coefficient": "load balance coefficient",
+    "load_balance_variance": "load balance variance",
     "mec_load_fairness": "MEC load fairness",
     "avg_load_balance_score": "load balance",
     "energy_per_successful_task": "energy per successful task",
@@ -125,6 +130,13 @@ def energy_per_successful_task(record: Dict[str, Any]) -> float:
     return total_energy / completed_tasks
 
 
+def summarize_env_stats_with_load_balance(env_stats: Dict[str, Any]) -> Dict[str, Any]:
+    summary = summarize_env_stats(env_stats)
+    if "load_variance_samples" in env_stats:
+        summary["load_variance_samples"] = env_stats.get("load_variance_samples", [])
+    return normalize_load_balance_metrics(summary)
+
+
 def _bounded_unit_score(value: Any) -> float:
     return float(np.clip(float(value), 0.0, 1.0))
 
@@ -147,10 +159,20 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
         return _bounded_unit_score(record.get("service_availability_rate", 0.0))
     if metric_name == "handover_failure_rate":
         return -_bounded_unit_score(record.get("handover_failure_rate", 0.0))
+    if metric_name == "load_balance_coefficient":
+        return _bounded_unit_score(
+            normalize_load_balance_metrics(record).get("load_balance_coefficient", 0.0)
+        )
+    if metric_name == "load_balance_variance":
+        return -float(record.get("load_balance_variance", 0.0))
     if metric_name == "avg_load_balance_score":
-        return _bounded_unit_score(record.get("avg_load_balance_score", 0.0))
+        return _bounded_unit_score(
+            normalize_load_balance_metrics(record).get("avg_load_balance_score", 0.0)
+        )
     if metric_name == "mec_load_fairness":
-        return _bounded_unit_score(record.get("mec_load_fairness", record.get("avg_load_balance_score", 0.0)))
+        return _bounded_unit_score(
+            normalize_load_balance_metrics(record).get("mec_load_fairness", 0.0)
+        )
     if metric_name == "task_completion_rate":
         return _bounded_unit_score(record.get("task_completion_rate", 0.0))
     if metric_name == "task_success_rate":
@@ -187,17 +209,17 @@ class TrainConfig:
     max_steps: int = 600                  # 每episode最大步数
     time_step_sec: float = 1.0            # 时间步长
     min_effective_offload_ratio: float = 0.05
-    reward_delay_weight: float = 0.35
-    reward_energy_weight: float = 0.05
+    reward_delay_weight: float = 0.25
+    reward_energy_weight: float = 0.30
     reward_handover_weight: float = 0.10
     reward_load_balance_weight: float = 0.05
-    reward_qos_weight: float = 0.40
+    reward_qos_weight: float = 0.25
     reward_service_continuity_weight: float = 0.15
-    reward_deadline_slack_weight: float = 0.25
+    reward_deadline_slack_weight: float = 0.10
     reward_enqueue_bonus: float = 0.0
     reward_failed_handover_penalty: float = 0.3
-    reward_deadline_penalty: float = 1.00
-    reward_failed_task_penalty: float = 0.80
+    reward_deadline_penalty: float = 0.70
+    reward_failed_task_penalty: float = 0.60
     pre_handover_rvt_sec: float = 30.0    # Pre-handover RVT 阈值
 
     # ---------- 图参数 ----------
@@ -736,12 +758,17 @@ class HANMAPPOTrainer:
             'load_balance_sum': 0.0,
             'mec_activity_sum': 0.0,
             'load_balance_samples': 0,
+            'load_variance_samples': [],
         }
 
     @classmethod
     def _accumulate_env_stats(cls, target: Dict[str, float], source: Dict[str, float]) -> Dict[str, float]:
         for key, default_value in cls._empty_env_stats().items():
-            target[key] += source.get(key, default_value)
+            if isinstance(default_value, list):
+                target.setdefault(key, [])
+                target[key] += list(source.get(key, default_value) or [])
+            else:
+                target[key] += source.get(key, default_value)
         return target
     
     def collect_rollouts(self) -> Dict[str, float]:
@@ -883,7 +910,7 @@ class HANMAPPOTrainer:
         
         # 获取环境统计（切换成功率、任务完成率、延迟、能耗等）
         env_stats = rollout_env_stats
-        summary_env_stats = summarize_env_stats(env_stats)
+        summary_env_stats = summarize_env_stats_with_load_balance(env_stats)
         
         stats = {
             'episodes': len(episode_rewards),
@@ -927,6 +954,9 @@ class HANMAPPOTrainer:
                 max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)
             ),
             'energy_per_successful_task': summary_env_stats.get('energy_per_successful_task', 0.0),
+            'load_balance_variance': summary_env_stats.get('load_balance_variance', 0.0),
+            'load_balance_coefficient': summary_env_stats.get('load_balance_coefficient', 0.0),
+            'load_variance_sample_count': summary_env_stats.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary_env_stats.get('mec_load_fairness', 0.0),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary_env_stats.get('active_load_balance_score', 0.0),
@@ -1032,6 +1062,9 @@ class HANMAPPOTrainer:
                 'total_energy': rollout_stats.get('total_energy', 0),
                 'energy_per_resolved_task': energy_per_resolved_task(rollout_stats),
                 'energy_per_successful_task': energy_per_successful_task(rollout_stats),
+                'load_balance_variance': rollout_stats.get('load_balance_variance', 0),
+                'load_balance_coefficient': rollout_stats.get('load_balance_coefficient', rollout_stats.get('mec_load_fairness', 0)),
+                'load_variance_sample_count': rollout_stats.get('load_variance_sample_count', 0),
                 'mec_load_fairness': rollout_stats.get('mec_load_fairness', rollout_stats.get('avg_load_balance_score', 0)),
                 'avg_load_balance_score': rollout_stats.get('avg_load_balance_score', 0),
                 'active_load_balance_score': rollout_stats.get('active_load_balance_score', 0),
@@ -1200,7 +1233,7 @@ class HANMAPPOTrainer:
         mean_reward = np.mean(eval_rewards)
         std_reward = np.std(eval_rewards)
         mean_length = np.mean(eval_lengths)
-        summary_env_stats = summarize_env_stats(eval_env_stats)
+        summary_env_stats = summarize_env_stats_with_load_balance(eval_env_stats)
         
         # 记录评估结果到 eval_history
         eval_record = {
@@ -1242,6 +1275,9 @@ class HANMAPPOTrainer:
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)
             ),
             'energy_per_successful_task': summary_env_stats.get('energy_per_successful_task', 0.0),
+            'load_balance_variance': summary_env_stats.get('load_balance_variance', 0.0),
+            'load_balance_coefficient': summary_env_stats.get('load_balance_coefficient', 0.0),
+            'load_variance_sample_count': summary_env_stats.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary_env_stats.get('mec_load_fairness', 0.0),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary_env_stats.get('active_load_balance_score', 0.0),
@@ -1301,7 +1337,7 @@ class HANMAPPOTrainer:
         self.logger.info("-" * 40)
     
     def _save_training_history(self):
-        """保存训练历史数据（JSON格式，供 plot_results.py 可视化使用）"""
+        """保存训练历史数据（JSON格式，供 plot_training_artifacts.py 可视化使用）"""
         save_dir = Path(self.config.save_path)
         save_dir.mkdir(parents=True, exist_ok=True)
         
@@ -1500,59 +1536,7 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
         return raw_observations, satellite_features, available_actions, candidate_sat_ids
 
 
-class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
-    """Legacy HAN encoder plus candidate-attention MAPPO policy."""
-
-    algorithm_name = "han_attn_legacy"
-
-    def _init_mappo(self):
-        self.logger.info("Initializing HAN+Attn MAPPO...")
-
-        fused_sat_dim = self.config.han_out_dim + SATELLITE_LOAD_FEATURE_DIM
-        mappo_config = MAPPOConfig(
-            num_agents=self.num_agents,
-            obs_dim=self.obs_dim,
-            global_state_dim=self.global_state_dim,
-            max_candidates=self.max_candidates,
-            sat_embed_dim=fused_sat_dim,
-            actor_hidden_dims=list(self.config.actor_hidden_dims),
-            critic_hidden_dims=list(self.config.critic_hidden_dims),
-            clip_range=self.config.clip_range,
-            clip_range_vf=self.config.clip_range_vf,
-            value_loss_coef=self.config.value_loss_coef,
-            value_loss_type=self.config.value_loss_type,
-            normalize_returns=self.config.normalize_returns,
-            value_huber_beta=self.config.value_huber_beta,
-            entropy_coef=self.config.entropy_coef,
-            entropy_schedule=self.config.entropy_schedule,
-            learning_rate=self.config.learning_rate,
-            max_grad_norm=self.config.max_grad_norm,
-            n_epochs=self.config.n_epochs,
-            batch_size=self.config.batch_size,
-            gamma=self.config.gamma,
-            gae_lambda=self.config.gae_lambda,
-            device=self.config.device,
-        )
-
-        self.mappo = AttentionMAPPO(mappo_config)
-        actor_params = sum(p.numel() for p in self.mappo.actor.parameters())
-        critic_params = sum(p.numel() for p in self.mappo.critic.parameters())
-        self.logger.info(f"  - HAN+Attn Actor params: {actor_params:,}")
-        self.logger.info(f"  - Critic params: {critic_params:,}")
-
-    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        observations, han_satellites, available_actions, candidate_sat_ids = (
-            super()._encode_graph_state()
-        )
-        load_features = build_satellite_load_features(self.env, self.num_agents)
-        satellite_tokens = np.concatenate(
-            [han_satellites, load_features],
-            axis=1,
-        ).astype(np.float32, copy=False)
-        return observations, satellite_tokens, available_actions, candidate_sat_ids
-
-
-class CPQHANCandidateAttentionMAPPOTrainer(HANCandidateAttentionMAPPOTrainer):
+class CPQHANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
     """Final HAN+Attention MAPPO with predictive queue-risk context."""
 
     algorithm_name = "han_attn"
@@ -1769,7 +1753,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         elapsed: float,
         partial_episode: bool = False,
     ) -> Dict[str, float]:
-        summary = summarize_env_stats(env_stats)
+        summary = summarize_env_stats_with_load_balance(env_stats)
         record = {
             'update': update,
             'total_steps': self.total_steps,
@@ -1820,6 +1804,9 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
                 max(float(summary.get('resolved_tasks', 0.0)), 1.0)
             ),
             'energy_per_successful_task': summary.get('energy_per_successful_task', 0.0),
+            'load_balance_variance': summary.get('load_balance_variance', 0.0),
+            'load_balance_coefficient': summary.get('load_balance_coefficient', 0.0),
+            'load_variance_sample_count': summary.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary.get('mec_load_fairness', 0.0),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
@@ -1980,7 +1967,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         mean_reward = float(np.mean(eval_rewards)) if eval_rewards else 0.0
         std_reward = float(np.std(eval_rewards)) if eval_rewards else 0.0
         mean_length = float(np.mean(eval_lengths)) if eval_lengths else 0.0
-        summary = summarize_env_stats(eval_env_stats)
+        summary = summarize_env_stats_with_load_balance(eval_env_stats)
         eval_record = {
             'total_steps': self.total_steps,
             'episodes': self.episodes,
@@ -2020,6 +2007,9 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary.get('resolved_tasks', 0.0)), 1.0)
             ),
             'energy_per_successful_task': summary.get('energy_per_successful_task', 0.0),
+            'load_balance_variance': summary.get('load_balance_variance', 0.0),
+            'load_balance_coefficient': summary.get('load_balance_coefficient', 0.0),
+            'load_variance_sample_count': summary.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary.get('mec_load_fairness', 0.0),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
@@ -2210,10 +2200,10 @@ def parse_args():
         "--algorithm",
         type=str,
         default="mappo",
-        choices=["mappo", "attn_mappo", "han_attn", "han_attn_legacy", "han_attn_cpq", "maddpg", "pdqn"],
+        choices=["mappo", "attn_mappo", "han_attn", "han_attn_cpq", "maddpg", "pdqn"],
         help=(
             "Training algorithm: mappo, attn_mappo, han_attn, "
-            "han_attn_legacy, han_attn_cpq (deprecated alias), maddpg, or pdqn"
+            "han_attn_cpq (deprecated alias), maddpg, or pdqn"
         ),
     )
     
@@ -2222,27 +2212,27 @@ def parse_args():
                         help='用户数量')
     parser.add_argument('--max_steps', type=int, default=600,
                         help='每episode最大步数')
-    parser.add_argument('--reward_delay_weight', type=float, default=0.35,
+    parser.add_argument('--reward_delay_weight', type=float, default=0.25,
                         help='时延奖励权重')
-    parser.add_argument('--reward_energy_weight', type=float, default=0.05,
+    parser.add_argument('--reward_energy_weight', type=float, default=0.30,
                         help='能耗奖励权重')
     parser.add_argument('--reward_handover_weight', type=float, default=0.10,
                         help='切换奖励权重')
     parser.add_argument('--reward_load_balance_weight', type=float, default=0.05,
                         help='负载均衡奖励权重')
-    parser.add_argument('--reward_qos_weight', type=float, default=0.40,
+    parser.add_argument('--reward_qos_weight', type=float, default=0.25,
                         help='QoS reward weight')
     parser.add_argument('--reward_service_continuity_weight', type=float, default=0.15,
                         help='Service interruption penalty weight')
-    parser.add_argument('--reward_deadline_slack_weight', type=float, default=0.25,
+    parser.add_argument('--reward_deadline_slack_weight', type=float, default=0.10,
                         help='Deadline slack reward weight for successful tasks')
     parser.add_argument('--reward_enqueue_bonus', type=float, default=0.0,
                         help='Queue admission bonus weight')
     parser.add_argument('--reward_failed_handover_penalty', type=float, default=0.3,
                         help='Failed handover penalty weight')
-    parser.add_argument('--reward_deadline_penalty', type=float, default=1.00,
+    parser.add_argument('--reward_deadline_penalty', type=float, default=0.70,
                         help='Deadline violation penalty weight')
-    parser.add_argument('--reward_failed_task_penalty', type=float, default=0.80,
+    parser.add_argument('--reward_failed_task_penalty', type=float, default=0.60,
                         help='Fixed penalty for tasks that miss their deadline')
     parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
                         help='Treat smaller offload ratios as local execution')
@@ -2370,7 +2360,6 @@ def main():
         "mappo": HANMAPPOTrainer,
         "attn_mappo": AttentionMAPPOTrainer,
         "han_attn": CPQHANCandidateAttentionMAPPOTrainer,
-        "han_attn_legacy": HANCandidateAttentionMAPPOTrainer,
         "han_attn_cpq": CPQHANCandidateAttentionMAPPOTrainer,
         "maddpg": HANMADDPGTrainer,
         "pdqn": HANPDQNTrainer,

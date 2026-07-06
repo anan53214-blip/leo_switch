@@ -3,7 +3,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.algorithm.runner import Runner
 from src.environment.mec import ComputeResult, OffloadingCalculator
 from src.graph.features import FeatureExtractor
 
@@ -79,17 +78,3 @@ def test_position_feature_normalization_uses_environment_orbit_radius():
 
     assert sat_features[0, 0] == pytest.approx(1.0)
     assert user_features[0, 0] == pytest.approx(1.0)
-
-
-def test_runner_observations_use_environment_state_instead_of_random_noise():
-    runner = object.__new__(Runner)
-    observations = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
-    runner.env = SimpleNamespace(_get_observation=lambda: observations.copy())
-    runner.mappo = SimpleNamespace(
-        config=SimpleNamespace(num_agents=2, obs_dim=2, global_state_dim=4)
-    )
-
-    actual_observations, global_state = runner._get_observations()
-
-    np.testing.assert_array_equal(actual_observations, observations)
-    np.testing.assert_array_equal(global_state, observations.reshape(-1))

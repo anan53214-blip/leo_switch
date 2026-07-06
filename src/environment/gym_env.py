@@ -85,6 +85,12 @@ class EnvConfig:
     seed: Optional[int] = None
 
 
+def _finite_load_variance_samples(values) -> np.ndarray:
+    samples = np.asarray(list(values or []), dtype=np.float64).reshape(-1)
+    samples = samples[np.isfinite(samples)]
+    return np.clip(samples, 0.0, 0.25)
+
+
 def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     """Derive reliability and QoS metrics from raw environment counters."""
     resolved_tasks = int(stats.get('completed_tasks', 0) + stats.get('deadline_violations', 0))
@@ -146,6 +152,24 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     )
     total_energy = float(stats.get('total_energy', 0.0))
     energy_per_successful_task = total_energy / max(completed_count, 1.0)
+    load_variance_samples = _finite_load_variance_samples(
+        stats.get('load_variance_samples', [])
+    )
+    load_balance_variance = (
+        float(np.mean(load_variance_samples))
+        if load_variance_samples.size > 0 else 0.0
+    )
+    load_balance_coefficient = float(
+        (1.0 - 4.0 * load_balance_variance) /
+        (1.0 + 4.0 * load_balance_variance)
+    )
+    load_variance_cdf = [
+        {
+            'x': float(value),
+            'cdf': float((index + 1) / max(int(load_variance_samples.size), 1)),
+        }
+        for index, value in enumerate(np.sort(load_variance_samples))
+    ]
 
     summary.update({
         'resolved_tasks': resolved_tasks,
@@ -177,6 +201,11 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         'handover_frequency': handover_frequency,
         'avg_delay': avg_delay,
         'energy_per_successful_task': energy_per_successful_task,
+        'load_balance_variance': load_balance_variance,
+        'load_balance_coefficient': load_balance_coefficient,
+        'load_variance_sample_count': int(load_variance_samples.size),
+        'load_variance_samples': [float(value) for value in load_variance_samples],
+        'load_variance_cdf': load_variance_cdf,
         'mec_load_fairness': mec_load_fairness,
         'active_load_balance_score': mec_load_fairness,
         'avg_load_balance_score': mec_load_fairness,
@@ -373,6 +402,7 @@ class LEOSatelliteEnv(gym.Env):
             'penalty_handover_cost': 0.0,
             'load_balance_sum': 0.0,
             'load_balance_samples': 0,
+            'load_variance_samples': [],
         }
 
     def _record_reward_terms(self, **terms: float) -> None:
@@ -639,10 +669,7 @@ class LEOSatelliteEnv(gym.Env):
         
         # 4. 计算全局奖励
         total_reward = np.mean(user_rewards)
-        load_balance_score = self._compute_load_balance_score()
-        self._last_load_balance_score = load_balance_score
-        self.stats['load_balance_sum'] += load_balance_score
-        self.stats['load_balance_samples'] += 1
+        self._record_load_balance_metrics()
 
         step_user_seconds = float(self.num_users) * float(self.config.time_step_sec)
         blocked_users = sum(1 for user in self.user_manager.users if user.state == UserState.BLOCKED)
@@ -838,6 +865,31 @@ class LEOSatelliteEnv(gym.Env):
     def _compute_load_balance_score(self) -> float:
         """Backward-compatible reward hook for MEC load fairness."""
         return self._compute_mec_load_fairness()
+
+    @staticmethod
+    def _load_variance_from_loads(loads: np.ndarray) -> float:
+        load_array = np.asarray(loads, dtype=np.float64).reshape(-1)
+        load_array = load_array[np.isfinite(load_array)]
+        if len(load_array) == 0:
+            return 0.0
+        mean_load = float(np.mean(load_array))
+        return float(np.clip(np.mean((load_array - mean_load) ** 2), 0.0, 0.25))
+
+    def _compute_load_balance_variance(self) -> float:
+        """Return the time-point variance of system-wide normalized MEC loads."""
+        return self._load_variance_from_loads(self._compute_mec_loads())
+
+    def _record_load_balance_metrics(self) -> None:
+        """Record per-step load balance score and active-load variance sample."""
+        load_balance_score = self._compute_load_balance_score()
+        loads = self._compute_mec_loads()
+        self._last_load_balance_score = load_balance_score
+        self.stats['load_balance_sum'] += load_balance_score
+        self.stats['load_balance_samples'] += 1
+        if np.any(loads > 1e-6):
+            self.stats['load_variance_samples'].append(
+                self._load_variance_from_loads(loads)
+            )
 
     def _compute_task_reward(
         self,

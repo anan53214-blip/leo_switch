@@ -136,8 +136,9 @@ python scripts\train.py
 绘制训练图：
 
 ```powershell
-python scripts\plot_results.py `
-  --input results\full_train_delay_focus\training_history.json
+python scripts\plot_training_artifacts.py `
+  --comparison-summary results\baseline_compare\<run_id> `
+  --output-dir results\baseline_compare\<run_id>\replot
 ```
 
 系统与基线统一对比：
