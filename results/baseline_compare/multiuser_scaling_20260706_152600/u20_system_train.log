@@ -1,0 +1,948 @@
+
+$ /home/pjpjq/miniconda3/envs/satellite.env/bin/python scripts/train.py --exp_name han_mappo_latency_priority_multiuser_u20 --algorithm mappo --seed 42 --device cuda --num_users 20 --total_timesteps 300000 --max_steps 600 --n_steps 1024 --eval_interval 50000 --eval_episodes 3 --save_interval 100000 --graph_update_interval 1 --log_interval 1 --best-model-metric avg_delay --save_path /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600 --log_path /home/pjpjq/LEO_switch/results/logs
+2026-07-06 15:26:03,237 | INFO | 初始化环境...
+2026-07-06 15:26:03,241 | INFO |   - 原始观测维度: 73
+2026-07-06 15:26:03,241 | INFO |   - HAN嵌入维度: 64
+2026-07-06 15:26:03,241 | INFO |   - 拼接后观测维度: 142 (raw 73 + HAN 64 + rvt_warning 1 + task 4)
+2026-07-06 15:26:03,241 | INFO |   - 全局状态维度: 2840
+2026-07-06 15:26:03,241 | INFO | 初始化图构建器...
+2026-07-06 15:26:03,241 | INFO | 初始化HAN编码器...
+2026-07-06 15:26:03,551 | INFO |   - HAN参数量: 772,032
+2026-07-06 15:26:03,551 | INFO | 初始化MAPPO...
+2026-07-06 15:26:08,499 | INFO |   - Actor参数量: 103,694
+2026-07-06 15:26:08,499 | INFO |   - Critic参数量: 192,513
+2026-07-06 15:26:08,499 | INFO | 初始化经验缓冲区...
+2026-07-06 15:26:08,500 | INFO | 训练器初始化完成，设备: cuda
+2026-07-06 15:26:08,501 | INFO | 环境: 20 用户, 66 卫星
+2026-07-06 15:26:08,501 | INFO | ============================================================
+2026-07-06 15:26:08,501 | INFO | 开始训练
+2026-07-06 15:26:08,501 | INFO |   总步数: 300,000
+2026-07-06 15:26:08,501 | INFO |   每轮步数: 1024
+2026-07-06 15:26:08,501 | INFO |   图更新间隔: 1
+2026-07-06 15:26:08,501 | INFO |   评估episodes: 3
+2026-07-06 15:26:08,501 | INFO |   设备: cuda
+2026-07-06 15:26:08,501 | INFO | ============================================================
+2026-07-06 15:26:39,018 | INFO | Update    1 | Steps:   1,024 | Episodes:     1 | EpReward:   -93.21 | FPS:     34 | Actor Loss: -0.0009 | Critic Loss: 1.1341
+2026-07-06 15:26:39,019 | INFO |   Env | HO: 71.58% | Cont: 70.19% | Task: 57.55% | Resolved: 99.94% | Delay: 3.340s | Energy: 1535.96J | MEC fair: 0.960
+2026-07-06 15:26:39,019 | INFO |   Reward | D: -1039.59 | E: -31.53 | Q: -798.20 | H: 27.79 | LB: 0.11 | Enq: 0.00 | Pen: -630.66
+2026-07-06 15:27:07,527 | INFO | Update    2 | Steps:   2,048 | Episodes:     2 | EpReward:   -89.93 | FPS:     36 | Actor Loss: -0.0027 | Critic Loss: 0.6555
+2026-07-06 15:27:07,527 | INFO |   Env | HO: 71.50% | Cont: 72.20% | Task: 59.55% | Resolved: 99.82% | Delay: 3.281s | Energy: 1534.41J | MEC fair: 0.958
+2026-07-06 15:27:07,527 | INFO |   Reward | D: -1041.09 | E: -31.71 | Q: -665.20 | H: 19.71 | LB: 0.02 | Enq: 0.00 | Pen: -581.30
+2026-07-06 15:27:42,147 | INFO | Update    3 | Steps:   3,072 | Episodes:     3 | EpReward:   -88.74 | FPS:     30 | Actor Loss: -0.0025 | Critic Loss: 0.6852
+2026-07-06 15:27:42,147 | INFO |   Env | HO: 69.45% | Cont: 68.80% | Task: 57.11% | Resolved: 99.82% | Delay: 3.354s | Energy: 1487.76J | MEC fair: 0.959
+2026-07-06 15:27:42,148 | INFO |   Reward | D: -1031.50 | E: -30.64 | Q: -830.85 | H: 26.09 | LB: 0.19 | Enq: 0.00 | Pen: -663.22
+2026-07-06 15:28:13,958 | INFO | Update    4 | Steps:   4,096 | Episodes:     4 | EpReward:   -90.11 | FPS:     32 | Actor Loss: -0.0028 | Critic Loss: 0.2993
+2026-07-06 15:28:13,958 | INFO |   Env | HO: 69.51% | Cont: 75.08% | Task: 61.83% | Resolved: 99.89% | Delay: 3.220s | Energy: 1511.10J | MEC fair: 0.958
+2026-07-06 15:28:13,959 | INFO |   Reward | D: -1060.71 | E: -31.48 | Q: -525.30 | H: 23.04 | LB: 0.09 | Enq: 0.00 | Pen: -580.26
+2026-07-06 15:28:43,578 | INFO | Update    5 | Steps:   5,120 | Episodes:     5 | EpReward:   -84.59 | FPS:     35 | Actor Loss: -0.0028 | Critic Loss: 0.3078
+2026-07-06 15:28:43,578 | INFO |   Env | HO: 69.71% | Cont: 81.29% | Task: 67.57% | Resolved: 99.86% | Delay: 3.061s | Energy: 1592.61J | MEC fair: 0.959
+2026-07-06 15:28:43,578 | INFO |   Reward | D: -1155.90 | E: -34.50 | Q: -183.15 | H: 22.69 | LB: 0.08 | Enq: 0.00 | Pen: -534.46
+2026-07-06 15:29:18,738 | INFO | Update    6 | Steps:   6,144 | Episodes:     6 | EpReward:   -78.10 | FPS:     29 | Actor Loss: -0.0020 | Critic Loss: 0.1368
+2026-07-06 15:29:18,738 | INFO |   Env | HO: 70.12% | Cont: 87.37% | Task: 73.98% | Resolved: 99.93% | Delay: 2.955s | Energy: 1734.68J | MEC fair: 0.958
+2026-07-06 15:29:18,738 | INFO |   Reward | D: -1229.00 | E: -37.60 | Q: 205.70 | H: 26.44 | LB: 0.19 | Enq: 0.00 | Pen: -501.42
+2026-07-06 15:29:49,268 | INFO | Update    7 | Steps:   7,168 | Episodes:     7 | EpReward:   -73.17 | FPS:     34 | Actor Loss: -0.0022 | Critic Loss: 0.1022
+2026-07-06 15:29:49,268 | INFO |   Env | HO: 67.84% | Cont: 90.09% | Task: 76.21% | Resolved: 99.94% | Delay: 2.853s | Energy: 1699.74J | MEC fair: 0.958
+2026-07-06 15:29:49,268 | INFO |   Reward | D: -1252.22 | E: -37.35 | Q: 337.95 | H: 23.56 | LB: 0.07 | Enq: 0.00 | Pen: -463.06
+2026-07-06 15:30:23,363 | INFO | Update    8 | Steps:   8,192 | Episodes:     8 | EpReward:   -68.56 | FPS:     30 | Actor Loss: -0.0018 | Critic Loss: 0.0561
+2026-07-06 15:30:23,363 | INFO |   Env | HO: 72.80% | Cont: 92.83% | Task: 78.16% | Resolved: 99.97% | Delay: 2.790s | Energy: 1676.30J | MEC fair: 0.957
+2026-07-06 15:30:23,363 | INFO |   Reward | D: -1253.45 | E: -37.92 | Q: 457.70 | H: 17.89 | LB: 0.11 | Enq: 0.00 | Pen: -422.29
+2026-07-06 15:30:59,624 | INFO | Update    9 | Steps:   9,216 | Episodes:     9 | EpReward:   -65.18 | FPS:     28 | Actor Loss: -0.0010 | Critic Loss: 0.0607
+2026-07-06 15:30:59,624 | INFO |   Env | HO: 70.70% | Cont: 92.38% | Task: 77.73% | Resolved: 99.99% | Delay: 2.825s | Energy: 1726.86J | MEC fair: 0.957
+2026-07-06 15:30:59,624 | INFO |   Reward | D: -1268.80 | E: -38.59 | Q: 434.75 | H: 18.53 | LB: 0.04 | Enq: 0.00 | Pen: -444.71
+2026-07-06 15:31:35,438 | INFO | Update   10 | Steps:  10,240 | Episodes:    10 | EpReward:   -63.08 | FPS:     29 | Actor Loss: -0.0014 | Critic Loss: 0.0589
+2026-07-06 15:31:35,439 | INFO |   Env | HO: 72.89% | Cont: 92.98% | Task: 78.49% | Resolved: 99.97% | Delay: 2.821s | Energy: 1769.39J | MEC fair: 0.958
+2026-07-06 15:31:35,439 | INFO |   Reward | D: -1297.01 | E: -38.35 | Q: 486.20 | H: 19.07 | LB: 0.03 | Enq: 0.00 | Pen: -516.40
+2026-07-06 15:32:09,982 | INFO | Update   11 | Steps:  11,264 | Episodes:    11 | EpReward:   -60.14 | FPS:     30 | Actor Loss: -0.0008 | Critic Loss: 0.0429
+2026-07-06 15:32:09,982 | INFO |   Env | HO: 79.70% | Cont: 96.31% | Task: 81.14% | Resolved: 100.00% | Delay: 2.738s | Energy: 1768.10J | MEC fair: 0.958
+2026-07-06 15:32:09,982 | INFO |   Reward | D: -1297.28 | E: -39.18 | Q: 645.85 | H: 13.64 | LB: 0.01 | Enq: 0.00 | Pen: -441.54
+2026-07-06 15:32:46,787 | INFO | Update   12 | Steps:  12,288 | Episodes:    12 | EpReward:   -57.69 | FPS:     28 | Actor Loss: -0.0001 | Critic Loss: 0.0238
+2026-07-06 15:32:46,787 | INFO |   Env | HO: 68.22% | Cont: 97.28% | Task: 80.93% | Resolved: 99.97% | Delay: 2.740s | Energy: 1787.57J | MEC fair: 0.958
+2026-07-06 15:32:46,787 | INFO |   Reward | D: -1329.03 | E: -38.58 | Q: 634.55 | H: 9.59 | LB: 0.06 | Enq: 0.00 | Pen: -531.55
+2026-07-06 15:33:27,380 | INFO | Update   13 | Steps:  13,312 | Episodes:    13 | EpReward:   -55.54 | FPS:     25 | Actor Loss: -0.0001 | Critic Loss: 0.0092
+2026-07-06 15:33:27,380 | INFO |   Env | HO: 80.81% | Cont: 97.07% | Task: 82.06% | Resolved: 99.93% | Delay: 2.697s | Energy: 1738.88J | MEC fair: 0.958
+2026-07-06 15:33:27,380 | INFO |   Reward | D: -1299.19 | E: -39.38 | Q: 700.75 | H: 10.68 | LB: 0.00 | Enq: 0.00 | Pen: -426.42
+2026-07-06 15:34:05,118 | INFO | Update   14 | Steps:  14,336 | Episodes:    14 | EpReward:   -53.67 | FPS:     27 | Actor Loss: -0.0012 | Critic Loss: 0.0071
+2026-07-06 15:34:05,118 | INFO |   Env | HO: 69.86% | Cont: 97.33% | Task: 82.25% | Resolved: 99.99% | Delay: 2.732s | Energy: 1800.21J | MEC fair: 0.957
+2026-07-06 15:34:05,118 | INFO |   Reward | D: -1309.17 | E: -39.78 | Q: 715.15 | H: 10.33 | LB: 0.00 | Enq: 0.00 | Pen: -505.99
+2026-07-06 15:34:37,796 | INFO | Update   15 | Steps:  15,360 | Episodes:    15 | EpReward:   -52.08 | FPS:     31 | Actor Loss: -0.0004 | Critic Loss: 0.0143
+2026-07-06 15:34:37,797 | INFO |   Env | HO: 69.49% | Cont: 97.86% | Task: 82.21% | Resolved: 99.99% | Delay: 2.739s | Energy: 1825.39J | MEC fair: 0.957
+2026-07-06 15:34:37,797 | INFO |   Reward | D: -1311.76 | E: -39.12 | Q: 702.75 | H: 7.91 | LB: 0.00 | Enq: 0.00 | Pen: -572.37
+2026-07-06 15:35:12,107 | INFO | Update   16 | Steps:  16,384 | Episodes:    16 | EpReward:   -50.10 | FPS:     30 | Actor Loss: -0.0001 | Critic Loss: 0.0097
+2026-07-06 15:35:12,107 | INFO |   Env | HO: 82.65% | Cont: 97.42% | Task: 82.61% | Resolved: 99.97% | Delay: 2.640s | Energy: 1656.37J | MEC fair: 0.958
+2026-07-06 15:35:12,107 | INFO |   Reward | D: -1291.38 | E: -38.47 | Q: 739.85 | H: 10.69 | LB: -0.01 | Enq: 0.00 | Pen: -384.55
+2026-07-06 15:35:42,639 | INFO | Update   17 | Steps:  17,408 | Episodes:    17 | EpReward:   -49.09 | FPS:     34 | Actor Loss: -0.0004 | Critic Loss: 0.0207
+2026-07-06 15:35:42,639 | INFO |   Env | HO: 65.62% | Cont: 96.66% | Task: 81.14% | Resolved: 99.97% | Delay: 2.760s | Energy: 1769.40J | MEC fair: 0.958
+2026-07-06 15:35:42,639 | INFO |   Reward | D: -1324.18 | E: -37.41 | Q: 645.85 | H: 9.43 | LB: 0.07 | Enq: 0.00 | Pen: -607.52
+2026-07-06 15:36:17,268 | INFO | Update   18 | Steps:  18,432 | Episodes:    18 | EpReward:   -47.94 | FPS:     30 | Actor Loss: 0.0001 | Critic Loss: 0.0141
+2026-07-06 15:36:17,269 | INFO |   Env | HO: 75.91% | Cont: 98.32% | Task: 82.62% | Resolved: 100.00% | Delay: 2.701s | Energy: 1738.88J | MEC fair: 0.956
+2026-07-06 15:36:17,269 | INFO |   Reward | D: -1301.17 | E: -37.59 | Q: 733.65 | H: 6.82 | LB: 0.03 | Enq: 0.00 | Pen: -571.75
+2026-07-06 15:36:50,583 | INFO | Update   19 | Steps:  19,456 | Episodes:    19 | EpReward:   -46.85 | FPS:     31 | Actor Loss: -0.0002 | Critic Loss: 0.0137
+2026-07-06 15:36:50,583 | INFO |   Env | HO: 75.26% | Cont: 98.20% | Task: 83.05% | Resolved: 100.00% | Delay: 2.699s | Energy: 1706.38J | MEC fair: 0.957
+2026-07-06 15:36:50,583 | INFO |   Reward | D: -1288.65 | E: -37.12 | Q: 755.20 | H: 4.52 | LB: 0.03 | Enq: 0.00 | Pen: -572.47
+2026-07-06 15:37:20,603 | INFO | Update   20 | Steps:  20,480 | Episodes:    20 | EpReward:   -46.18 | FPS:     34 | Actor Loss: 0.0001 | Critic Loss: 0.0150
+2026-07-06 15:37:20,603 | INFO |   Env | HO: 80.00% | Cont: 98.58% | Task: 81.56% | Resolved: 99.99% | Delay: 2.759s | Energy: 1793.50J | MEC fair: 0.957
+2026-07-06 15:37:20,603 | INFO |   Reward | D: -1306.02 | E: -37.54 | Q: 661.30 | H: 4.90 | LB: 0.00 | Enq: 0.00 | Pen: -611.82
+2026-07-06 15:37:52,039 | INFO | Update   21 | Steps:  21,504 | Episodes:    21 | EpReward:   -45.49 | FPS:     33 | Actor Loss: 0.0003 | Critic Loss: 0.0172
+2026-07-06 15:37:52,039 | INFO |   Env | HO: 83.95% | Cont: 98.62% | Task: 81.51% | Resolved: 99.99% | Delay: 2.780s | Energy: 1857.84J | MEC fair: 0.957
+2026-07-06 15:37:52,039 | INFO |   Reward | D: -1333.10 | E: -38.45 | Q: 670.50 | H: 4.26 | LB: 0.03 | Enq: 0.00 | Pen: -673.34
+2026-07-06 15:38:22,650 | INFO | Update   22 | Steps:  22,528 | Episodes:    22 | EpReward:   -44.88 | FPS:     33 | Actor Loss: -0.0000 | Critic Loss: 0.0191
+2026-07-06 15:38:22,651 | INFO |   Env | HO: 70.00% | Cont: 98.13% | Task: 81.90% | Resolved: 99.99% | Delay: 2.758s | Energy: 1798.56J | MEC fair: 0.957
+2026-07-06 15:38:22,651 | INFO |   Reward | D: -1321.86 | E: -37.46 | Q: 692.75 | H: 4.94 | LB: 0.00 | Enq: 0.00 | Pen: -629.44
+2026-07-06 15:39:01,173 | INFO | Update   23 | Steps:  23,552 | Episodes:    23 | EpReward:   -44.24 | FPS:     27 | Actor Loss: -0.0002 | Critic Loss: 0.0125
+2026-07-06 15:39:01,173 | INFO |   Env | HO: 77.78% | Cont: 98.23% | Task: 82.76% | Resolved: 100.00% | Delay: 2.739s | Energy: 1758.83J | MEC fair: 0.957
+2026-07-06 15:39:01,173 | INFO |   Reward | D: -1299.44 | E: -37.24 | Q: 740.60 | H: 4.83 | LB: 0.00 | Enq: 0.00 | Pen: -607.20
+2026-07-06 15:39:36,009 | INFO | Update   24 | Steps:  24,576 | Episodes:    24 | EpReward:   -43.85 | FPS:     29 | Actor Loss: 0.0005 | Critic Loss: 0.0090
+2026-07-06 15:39:36,009 | INFO |   Env | HO: 77.50% | Cont: 98.50% | Task: 81.65% | Resolved: 99.97% | Delay: 2.805s | Energy: 1869.27J | MEC fair: 0.956
+2026-07-06 15:39:36,009 | INFO |   Reward | D: -1331.29 | E: -37.91 | Q: 675.30 | H: 3.90 | LB: 0.00 | Enq: 0.00 | Pen: -698.71
+2026-07-06 15:40:06,703 | INFO | Update   25 | Steps:  25,600 | Episodes:    25 | EpReward:   -43.41 | FPS:     33 | Actor Loss: -0.0004 | Critic Loss: 0.0083
+2026-07-06 15:40:06,704 | INFO |   Env | HO: 82.72% | Cont: 98.48% | Task: 82.13% | Resolved: 99.97% | Delay: 2.699s | Energy: 1769.61J | MEC fair: 0.957
+2026-07-06 15:40:06,704 | INFO |   Reward | D: -1319.45 | E: -37.61 | Q: 711.65 | H: 4.26 | LB: 0.03 | Enq: 0.00 | Pen: -605.89
+2026-07-06 15:40:36,855 | INFO | Update   26 | Steps:  26,624 | Episodes:    26 | EpReward:   -42.34 | FPS:     34 | Actor Loss: 0.0008 | Critic Loss: 0.0117
+2026-07-06 15:40:36,855 | INFO |   Env | HO: 74.84% | Cont: 97.63% | Task: 83.60% | Resolved: 99.99% | Delay: 2.604s | Energy: 1562.50J | MEC fair: 0.956
+2026-07-06 15:40:36,855 | INFO |   Reward | D: -1263.17 | E: -36.32 | Q: 788.60 | H: 7.45 | LB: 0.00 | Enq: 0.00 | Pen: -439.28
+2026-07-06 15:41:11,097 | INFO | Update   27 | Steps:  27,648 | Episodes:    27 | EpReward:   -41.77 | FPS:     30 | Actor Loss: -0.0004 | Critic Loss: 0.0094
+2026-07-06 15:41:11,097 | INFO |   Env | HO: 80.21% | Cont: 98.60% | Task: 83.82% | Resolved: 100.00% | Delay: 2.639s | Energy: 1634.65J | MEC fair: 0.956
+2026-07-06 15:41:11,097 | INFO |   Reward | D: -1266.09 | E: -37.02 | Q: 799.10 | H: 4.92 | LB: 0.03 | Enq: 0.00 | Pen: -506.57
+2026-07-06 15:41:44,313 | INFO | Update   28 | Steps:  28,672 | Episodes:    28 | EpReward:   -40.81 | FPS:     31 | Actor Loss: 0.0002 | Critic Loss: 0.0050
+2026-07-06 15:41:44,313 | INFO |   Env | HO: 71.17% | Cont: 98.23% | Task: 84.55% | Resolved: 99.96% | Delay: 2.588s | Energy: 1521.17J | MEC fair: 0.957
+2026-07-06 15:41:44,314 | INFO |   Reward | D: -1241.81 | E: -35.90 | Q: 832.85 | H: 5.02 | LB: 0.01 | Enq: 0.00 | Pen: -427.27
+2026-07-06 15:42:21,829 | INFO | Update   29 | Steps:  29,696 | Episodes:    29 | EpReward:   -40.25 | FPS:     27 | Actor Loss: 0.0003 | Critic Loss: 0.0103
+2026-07-06 15:42:21,829 | INFO |   Env | HO: 76.03% | Cont: 98.29% | Task: 83.54% | Resolved: 100.00% | Delay: 2.633s | Energy: 1607.04J | MEC fair: 0.957
+2026-07-06 15:42:21,829 | INFO |   Reward | D: -1252.31 | E: -36.30 | Q: 769.00 | H: 5.95 | LB: 0.06 | Enq: 0.00 | Pen: -488.17
+2026-07-06 15:43:00,224 | INFO | Update   30 | Steps:  30,720 | Episodes:    30 | EpReward:   -39.84 | FPS:     27 | Actor Loss: 0.0001 | Critic Loss: 0.0097
+2026-07-06 15:43:00,224 | INFO |   Env | HO: 76.67% | Cont: 98.16% | Task: 83.30% | Resolved: 100.00% | Delay: 2.635s | Energy: 1603.95J | MEC fair: 0.956
+2026-07-06 15:43:00,224 | INFO |   Reward | D: -1266.48 | E: -35.88 | Q: 765.20 | H: 4.41 | LB: 0.03 | Enq: 0.00 | Pen: -544.15
+2026-07-06 15:43:34,323 | INFO | Update   31 | Steps:  31,744 | Episodes:    31 | EpReward:   -39.55 | FPS:     30 | Actor Loss: -0.0004 | Critic Loss: 0.0182
+2026-07-06 15:43:34,323 | INFO |   Env | HO: 75.90% | Cont: 98.59% | Task: 83.32% | Resolved: 99.99% | Delay: 2.675s | Energy: 1688.84J | MEC fair: 0.956
+2026-07-06 15:43:34,323 | INFO |   Reward | D: -1297.97 | E: -36.07 | Q: 774.85 | H: 3.98 | LB: 0.00 | Enq: 0.00 | Pen: -585.92
+2026-07-06 15:44:08,052 | INFO | Update   32 | Steps:  32,768 | Episodes:    32 | EpReward:   -39.28 | FPS:     30 | Actor Loss: 0.0000 | Critic Loss: 0.0194
+2026-07-06 15:44:08,053 | INFO |   Env | HO: 71.15% | Cont: 98.42% | Task: 82.73% | Resolved: 99.99% | Delay: 2.674s | Energy: 1673.99J | MEC fair: 0.956
+2026-07-06 15:44:08,053 | INFO |   Reward | D: -1293.32 | E: -36.15 | Q: 733.45 | H: 4.66 | LB: 0.07 | Enq: 0.00 | Pen: -586.78
+2026-07-06 15:44:43,309 | INFO | Update   33 | Steps:  33,792 | Episodes:    33 | EpReward:   -39.06 | FPS:     29 | Actor Loss: -0.0001 | Critic Loss: 0.0069
+2026-07-06 15:44:43,309 | INFO |   Env | HO: 75.64% | Cont: 99.11% | Task: 83.27% | Resolved: 100.00% | Delay: 2.718s | Energy: 1773.06J | MEC fair: 0.956
+2026-07-06 15:44:43,309 | INFO |   Reward | D: -1324.27 | E: -36.91 | Q: 777.55 | H: 3.71 | LB: 0.01 | Enq: 0.00 | Pen: -688.13
+2026-07-06 15:45:14,571 | INFO | Update   34 | Steps:  34,816 | Episodes:    34 | EpReward:   -38.85 | FPS:     33 | Actor Loss: 0.0003 | Critic Loss: 0.0082
+2026-07-06 15:45:14,571 | INFO |   Env | HO: 79.22% | Cont: 98.96% | Task: 82.98% | Resolved: 99.99% | Delay: 2.695s | Energy: 1699.03J | MEC fair: 0.956
+2026-07-06 15:45:14,571 | INFO |   Reward | D: -1305.41 | E: -36.64 | Q: 754.20 | H: 3.92 | LB: 0.00 | Enq: 0.00 | Pen: -601.00
+2026-07-06 15:45:46,743 | INFO | Update   35 | Steps:  35,840 | Episodes:    35 | EpReward:   -38.60 | FPS:     32 | Actor Loss: -0.0003 | Critic Loss: 0.0054
+2026-07-06 15:45:46,743 | INFO |   Env | HO: 76.54% | Cont: 98.64% | Task: 83.01% | Resolved: 99.97% | Delay: 2.672s | Energy: 1650.09J | MEC fair: 0.956
+2026-07-06 15:45:46,743 | INFO |   Reward | D: -1294.50 | E: -35.19 | Q: 758.90 | H: 3.96 | LB: 0.01 | Enq: 0.00 | Pen: -604.46
+2026-07-06 15:46:20,799 | INFO | Update   36 | Steps:  36,864 | Episodes:    36 | EpReward:   -38.27 | FPS:     30 | Actor Loss: 0.0002 | Critic Loss: 0.0112
+2026-07-06 15:46:20,799 | INFO |   Env | HO: 81.52% | Cont: 98.09% | Task: 83.77% | Resolved: 99.99% | Delay: 2.637s | Energy: 1548.60J | MEC fair: 0.956
+2026-07-06 15:46:20,799 | INFO |   Reward | D: -1260.45 | E: -34.47 | Q: 792.85 | H: 4.88 | LB: 0.01 | Enq: 0.00 | Pen: -525.23
+2026-07-06 15:46:51,026 | INFO | Update   37 | Steps:  37,888 | Episodes:    37 | EpReward:   -37.85 | FPS:     34 | Actor Loss: 0.0002 | Critic Loss: 0.0054
+2026-07-06 15:46:51,027 | INFO |   Env | HO: 66.35% | Cont: 98.61% | Task: 83.45% | Resolved: 99.94% | Delay: 2.636s | Energy: 1601.61J | MEC fair: 0.956
+2026-07-06 15:46:51,027 | INFO |   Reward | D: -1303.11 | E: -34.75 | Q: 787.05 | H: 4.40 | LB: 0.00 | Enq: 0.00 | Pen: -554.60
+2026-07-06 15:47:24,218 | INFO | Update   38 | Steps:  38,912 | Episodes:    38 | EpReward:   -37.33 | FPS:     31 | Actor Loss: 0.0004 | Critic Loss: 0.0057
+2026-07-06 15:47:24,219 | INFO |   Env | HO: 77.11% | Cont: 97.58% | Task: 83.83% | Resolved: 100.00% | Delay: 2.583s | Energy: 1450.00J | MEC fair: 0.957
+2026-07-06 15:47:24,219 | INFO |   Reward | D: -1250.70 | E: -33.61 | Q: 796.75 | H: 8.04 | LB: -0.00 | Enq: 0.00 | Pen: -436.35
+2026-07-06 15:47:58,013 | INFO | Update   39 | Steps:  39,936 | Episodes:    39 | EpReward:   -36.80 | FPS:     30 | Actor Loss: 0.0006 | Critic Loss: 0.0039
+2026-07-06 15:47:58,014 | INFO |   Env | HO: 80.16% | Cont: 98.23% | Task: 84.16% | Resolved: 99.96% | Delay: 2.574s | Energy: 1493.18J | MEC fair: 0.957
+2026-07-06 15:47:58,014 | INFO |   Reward | D: -1283.02 | E: -35.04 | Q: 834.00 | H: 6.54 | LB: 0.00 | Enq: 0.00 | Pen: -445.18
+2026-07-06 15:48:36,318 | INFO | Update   40 | Steps:  40,960 | Episodes:    40 | EpReward:   -36.66 | FPS:     27 | Actor Loss: 0.0004 | Critic Loss: 0.0074
+2026-07-06 15:48:36,319 | INFO |   Env | HO: 74.78% | Cont: 98.57% | Task: 82.50% | Resolved: 100.00% | Delay: 2.699s | Energy: 1705.17J | MEC fair: 0.956
+2026-07-06 15:48:36,319 | INFO |   Reward | D: -1316.11 | E: -36.17 | Q: 731.35 | H: 5.39 | LB: 0.07 | Enq: 0.00 | Pen: -621.58
+2026-07-06 15:49:11,527 | INFO | Update   41 | Steps:  41,984 | Episodes:    41 | EpReward:   -36.24 | FPS:     29 | Actor Loss: -0.0004 | Critic Loss: 0.0073
+2026-07-06 15:49:11,528 | INFO |   Env | HO: 73.13% | Cont: 97.99% | Task: 84.94% | Resolved: 99.96% | Delay: 2.559s | Energy: 1466.39J | MEC fair: 0.956
+2026-07-06 15:49:11,528 | INFO |   Reward | D: -1233.25 | E: -34.91 | Q: 855.90 | H: 6.00 | LB: 0.13 | Enq: 0.00 | Pen: -408.88
+2026-07-06 15:49:52,432 | INFO | Update   42 | Steps:  43,008 | Episodes:    42 | EpReward:   -35.78 | FPS:     25 | Actor Loss: -0.0001 | Critic Loss: 0.0040
+2026-07-06 15:49:52,432 | INFO |   Env | HO: 76.98% | Cont: 97.97% | Task: 84.86% | Resolved: 100.00% | Delay: 2.552s | Energy: 1506.58J | MEC fair: 0.956
+2026-07-06 15:49:52,432 | INFO |   Reward | D: -1261.15 | E: -36.50 | Q: 875.05 | H: 6.10 | LB: 0.01 | Enq: 0.00 | Pen: -392.91
+2026-07-06 15:50:32,183 | INFO | Update   43 | Steps:  44,032 | Episodes:    43 | EpReward:   -35.46 | FPS:     26 | Actor Loss: 0.0005 | Critic Loss: 0.0055
+2026-07-06 15:50:32,183 | INFO |   Env | HO: 68.94% | Cont: 97.85% | Task: 84.23% | Resolved: 99.97% | Delay: 2.592s | Energy: 1515.03J | MEC fair: 0.955
+2026-07-06 15:50:32,184 | INFO |   Reward | D: -1265.38 | E: -35.35 | Q: 828.95 | H: 6.98 | LB: 0.01 | Enq: 0.00 | Pen: -449.09
+2026-07-06 15:51:13,925 | INFO | Update   44 | Steps:  45,056 | Episodes:    44 | EpReward:   -35.12 | FPS:     25 | Actor Loss: 0.0004 | Critic Loss: 0.0078
+2026-07-06 15:51:13,925 | INFO |   Env | HO: 79.69% | Cont: 97.71% | Task: 85.02% | Resolved: 99.99% | Delay: 2.543s | Energy: 1425.44J | MEC fair: 0.956
+2026-07-06 15:51:13,925 | INFO |   Reward | D: -1232.28 | E: -34.42 | Q: 868.25 | H: 6.42 | LB: 0.06 | Enq: 0.00 | Pen: -384.70
+2026-07-06 15:51:54,768 | INFO | Update   45 | Steps:  46,080 | Episodes:    45 | EpReward:   -34.92 | FPS:     25 | Actor Loss: 0.0010 | Critic Loss: 0.0127
+2026-07-06 15:51:54,768 | INFO |   Env | HO: 78.91% | Cont: 98.40% | Task: 83.83% | Resolved: 99.97% | Delay: 2.602s | Energy: 1540.73J | MEC fair: 0.956
+2026-07-06 15:51:54,768 | INFO |   Reward | D: -1291.02 | E: -34.63 | Q: 809.20 | H: 6.33 | LB: 0.06 | Enq: 0.00 | Pen: -523.68
+2026-07-06 15:52:42,305 | INFO | Update   46 | Steps:  47,104 | Episodes:    46 | EpReward:   -34.81 | FPS:     22 | Actor Loss: 0.0002 | Critic Loss: 0.0073
+2026-07-06 15:52:42,305 | INFO |   Env | HO: 69.41% | Cont: 99.21% | Task: 83.03% | Resolved: 100.00% | Delay: 2.710s | Energy: 1725.33J | MEC fair: 0.957
+2026-07-06 15:52:42,305 | INFO |   Reward | D: -1312.80 | E: -35.52 | Q: 756.85 | H: 3.80 | LB: 0.00 | Enq: 0.00 | Pen: -673.39
+2026-07-06 15:53:23,113 | INFO | Update   47 | Steps:  48,128 | Episodes:    47 | EpReward:   -34.66 | FPS:     25 | Actor Loss: 0.0003 | Critic Loss: 0.0057
+2026-07-06 15:53:23,113 | INFO |   Env | HO: 78.16% | Cont: 98.83% | Task: 84.21% | Resolved: 100.00% | Delay: 2.618s | Energy: 1603.73J | MEC fair: 0.957
+2026-07-06 15:53:23,113 | INFO |   Reward | D: -1291.04 | E: -35.64 | Q: 834.05 | H: 4.30 | LB: 0.07 | Enq: 0.00 | Pen: -542.02
+2026-07-06 15:53:57,766 | INFO | Update   48 | Steps:  49,152 | Episodes:    48 | EpReward:   -34.43 | FPS:     30 | Actor Loss: 0.0004 | Critic Loss: 0.0048
+2026-07-06 15:53:57,766 | INFO |   Env | HO: 79.07% | Cont: 98.74% | Task: 84.14% | Resolved: 99.99% | Delay: 2.640s | Energy: 1633.01J | MEC fair: 0.957
+2026-07-06 15:53:57,767 | INFO |   Reward | D: -1288.06 | E: -36.42 | Q: 826.70 | H: 4.25 | LB: 0.00 | Enq: 0.00 | Pen: -571.48
+2026-07-06 15:54:34,973 | INFO | Update   49 | Steps:  50,176 | Episodes:    49 | EpReward:   -34.39 | FPS:     28 | Actor Loss: 0.0002 | Critic Loss: 0.0112
+2026-07-06 15:54:34,973 | INFO |   Env | HO: 73.63% | Cont: 98.65% | Task: 83.34% | Resolved: 100.00% | Delay: 2.689s | Energy: 1684.92J | MEC fair: 0.957
+2026-07-06 15:54:34,973 | INFO |   Reward | D: -1308.45 | E: -35.69 | Q: 780.50 | H: 4.25 | LB: 0.04 | Enq: 0.00 | Pen: -634.14
+2026-07-06 15:54:34,973 | INFO | ----------------------------------------
+2026-07-06 15:54:34,973 | INFO | 开始评估...
+2026-07-06 15:55:21,351 | INFO | 评估结果: 奖励 = -29.22 ± 3.31, 长度 = 600, 时延 = 2.620s, 能耗 = 2893.71J, MEC公平性 = 0.956
+2026-07-06 15:55:21,352 | INFO | 新的最佳模型 (average delay): score = -2.6195, delay = 2.620s, completion = 83.15%, continuity = 98.50%, mec_fairness = 0.956
+2026-07-06 15:55:21,380 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/best_model.pt
+2026-07-06 15:55:21,380 | INFO | 新的最佳奖励: -29.22
+2026-07-06 15:55:21,380 | INFO | ----------------------------------------
+2026-07-06 15:55:59,292 | INFO | Update   50 | Steps:  51,200 | Episodes:    50 | EpReward:   -34.22 | FPS:     27 | Actor Loss: 0.0004 | Critic Loss: 0.0083
+2026-07-06 15:55:59,292 | INFO |   Env | HO: 81.32% | Cont: 98.48% | Task: 84.24% | Resolved: 99.99% | Delay: 2.625s | Energy: 1562.02J | MEC fair: 0.956
+2026-07-06 15:55:59,292 | INFO |   Reward | D: -1282.11 | E: -34.79 | Q: 836.00 | H: 4.72 | LB: 0.04 | Enq: 0.00 | Pen: -513.27
+2026-07-06 15:56:38,948 | INFO | Update   51 | Steps:  52,224 | Episodes:    51 | EpReward:   -34.21 | FPS:     26 | Actor Loss: 0.0001 | Critic Loss: 0.0093
+2026-07-06 15:56:38,948 | INFO |   Env | HO: 76.64% | Cont: 98.14% | Task: 82.84% | Resolved: 99.99% | Delay: 2.623s | Energy: 1572.69J | MEC fair: 0.956
+2026-07-06 15:56:38,948 | INFO |   Reward | D: -1299.21 | E: -34.70 | Q: 756.55 | H: 5.01 | LB: 0.03 | Enq: 0.00 | Pen: -535.30
+2026-07-06 15:57:11,483 | INFO | Update   52 | Steps:  53,248 | Episodes:    52 | EpReward:   -34.13 | FPS:     31 | Actor Loss: 0.0002 | Critic Loss: 0.0070
+2026-07-06 15:57:11,483 | INFO |   Env | HO: 76.14% | Cont: 99.00% | Task: 83.37% | Resolved: 99.97% | Delay: 2.688s | Energy: 1692.22J | MEC fair: 0.956
+2026-07-06 15:57:11,483 | INFO |   Reward | D: -1317.35 | E: -36.10 | Q: 785.80 | H: 4.32 | LB: 0.00 | Enq: 0.00 | Pen: -632.76
+2026-07-06 15:57:50,435 | INFO | Update   53 | Steps:  54,272 | Episodes:    53 | EpReward:   -34.05 | FPS:     26 | Actor Loss: -0.0001 | Critic Loss: 0.0048
+2026-07-06 15:57:50,436 | INFO |   Env | HO: 79.49% | Cont: 98.58% | Task: 82.25% | Resolved: 99.99% | Delay: 2.737s | Energy: 1729.85J | MEC fair: 0.957
+2026-07-06 15:57:50,436 | INFO |   Reward | D: -1314.93 | E: -35.32 | Q: 711.85 | H: 3.96 | LB: 0.03 | Enq: 0.00 | Pen: -672.83
+2026-07-06 15:58:42,304 | INFO | Update   54 | Steps:  55,296 | Episodes:    54 | EpReward:   -33.89 | FPS:     20 | Actor Loss: -0.0003 | Critic Loss: 0.0060
+2026-07-06 15:58:42,305 | INFO |   Env | HO: 71.72% | Cont: 95.62% | Task: 82.63% | Resolved: 100.00% | Delay: 2.571s | Energy: 1368.35J | MEC fair: 0.956
+2026-07-06 15:58:42,305 | INFO |   Reward | D: -1229.33 | E: -33.18 | Q: 733.50 | H: 6.54 | LB: 0.00 | Enq: 0.00 | Pen: -401.09
+2026-07-06 15:59:20,904 | INFO | Update   55 | Steps:  56,320 | Episodes:    55 | EpReward:   -33.76 | FPS:     27 | Actor Loss: 0.0004 | Critic Loss: 0.0053
+2026-07-06 15:59:20,904 | INFO |   Env | HO: 70.30% | Cont: 96.66% | Task: 82.23% | Resolved: 99.97% | Delay: 2.642s | Energy: 1488.65J | MEC fair: 0.956
+2026-07-06 15:59:20,904 | INFO |   Reward | D: -1246.82 | E: -33.38 | Q: 699.80 | H: 7.52 | LB: 0.03 | Enq: 0.00 | Pen: -499.65
+2026-07-06 15:59:59,309 | INFO | Update   56 | Steps:  57,344 | Episodes:    56 | EpReward:   -33.53 | FPS:     27 | Actor Loss: 0.0005 | Critic Loss: 0.0083
+2026-07-06 15:59:59,310 | INFO |   Env | HO: 66.98% | Cont: 97.42% | Task: 84.62% | Resolved: 100.00% | Delay: 2.576s | Energy: 1439.10J | MEC fair: 0.956
+2026-07-06 15:59:59,310 | INFO |   Reward | D: -1227.90 | E: -33.92 | Q: 837.50 | H: 8.92 | LB: 0.00 | Enq: 0.00 | Pen: -431.56
+2026-07-06 16:00:35,820 | INFO | Update   57 | Steps:  58,368 | Episodes:    57 | EpReward:   -33.32 | FPS:     28 | Actor Loss: -0.0002 | Critic Loss: 0.0056
+2026-07-06 16:00:35,820 | INFO |   Env | HO: 73.53% | Cont: 97.42% | Task: 83.96% | Resolved: 99.94% | Delay: 2.585s | Energy: 1449.77J | MEC fair: 0.957
+2026-07-06 16:00:35,820 | INFO |   Reward | D: -1251.17 | E: -33.41 | Q: 804.50 | H: 7.83 | LB: 0.09 | Enq: 0.00 | Pen: -443.92
+2026-07-06 16:01:10,855 | INFO | Update   58 | Steps:  59,392 | Episodes:    58 | EpReward:   -33.17 | FPS:     29 | Actor Loss: 0.0002 | Critic Loss: 0.0095
+2026-07-06 16:01:10,855 | INFO |   Env | HO: 77.91% | Cont: 98.32% | Task: 84.26% | Resolved: 99.96% | Delay: 2.596s | Energy: 1519.59J | MEC fair: 0.956
+2026-07-06 16:01:10,856 | INFO |   Reward | D: -1292.32 | E: -34.28 | Q: 839.30 | H: 7.82 | LB: 0.06 | Enq: 0.00 | Pen: -486.75
+2026-07-06 16:01:42,962 | INFO | Update   59 | Steps:  60,416 | Episodes:    59 | EpReward:   -32.82 | FPS:     32 | Actor Loss: 0.0002 | Critic Loss: 0.0067
+2026-07-06 16:01:42,963 | INFO |   Env | HO: 75.96% | Cont: 97.36% | Task: 85.52% | Resolved: 99.97% | Delay: 2.454s | Energy: 1287.57J | MEC fair: 0.956
+2026-07-06 16:01:42,963 | INFO |   Reward | D: -1207.07 | E: -34.27 | Q: 903.15 | H: 8.63 | LB: 0.08 | Enq: 0.00 | Pen: -246.06
+2026-07-06 16:02:17,124 | INFO | Update   60 | Steps:  61,440 | Episodes:    60 | EpReward:   -32.61 | FPS:     30 | Actor Loss: -0.0004 | Critic Loss: 0.0061
+2026-07-06 16:02:17,124 | INFO |   Env | HO: 74.79% | Cont: 97.25% | Task: 83.45% | Resolved: 100.00% | Delay: 2.581s | Energy: 1456.12J | MEC fair: 0.956
+2026-07-06 16:02:17,124 | INFO |   Reward | D: -1266.35 | E: -34.04 | Q: 782.75 | H: 11.26 | LB: 0.03 | Enq: 0.00 | Pen: -442.52
+2026-07-06 16:02:53,898 | INFO | Update   61 | Steps:  62,464 | Episodes:    61 | EpReward:   -32.42 | FPS:     28 | Actor Loss: -0.0001 | Critic Loss: 0.0076
+2026-07-06 16:02:53,899 | INFO |   Env | HO: 72.67% | Cont: 97.37% | Task: 83.84% | Resolved: 99.99% | Delay: 2.544s | Energy: 1412.46J | MEC fair: 0.956
+2026-07-06 16:02:53,899 | INFO |   Reward | D: -1257.96 | E: -33.82 | Q: 805.90 | H: 6.71 | LB: 0.04 | Enq: 0.00 | Pen: -401.68
+2026-07-06 16:03:27,117 | INFO | Update   62 | Steps:  63,488 | Episodes:    62 | EpReward:   -32.37 | FPS:     31 | Actor Loss: 0.0001 | Critic Loss: 0.0059
+2026-07-06 16:03:27,117 | INFO |   Env | HO: 78.12% | Cont: 98.22% | Task: 83.38% | Resolved: 99.93% | Delay: 2.548s | Energy: 1432.95J | MEC fair: 0.956
+2026-07-06 16:03:27,118 | INFO |   Reward | D: -1266.56 | E: -33.51 | Q: 774.85 | H: 6.48 | LB: 0.04 | Enq: 0.00 | Pen: -431.75
+2026-07-06 16:04:08,363 | INFO | Update   63 | Steps:  64,512 | Episodes:    63 | EpReward:   -32.31 | FPS:     25 | Actor Loss: 0.0004 | Critic Loss: 0.0074
+2026-07-06 16:04:08,364 | INFO |   Env | HO: 74.19% | Cont: 98.07% | Task: 83.98% | Resolved: 99.99% | Delay: 2.610s | Energy: 1538.17J | MEC fair: 0.956
+2026-07-06 16:04:08,364 | INFO |   Reward | D: -1271.33 | E: -35.16 | Q: 811.30 | H: 5.71 | LB: 0.00 | Enq: 0.00 | Pen: -497.28
+2026-07-06 16:04:43,270 | INFO | Update   64 | Steps:  65,536 | Episodes:    64 | EpReward:   -32.21 | FPS:     29 | Actor Loss: -0.0003 | Critic Loss: 0.0088
+2026-07-06 16:04:43,270 | INFO |   Env | HO: 70.41% | Cont: 98.80% | Task: 83.79% | Resolved: 100.00% | Delay: 2.668s | Energy: 1612.66J | MEC fair: 0.956
+2026-07-06 16:04:43,270 | INFO |   Reward | D: -1282.41 | E: -34.81 | Q: 795.10 | H: 4.34 | LB: 0.03 | Enq: 0.00 | Pen: -588.03
+2026-07-06 16:05:17,166 | INFO | Update   65 | Steps:  66,560 | Episodes:    65 | EpReward:   -32.11 | FPS:     30 | Actor Loss: 0.0000 | Critic Loss: 0.0076
+2026-07-06 16:05:17,166 | INFO |   Env | HO: 80.61% | Cont: 98.72% | Task: 83.99% | Resolved: 99.97% | Delay: 2.631s | Energy: 1563.77J | MEC fair: 0.956
+2026-07-06 16:05:17,166 | INFO |   Reward | D: -1297.30 | E: -34.58 | Q: 824.35 | H: 5.03 | LB: 0.04 | Enq: 0.00 | Pen: -554.52
+2026-07-06 16:05:54,291 | INFO | Update   66 | Steps:  67,584 | Episodes:    66 | EpReward:   -32.02 | FPS:     28 | Actor Loss: -0.0003 | Critic Loss: 0.0194
+2026-07-06 16:05:54,291 | INFO |   Env | HO: 75.78% | Cont: 97.99% | Task: 82.19% | Resolved: 99.99% | Delay: 2.634s | Energy: 1481.87J | MEC fair: 0.957
+2026-07-06 16:05:54,291 | INFO |   Reward | D: -1275.70 | E: -31.50 | Q: 697.25 | H: 6.09 | LB: 0.03 | Enq: 0.00 | Pen: -568.63
+2026-07-06 16:06:33,572 | INFO | Update   67 | Steps:  68,608 | Episodes:    67 | EpReward:   -31.89 | FPS:     26 | Actor Loss: -0.0003 | Critic Loss: 0.0038
+2026-07-06 16:06:33,573 | INFO |   Env | HO: 76.54% | Cont: 97.28% | Task: 83.95% | Resolved: 99.97% | Delay: 2.567s | Energy: 1348.55J | MEC fair: 0.956
+2026-07-06 16:06:33,573 | INFO |   Reward | D: -1230.86 | E: -31.18 | Q: 798.20 | H: 7.89 | LB: 0.07 | Enq: 0.00 | Pen: -439.82
+2026-07-06 16:07:06,490 | INFO | Update   68 | Steps:  69,632 | Episodes:    68 | EpReward:   -31.81 | FPS:     31 | Actor Loss: 0.0004 | Critic Loss: 0.0039
+2026-07-06 16:07:06,494 | INFO |   Env | HO: 71.84% | Cont: 97.74% | Task: 83.42% | Resolved: 100.00% | Delay: 2.614s | Energy: 1481.37J | MEC fair: 0.956
+2026-07-06 16:07:06,494 | INFO |   Reward | D: -1283.73 | E: -32.87 | Q: 786.00 | H: 7.82 | LB: 0.07 | Enq: 0.00 | Pen: -543.95
+2026-07-06 16:07:40,367 | INFO | Update   69 | Steps:  70,656 | Episodes:    69 | EpReward:   -31.70 | FPS:     30 | Actor Loss: -0.0000 | Critic Loss: 0.0020
+2026-07-06 16:07:40,367 | INFO |   Env | HO: 77.18% | Cont: 98.46% | Task: 84.20% | Resolved: 100.00% | Delay: 2.544s | Energy: 1370.67J | MEC fair: 0.956
+2026-07-06 16:07:40,367 | INFO |   Reward | D: -1267.73 | E: -31.42 | Q: 824.80 | H: 7.37 | LB: 0.03 | Enq: 0.00 | Pen: -413.22
+2026-07-06 16:08:12,889 | INFO | Update   70 | Steps:  71,680 | Episodes:    70 | EpReward:   -31.65 | FPS:     31 | Actor Loss: 0.0002 | Critic Loss: 0.0037
+2026-07-06 16:08:12,889 | INFO |   Env | HO: 79.38% | Cont: 98.81% | Task: 83.53% | Resolved: 99.97% | Delay: 2.647s | Energy: 1567.53J | MEC fair: 0.956
+2026-07-06 16:08:12,889 | INFO |   Reward | D: -1301.26 | E: -33.94 | Q: 794.50 | H: 4.79 | LB: 0.04 | Enq: 0.00 | Pen: -580.72
+2026-07-06 16:08:47,763 | INFO | Update   71 | Steps:  72,704 | Episodes:    71 | EpReward:   -31.41 | FPS:     29 | Actor Loss: 0.0001 | Critic Loss: 0.0043
+2026-07-06 16:08:47,763 | INFO |   Env | HO: 81.10% | Cont: 97.72% | Task: 84.31% | Resolved: 99.97% | Delay: 2.582s | Energy: 1383.74J | MEC fair: 0.955
+2026-07-06 16:08:47,764 | INFO |   Reward | D: -1244.89 | E: -32.32 | Q: 830.55 | H: 6.48 | LB: 0.00 | Enq: 0.00 | Pen: -423.65
+2026-07-06 16:09:23,531 | INFO | Update   72 | Steps:  73,728 | Episodes:    72 | EpReward:   -31.18 | FPS:     29 | Actor Loss: 0.0001 | Critic Loss: 0.0010
+2026-07-06 16:09:23,531 | INFO |   Env | HO: 75.68% | Cont: 98.05% | Task: 84.71% | Resolved: 100.00% | Delay: 2.549s | Energy: 1378.82J | MEC fair: 0.956
+2026-07-06 16:09:23,531 | INFO |   Reward | D: -1247.56 | E: -32.72 | Q: 857.95 | H: 5.33 | LB: 0.00 | Enq: 0.00 | Pen: -443.06
+2026-07-06 16:09:58,756 | INFO | Update   73 | Steps:  74,752 | Episodes:    73 | EpReward:   -31.12 | FPS:     29 | Actor Loss: 0.0003 | Critic Loss: 0.0022
+2026-07-06 16:09:58,756 | INFO |   Env | HO: 75.27% | Cont: 98.72% | Task: 83.97% | Resolved: 99.94% | Delay: 2.592s | Energy: 1467.39J | MEC fair: 0.956
+2026-07-06 16:09:58,756 | INFO |   Reward | D: -1265.16 | E: -32.34 | Q: 807.95 | H: 4.38 | LB: -0.01 | Enq: 0.00 | Pen: -540.90
+2026-07-06 16:10:34,751 | INFO | Update   74 | Steps:  75,776 | Episodes:    74 | EpReward:   -31.03 | FPS:     28 | Actor Loss: 0.0007 | Critic Loss: 0.0044
+2026-07-06 16:10:34,752 | INFO |   Env | HO: 80.20% | Cont: 98.05% | Task: 83.43% | Resolved: 100.00% | Delay: 2.587s | Energy: 1419.30J | MEC fair: 0.956
+2026-07-06 16:10:34,752 | INFO |   Reward | D: -1259.61 | E: -31.56 | Q: 776.20 | H: 5.05 | LB: 0.00 | Enq: 0.00 | Pen: -498.49
+2026-07-06 16:11:09,711 | INFO | Update   75 | Steps:  76,800 | Episodes:    75 | EpReward:   -30.89 | FPS:     29 | Actor Loss: 0.0004 | Critic Loss: 0.0051
+2026-07-06 16:11:09,711 | INFO |   Env | HO: 74.44% | Cont: 97.57% | Task: 84.37% | Resolved: 99.90% | Delay: 2.519s | Energy: 1309.59J | MEC fair: 0.955
+2026-07-06 16:11:09,711 | INFO |   Reward | D: -1238.63 | E: -31.78 | Q: 838.85 | H: 6.23 | LB: 0.00 | Enq: 0.00 | Pen: -368.85
+2026-07-06 16:11:43,575 | INFO | Update   76 | Steps:  77,824 | Episodes:    76 | EpReward:   -30.69 | FPS:     30 | Actor Loss: 0.0001 | Critic Loss: 0.0048
+2026-07-06 16:11:43,575 | INFO |   Env | HO: 78.70% | Cont: 98.17% | Task: 84.76% | Resolved: 99.99% | Delay: 2.519s | Energy: 1361.98J | MEC fair: 0.957
+2026-07-06 16:11:43,575 | INFO |   Reward | D: -1255.83 | E: -32.44 | Q: 867.70 | H: 5.29 | LB: 0.03 | Enq: 0.00 | Pen: -405.66
+2026-07-06 16:12:16,844 | INFO | Update   77 | Steps:  78,848 | Episodes:    77 | EpReward:   -30.53 | FPS:     31 | Actor Loss: 0.0004 | Critic Loss: 0.0011
+2026-07-06 16:12:16,845 | INFO |   Env | HO: 75.86% | Cont: 98.20% | Task: 85.39% | Resolved: 100.00% | Delay: 2.488s | Energy: 1297.06J | MEC fair: 0.956
+2026-07-06 16:12:16,845 | INFO |   Reward | D: -1242.94 | E: -31.82 | Q: 898.85 | H: 5.50 | LB: 0.06 | Enq: 0.00 | Pen: -352.13
+2026-07-06 16:12:50,943 | INFO | Update   78 | Steps:  79,872 | Episodes:    78 | EpReward:   -30.34 | FPS:     30 | Actor Loss: -0.0001 | Critic Loss: 0.0010
+2026-07-06 16:12:50,943 | INFO |   Env | HO: 68.15% | Cont: 97.90% | Task: 86.00% | Resolved: 100.00% | Delay: 2.484s | Energy: 1328.25J | MEC fair: 0.955
+2026-07-06 16:12:50,944 | INFO |   Reward | D: -1245.83 | E: -33.33 | Q: 952.20 | H: 6.72 | LB: 0.12 | Enq: 0.00 | Pen: -338.87
+2026-07-06 16:13:28,169 | INFO | Update   79 | Steps:  80,896 | Episodes:    79 | EpReward:   -30.34 | FPS:     28 | Actor Loss: 0.0005 | Critic Loss: 0.0062
+2026-07-06 16:13:28,169 | INFO |   Env | HO: 72.12% | Cont: 98.46% | Task: 82.81% | Resolved: 99.93% | Delay: 2.690s | Energy: 1630.85J | MEC fair: 0.956
+2026-07-06 16:13:28,169 | INFO |   Reward | D: -1305.49 | E: -33.54 | Q: 747.80 | H: 4.76 | LB: 0.04 | Enq: 0.00 | Pen: -654.43
+2026-07-06 16:14:05,311 | INFO | Update   80 | Steps:  81,920 | Episodes:    80 | EpReward:   -30.18 | FPS:     28 | Actor Loss: 0.0005 | Critic Loss: 0.0041
+2026-07-06 16:14:05,311 | INFO |   Env | HO: 71.97% | Cont: 97.45% | Task: 83.70% | Resolved: 100.00% | Delay: 2.519s | Energy: 1330.64J | MEC fair: 0.955
+2026-07-06 16:14:05,311 | INFO |   Reward | D: -1261.48 | E: -31.81 | Q: 806.75 | H: 6.01 | LB: 0.00 | Enq: 0.00 | Pen: -406.51
+2026-07-06 16:14:48,861 | INFO | Update   81 | Steps:  82,944 | Episodes:    81 | EpReward:   -30.17 | FPS:     24 | Actor Loss: 0.0006 | Critic Loss: 0.0054
+2026-07-06 16:14:48,866 | INFO |   Env | HO: 75.00% | Cont: 98.09% | Task: 82.72% | Resolved: 99.97% | Delay: 2.685s | Energy: 1594.78J | MEC fair: 0.955
+2026-07-06 16:14:48,866 | INFO |   Reward | D: -1304.50 | E: -33.61 | Q: 745.50 | H: 4.51 | LB: 0.03 | Enq: 0.00 | Pen: -638.66
+2026-07-06 16:15:22,531 | INFO | Update   82 | Steps:  83,968 | Episodes:    82 | EpReward:   -30.04 | FPS:     30 | Actor Loss: 0.0002 | Critic Loss: 0.0020
+2026-07-06 16:15:22,531 | INFO |   Env | HO: 75.94% | Cont: 97.95% | Task: 84.07% | Resolved: 99.97% | Delay: 2.546s | Energy: 1337.56J | MEC fair: 0.955
+2026-07-06 16:15:22,531 | INFO |   Reward | D: -1240.81 | E: -31.28 | Q: 807.95 | H: 6.28 | LB: 0.00 | Enq: 0.00 | Pen: -407.36
+2026-07-06 16:15:55,177 | INFO | Update   83 | Steps:  84,992 | Episodes:    83 | EpReward:   -30.04 | FPS:     31 | Actor Loss: 0.0003 | Critic Loss: 0.0044
+2026-07-06 16:15:55,177 | INFO |   Env | HO: 72.97% | Cont: 98.19% | Task: 82.86% | Resolved: 99.99% | Delay: 2.653s | Energy: 1532.36J | MEC fair: 0.956
+2026-07-06 16:15:55,177 | INFO |   Reward | D: -1302.55 | E: -32.58 | Q: 751.25 | H: 5.14 | LB: 0.03 | Enq: 0.00 | Pen: -586.29
+2026-07-06 16:16:30,981 | INFO | Update   84 | Steps:  86,016 | Episodes:    84 | EpReward:   -30.03 | FPS:     29 | Actor Loss: -0.0001 | Critic Loss: 0.0058
+2026-07-06 16:16:30,982 | INFO |   Env | HO: 76.04% | Cont: 98.56% | Task: 83.41% | Resolved: 99.99% | Delay: 2.619s | Energy: 1471.78J | MEC fair: 0.956
+2026-07-06 16:16:30,982 | INFO |   Reward | D: -1264.59 | E: -32.20 | Q: 770.70 | H: 4.69 | LB: 0.00 | Enq: 0.00 | Pen: -561.49
+2026-07-06 16:17:06,763 | INFO | Update   85 | Steps:  87,040 | Episodes:    85 | EpReward:   -30.02 | FPS:     29 | Actor Loss: 0.0004 | Critic Loss: 0.0076
+2026-07-06 16:17:06,763 | INFO |   Env | HO: 79.21% | Cont: 98.68% | Task: 84.78% | Resolved: 99.97% | Delay: 2.557s | Energy: 1407.61J | MEC fair: 0.954
+2026-07-06 16:17:06,763 | INFO |   Reward | D: -1294.90 | E: -32.21 | Q: 883.10 | H: 5.02 | LB: 0.00 | Enq: 0.00 | Pen: -441.23
+2026-07-06 16:17:48,999 | INFO | Update   86 | Steps:  88,064 | Episodes:    86 | EpReward:   -29.98 | FPS:     24 | Actor Loss: 0.0001 | Critic Loss: 0.0132
+2026-07-06 16:17:49,000 | INFO |   Env | HO: 75.23% | Cont: 98.49% | Task: 83.49% | Resolved: 99.99% | Delay: 2.614s | Energy: 1479.61J | MEC fair: 0.956
+2026-07-06 16:17:49,000 | INFO |   Reward | D: -1303.31 | E: -31.87 | Q: 792.45 | H: 5.07 | LB: 0.08 | Enq: 0.00 | Pen: -552.09
+2026-07-06 16:18:28,461 | INFO | Update   87 | Steps:  89,088 | Episodes:    87 | EpReward:   -29.99 | FPS:     26 | Actor Loss: 0.0003 | Critic Loss: 0.0078
+2026-07-06 16:18:28,462 | INFO |   Env | HO: 67.67% | Cont: 97.45% | Task: 83.64% | Resolved: 99.97% | Delay: 2.594s | Energy: 1400.43J | MEC fair: 0.955
+2026-07-06 16:18:28,467 | INFO |   Reward | D: -1255.98 | E: -31.83 | Q: 793.65 | H: 5.70 | LB: 0.07 | Enq: 0.00 | Pen: -472.17
+2026-07-06 16:19:01,198 | INFO | Update   88 | Steps:  90,112 | Episodes:    88 | EpReward:   -29.97 | FPS:     31 | Actor Loss: 0.0004 | Critic Loss: 0.0058
+2026-07-06 16:19:01,198 | INFO |   Env | HO: 75.96% | Cont: 98.26% | Task: 83.27% | Resolved: 99.96% | Delay: 2.605s | Energy: 1456.37J | MEC fair: 0.956
+2026-07-06 16:19:01,199 | INFO |   Reward | D: -1273.17 | E: -32.43 | Q: 770.80 | H: 4.89 | LB: 0.01 | Enq: 0.00 | Pen: -512.46
+2026-07-06 16:19:31,843 | INFO | Update   89 | Steps:  91,136 | Episodes:    89 | EpReward:   -29.86 | FPS:     33 | Actor Loss: 0.0005 | Critic Loss: 0.0013
+2026-07-06 16:19:31,843 | INFO |   Env | HO: 73.68% | Cont: 97.82% | Task: 84.33% | Resolved: 100.00% | Delay: 2.555s | Energy: 1395.11J | MEC fair: 0.956
+2026-07-06 16:19:31,843 | INFO |   Reward | D: -1261.86 | E: -32.27 | Q: 840.55 | H: 5.32 | LB: 0.00 | Enq: 0.00 | Pen: -449.89
+2026-07-06 16:20:06,418 | INFO | Update   90 | Steps:  92,160 | Episodes:    90 | EpReward:   -29.83 | FPS:     30 | Actor Loss: 0.0006 | Critic Loss: 0.0024
+2026-07-06 16:20:06,418 | INFO |   Env | HO: 67.96% | Cont: 97.23% | Task: 83.51% | Resolved: 99.99% | Delay: 2.570s | Energy: 1367.91J | MEC fair: 0.956
+2026-07-06 16:20:06,418 | INFO |   Reward | D: -1260.84 | E: -31.46 | Q: 789.10 | H: 7.54 | LB: 0.01 | Enq: 0.00 | Pen: -464.16
+2026-07-06 16:20:40,140 | INFO | Update   91 | Steps:  93,184 | Episodes:    91 | EpReward:   -29.74 | FPS:     30 | Actor Loss: -0.0000 | Critic Loss: 0.0017
+2026-07-06 16:20:40,141 | INFO |   Env | HO: 74.71% | Cont: 97.88% | Task: 83.76% | Resolved: 99.97% | Delay: 2.604s | Energy: 1414.98J | MEC fair: 0.956
+2026-07-06 16:20:40,141 | INFO |   Reward | D: -1259.61 | E: -31.86 | Q: 796.25 | H: 7.93 | LB: 0.04 | Enq: 0.00 | Pen: -493.16
+2026-07-06 16:21:11,610 | INFO | Update   92 | Steps:  94,208 | Episodes:    92 | EpReward:   -29.70 | FPS:     33 | Actor Loss: 0.0002 | Critic Loss: 0.0063
+2026-07-06 16:21:11,611 | INFO |   Env | HO: 72.37% | Cont: 97.97% | Task: 83.75% | Resolved: 99.99% | Delay: 2.591s | Energy: 1386.95J | MEC fair: 0.956
+2026-07-06 16:21:11,611 | INFO |   Reward | D: -1270.81 | E: -31.08 | Q: 801.60 | H: 6.88 | LB: 0.02 | Enq: 0.00 | Pen: -474.92
+2026-07-06 16:21:41,764 | INFO | Update   93 | Steps:  95,232 | Episodes:    93 | EpReward:   -29.66 | FPS:     34 | Actor Loss: 0.0003 | Critic Loss: 0.0039
+2026-07-06 16:21:41,764 | INFO |   Env | HO: 72.19% | Cont: 97.68% | Task: 83.94% | Resolved: 100.00% | Delay: 2.590s | Energy: 1410.47J | MEC fair: 0.955
+2026-07-06 16:21:41,764 | INFO |   Reward | D: -1269.22 | E: -32.67 | Q: 817.05 | H: 6.80 | LB: 0.03 | Enq: 0.00 | Pen: -482.01
+2026-07-06 16:22:11,635 | INFO | Update   94 | Steps:  96,256 | Episodes:    94 | EpReward:   -29.59 | FPS:     34 | Actor Loss: 0.0007 | Critic Loss: 0.0015
+2026-07-06 16:22:11,635 | INFO |   Env | HO: 75.45% | Cont: 98.21% | Task: 84.65% | Resolved: 99.99% | Delay: 2.583s | Energy: 1421.28J | MEC fair: 0.956
+2026-07-06 16:22:11,635 | INFO |   Reward | D: -1264.96 | E: -31.89 | Q: 858.95 | H: 5.25 | LB: 0.03 | Enq: 0.00 | Pen: -473.39
+2026-07-06 16:22:42,271 | INFO | Update   95 | Steps:  97,280 | Episodes:    95 | EpReward:   -29.48 | FPS:     33 | Actor Loss: 0.0000 | Critic Loss: 0.0054
+2026-07-06 16:22:42,271 | INFO |   Env | HO: 69.34% | Cont: 98.08% | Task: 84.63% | Resolved: 99.97% | Delay: 2.600s | Energy: 1462.81J | MEC fair: 0.956
+2026-07-06 16:22:42,271 | INFO |   Reward | D: -1280.40 | E: -33.10 | Q: 865.35 | H: 5.81 | LB: 0.00 | Enq: 0.00 | Pen: -528.47
+2026-07-06 16:23:17,583 | INFO | Update   96 | Steps:  98,304 | Episodes:    96 | EpReward:   -29.48 | FPS:     29 | Actor Loss: 0.0003 | Critic Loss: 0.0045
+2026-07-06 16:23:17,583 | INFO |   Env | HO: 73.98% | Cont: 97.89% | Task: 83.53% | Resolved: 99.99% | Delay: 2.629s | Energy: 1509.97J | MEC fair: 0.956
+2026-07-06 16:23:17,583 | INFO |   Reward | D: -1304.08 | E: -33.20 | Q: 811.25 | H: 5.68 | LB: 0.01 | Enq: 0.00 | Pen: -549.25
+2026-07-06 16:23:53,770 | INFO | Update   97 | Steps:  99,328 | Episodes:    97 | EpReward:   -29.48 | FPS:     28 | Actor Loss: 0.0000 | Critic Loss: 0.0080
+2026-07-06 16:23:53,771 | INFO |   Env | HO: 72.95% | Cont: 98.15% | Task: 83.66% | Resolved: 100.00% | Delay: 2.607s | Energy: 1443.69J | MEC fair: 0.955
+2026-07-06 16:23:53,771 | INFO |   Reward | D: -1279.05 | E: -31.81 | Q: 790.70 | H: 5.65 | LB: 0.10 | Enq: 0.00 | Pen: -541.85
+2026-07-06 16:24:24,328 | INFO | Update   98 | Steps: 100,352 | Episodes:    98 | EpReward:   -29.52 | FPS:     34 | Actor Loss: -0.0011 | Critic Loss: 0.0043
+2026-07-06 16:24:24,328 | INFO |   Env | HO: 72.65% | Cont: 97.92% | Task: 82.81% | Resolved: 99.94% | Delay: 2.667s | Energy: 1525.71J | MEC fair: 0.955
+2026-07-06 16:24:24,329 | INFO |   Reward | D: -1284.97 | E: -32.52 | Q: 743.65 | H: 5.22 | LB: 0.01 | Enq: 0.00 | Pen: -594.19
+2026-07-06 16:24:24,329 | INFO | ----------------------------------------
+2026-07-06 16:24:24,329 | INFO | 开始评估...
+2026-07-06 16:24:59,530 | INFO | 评估结果: 奖励 = -27.61 ± 4.76, 长度 = 600, 时延 = 2.627s, 能耗 = 2652.16J, MEC公平性 = 0.956
+2026-07-06 16:24:59,530 | INFO | 新的最佳奖励: -27.61
+2026-07-06 16:24:59,530 | INFO | ----------------------------------------
+2026-07-06 16:24:59,554 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/checkpoint_100352.pt
+2026-07-06 16:25:37,791 | INFO | Update   99 | Steps: 101,376 | Episodes:    99 | EpReward:   -29.48 | FPS:     27 | Actor Loss: 0.0002 | Critic Loss: 0.0035
+2026-07-06 16:25:37,791 | INFO |   Env | HO: 77.36% | Cont: 98.30% | Task: 84.05% | Resolved: 99.99% | Delay: 2.557s | Energy: 1349.92J | MEC fair: 0.956
+2026-07-06 16:25:37,791 | INFO |   Reward | D: -1248.15 | E: -31.09 | Q: 805.70 | H: 5.07 | LB: -0.01 | Enq: 0.00 | Pen: -463.44
+2026-07-06 16:26:12,121 | INFO | Update  100 | Steps: 102,400 | Episodes:   100 | EpReward:   -29.46 | FPS:     30 | Actor Loss: 0.0003 | Critic Loss: 0.0056
+2026-07-06 16:26:12,121 | INFO |   Env | HO: 68.22% | Cont: 98.05% | Task: 83.25% | Resolved: 100.00% | Delay: 2.678s | Energy: 1526.95J | MEC fair: 0.956
+2026-07-06 16:26:12,121 | INFO |   Reward | D: -1288.99 | E: -31.61 | Q: 771.25 | H: 4.52 | LB: 0.04 | Enq: 0.00 | Pen: -642.96
+2026-07-06 16:26:42,422 | INFO | Update  101 | Steps: 103,424 | Episodes:   101 | EpReward:   -28.88 | FPS:     34 | Actor Loss: -0.0006 | Critic Loss: 0.0118
+2026-07-06 16:26:42,422 | INFO |   Env | HO: 77.01% | Cont: 98.51% | Task: 82.84% | Resolved: 99.99% | Delay: 2.676s | Energy: 1546.52J | MEC fair: 0.955
+2026-07-06 16:26:42,422 | INFO |   Reward | D: -1300.86 | E: -31.90 | Q: 744.80 | H: 4.29 | LB: 0.00 | Enq: 0.00 | Pen: -642.34
+2026-07-06 16:27:14,243 | INFO | Update  102 | Steps: 104,448 | Episodes:   102 | EpReward:   -28.29 | FPS:     32 | Actor Loss: 0.0001 | Critic Loss: 0.0064
+2026-07-06 16:27:14,243 | INFO |   Env | HO: 71.84% | Cont: 98.18% | Task: 82.96% | Resolved: 99.97% | Delay: 2.650s | Energy: 1520.69J | MEC fair: 0.956
+2026-07-06 16:27:14,243 | INFO |   Reward | D: -1296.96 | E: -31.89 | Q: 756.50 | H: 4.69 | LB: 0.04 | Enq: 0.00 | Pen: -625.03
+2026-07-06 16:27:51,606 | INFO | Update  103 | Steps: 105,472 | Episodes:   103 | EpReward:   -27.71 | FPS:     27 | Actor Loss: -0.0001 | Critic Loss: 0.0084
+2026-07-06 16:27:51,606 | INFO |   Env | HO: 79.27% | Cont: 98.74% | Task: 82.72% | Resolved: 100.00% | Delay: 2.721s | Energy: 1616.56J | MEC fair: 0.956
+2026-07-06 16:27:51,606 | INFO |   Reward | D: -1296.83 | E: -32.54 | Q: 729.05 | H: 4.12 | LB: 0.04 | Enq: 0.00 | Pen: -680.09
+2026-07-06 16:28:36,640 | INFO | Update  104 | Steps: 106,496 | Episodes:   104 | EpReward:   -27.09 | FPS:     23 | Actor Loss: -0.0006 | Critic Loss: 0.0086
+2026-07-06 16:28:36,640 | INFO |   Env | HO: 75.73% | Cont: 98.21% | Task: 82.23% | Resolved: 99.93% | Delay: 2.639s | Energy: 1485.11J | MEC fair: 0.956
+2026-07-06 16:28:36,640 | INFO |   Reward | D: -1295.24 | E: -31.22 | Q: 707.10 | H: 4.98 | LB: 0.03 | Enq: 0.00 | Pen: -605.42
+2026-07-06 16:29:14,948 | INFO | Update  105 | Steps: 107,520 | Episodes:   105 | EpReward:   -26.76 | FPS:     27 | Actor Loss: 0.0003 | Critic Loss: 0.0089
+2026-07-06 16:29:14,948 | INFO |   Env | HO: 75.96% | Cont: 98.63% | Task: 83.38% | Resolved: 99.99% | Delay: 2.681s | Energy: 1564.99J | MEC fair: 0.956
+2026-07-06 16:29:14,948 | INFO |   Reward | D: -1315.06 | E: -32.69 | Q: 792.40 | H: 4.95 | LB: 0.00 | Enq: 0.00 | Pen: -606.30
+2026-07-06 16:29:44,726 | INFO | Update  106 | Steps: 108,544 | Episodes:   106 | EpReward:   -26.55 | FPS:     34 | Actor Loss: 0.0009 | Critic Loss: 0.0078
+2026-07-06 16:29:44,726 | INFO |   Env | HO: 80.65% | Cont: 98.49% | Task: 84.12% | Resolved: 99.99% | Delay: 2.619s | Energy: 1440.24J | MEC fair: 0.956
+2026-07-06 16:29:44,726 | INFO |   Reward | D: -1274.87 | E: -30.94 | Q: 826.80 | H: 4.74 | LB: 0.00 | Enq: 0.00 | Pen: -536.03
+2026-07-06 16:30:20,277 | INFO | Update  107 | Steps: 109,568 | Episodes:   107 | EpReward:   -26.44 | FPS:     29 | Actor Loss: -0.0001 | Critic Loss: 0.0059
+2026-07-06 16:30:20,277 | INFO |   Env | HO: 71.74% | Cont: 97.83% | Task: 82.04% | Resolved: 99.94% | Delay: 2.713s | Energy: 1588.60J | MEC fair: 0.956
+2026-07-06 16:30:20,277 | INFO |   Reward | D: -1303.12 | E: -32.26 | Q: 700.30 | H: 4.16 | LB: 0.00 | Enq: 0.00 | Pen: -685.52
+2026-07-06 16:30:56,521 | INFO | Update  108 | Steps: 110,592 | Episodes:   108 | EpReward:   -26.25 | FPS:     28 | Actor Loss: -0.0003 | Critic Loss: 0.0109
+2026-07-06 16:30:56,521 | INFO |   Env | HO: 74.34% | Cont: 97.14% | Task: 84.79% | Resolved: 99.99% | Delay: 2.457s | Energy: 1131.26J | MEC fair: 0.956
+2026-07-06 16:30:56,521 | INFO |   Reward | D: -1197.53 | E: -29.12 | Q: 851.20 | H: 6.86 | LB: 0.02 | Enq: 0.00 | Pen: -299.05
+2026-07-06 16:31:36,366 | INFO | Update  109 | Steps: 111,616 | Episodes:   109 | EpReward:   -25.98 | FPS:     26 | Actor Loss: -0.0001 | Critic Loss: 0.0050
+2026-07-06 16:31:36,366 | INFO |   Env | HO: 69.19% | Cont: 97.36% | Task: 84.84% | Resolved: 99.99% | Delay: 2.487s | Energy: 1224.88J | MEC fair: 0.956
+2026-07-06 16:31:36,366 | INFO |   Reward | D: -1245.24 | E: -30.43 | Q: 869.85 | H: 7.28 | LB: 0.01 | Enq: 0.00 | Pen: -351.93
+2026-07-06 16:32:08,798 | INFO | Update  110 | Steps: 112,640 | Episodes:   110 | EpReward:   -25.74 | FPS:     32 | Actor Loss: -0.0001 | Critic Loss: 0.0047
+2026-07-06 16:32:08,799 | INFO |   Env | HO: 69.70% | Cont: 98.15% | Task: 84.75% | Resolved: 99.96% | Delay: 2.511s | Energy: 1280.60J | MEC fair: 0.956
+2026-07-06 16:32:08,799 | INFO |   Reward | D: -1232.23 | E: -30.55 | Q: 849.15 | H: 5.65 | LB: 0.13 | Enq: 0.00 | Pen: -410.74
+2026-07-06 16:32:41,954 | INFO | Update  111 | Steps: 113,664 | Episodes:   111 | EpReward:   -25.63 | FPS:     31 | Actor Loss: -0.0002 | Critic Loss: 0.0048
+2026-07-06 16:32:41,954 | INFO |   Env | HO: 71.72% | Cont: 97.73% | Task: 84.68% | Resolved: 100.00% | Delay: 2.521s | Energy: 1305.49J | MEC fair: 0.956
+2026-07-06 16:32:41,954 | INFO |   Reward | D: -1245.04 | E: -31.87 | Q: 861.15 | H: 6.50 | LB: 0.00 | Enq: 0.00 | Pen: -388.87
+2026-07-06 16:33:19,578 | INFO | Update  112 | Steps: 114,688 | Episodes:   112 | EpReward:   -25.52 | FPS:     27 | Actor Loss: -0.0002 | Critic Loss: 0.0033
+2026-07-06 16:33:19,578 | INFO |   Env | HO: 80.00% | Cont: 97.92% | Task: 83.65% | Resolved: 100.00% | Delay: 2.599s | Energy: 1413.70J | MEC fair: 0.956
+2026-07-06 16:33:19,578 | INFO |   Reward | D: -1249.41 | E: -31.63 | Q: 790.35 | H: 5.17 | LB: 0.01 | Enq: 0.00 | Pen: -485.69
+2026-07-06 16:33:55,938 | INFO | Update  113 | Steps: 115,712 | Episodes:   113 | EpReward:   -25.49 | FPS:     28 | Actor Loss: 0.0001 | Critic Loss: 0.0029
+2026-07-06 16:33:55,938 | INFO |   Env | HO: 68.39% | Cont: 97.56% | Task: 83.23% | Resolved: 99.92% | Delay: 2.589s | Energy: 1372.47J | MEC fair: 0.956
+2026-07-06 16:33:55,938 | INFO |   Reward | D: -1264.07 | E: -31.29 | Q: 770.05 | H: 6.50 | LB: 0.04 | Enq: 0.00 | Pen: -488.30
+2026-07-06 16:34:29,187 | INFO | Update  114 | Steps: 116,736 | Episodes:   114 | EpReward:   -25.44 | FPS:     31 | Actor Loss: -0.0004 | Critic Loss: 0.0048
+2026-07-06 16:34:29,188 | INFO |   Env | HO: 72.39% | Cont: 97.76% | Task: 83.76% | Resolved: 100.00% | Delay: 2.580s | Energy: 1380.40J | MEC fair: 0.956
+2026-07-06 16:34:29,188 | INFO |   Reward | D: -1258.12 | E: -30.94 | Q: 798.20 | H: 6.04 | LB: 0.00 | Enq: 0.00 | Pen: -499.70
+2026-07-06 16:35:06,533 | INFO | Update  115 | Steps: 117,760 | Episodes:   115 | EpReward:   -25.49 | FPS:     27 | Actor Loss: -0.0004 | Critic Loss: 0.0073
+2026-07-06 16:35:06,533 | INFO |   Env | HO: 74.56% | Cont: 98.28% | Task: 82.33% | Resolved: 99.99% | Delay: 2.670s | Energy: 1511.79J | MEC fair: 0.956
+2026-07-06 16:35:06,533 | INFO |   Reward | D: -1310.84 | E: -30.99 | Q: 720.50 | H: 5.29 | LB: 0.04 | Enq: 0.00 | Pen: -605.05
+2026-07-06 16:35:42,567 | INFO | Update  116 | Steps: 118,784 | Episodes:   116 | EpReward:   -25.43 | FPS:     28 | Actor Loss: 0.0000 | Critic Loss: 0.0033
+2026-07-06 16:35:42,568 | INFO |   Env | HO: 79.31% | Cont: 98.03% | Task: 84.85% | Resolved: 99.99% | Delay: 2.535s | Energy: 1336.40J | MEC fair: 0.956
+2026-07-06 16:35:42,568 | INFO |   Reward | D: -1253.20 | E: -31.51 | Q: 869.15 | H: 5.77 | LB: 0.00 | Enq: 0.00 | Pen: -423.73
+2026-07-06 16:36:18,118 | INFO | Update  117 | Steps: 119,808 | Episodes:   117 | EpReward:   -25.37 | FPS:     29 | Actor Loss: -0.0001 | Critic Loss: 0.0034
+2026-07-06 16:36:18,118 | INFO |   Env | HO: 75.24% | Cont: 98.03% | Task: 83.80% | Resolved: 99.99% | Delay: 2.648s | Energy: 1433.19J | MEC fair: 0.955
+2026-07-06 16:36:18,118 | INFO |   Reward | D: -1254.13 | E: -30.60 | Q: 790.90 | H: 4.97 | LB: 0.04 | Enq: 0.00 | Pen: -547.26
+2026-07-06 16:36:57,586 | INFO | Update  118 | Steps: 120,832 | Episodes:   118 | EpReward:   -25.39 | FPS:     26 | Actor Loss: -0.0001 | Critic Loss: 0.0057
+2026-07-06 16:36:57,586 | INFO |   Env | HO: 79.80% | Cont: 98.56% | Task: 82.83% | Resolved: 99.97% | Delay: 2.716s | Energy: 1560.11J | MEC fair: 0.955
+2026-07-06 16:36:57,586 | INFO |   Reward | D: -1296.26 | E: -31.67 | Q: 744.20 | H: 4.98 | LB: 0.03 | Enq: 0.00 | Pen: -651.69
+2026-07-06 16:37:37,517 | INFO | Update  119 | Steps: 121,856 | Episodes:   119 | EpReward:   -25.35 | FPS:     26 | Actor Loss: 0.0001 | Critic Loss: 0.0034
+2026-07-06 16:37:37,517 | INFO |   Env | HO: 72.06% | Cont: 97.62% | Task: 84.56% | Resolved: 99.97% | Delay: 2.503s | Energy: 1264.29J | MEC fair: 0.956
+2026-07-06 16:37:37,517 | INFO |   Reward | D: -1250.05 | E: -30.19 | Q: 848.70 | H: 9.25 | LB: 0.17 | Enq: 0.00 | Pen: -411.93
+2026-07-06 16:38:23,509 | INFO | Update  120 | Steps: 122,880 | Episodes:   120 | EpReward:   -25.27 | FPS:     22 | Actor Loss: 0.0001 | Critic Loss: 0.0052
+2026-07-06 16:38:23,509 | INFO |   Env | HO: 63.97% | Cont: 97.74% | Task: 83.60% | Resolved: 99.99% | Delay: 2.570s | Energy: 1313.35J | MEC fair: 0.956
+2026-07-06 16:38:23,509 | INFO |   Reward | D: -1240.21 | E: -29.68 | Q: 779.65 | H: 5.37 | LB: 0.01 | Enq: 0.00 | Pen: -474.52
+2026-07-06 16:38:58,838 | INFO | Update  121 | Steps: 123,904 | Episodes:   121 | EpReward:   -25.28 | FPS:     29 | Actor Loss: 0.0001 | Critic Loss: 0.0076
+2026-07-06 16:38:58,838 | INFO |   Env | HO: 68.18% | Cont: 98.42% | Task: 84.09% | Resolved: 99.99% | Delay: 2.633s | Energy: 1453.78J | MEC fair: 0.956
+2026-07-06 16:38:58,838 | INFO |   Reward | D: -1284.02 | E: -31.17 | Q: 826.65 | H: 4.87 | LB: 0.04 | Enq: 0.00 | Pen: -562.13
+2026-07-06 16:39:32,531 | INFO | Update  122 | Steps: 124,928 | Episodes:   122 | EpReward:   -25.25 | FPS:     30 | Actor Loss: 0.0002 | Critic Loss: 0.0058
+2026-07-06 16:39:32,532 | INFO |   Env | HO: 80.81% | Cont: 98.92% | Task: 84.49% | Resolved: 100.00% | Delay: 2.541s | Energy: 1357.73J | MEC fair: 0.955
+2026-07-06 16:39:32,532 | INFO |   Reward | D: -1261.95 | E: -30.50 | Q: 841.10 | H: 5.10 | LB: 0.04 | Enq: 0.00 | Pen: -487.14
+2026-07-06 16:40:06,509 | INFO | Update  123 | Steps: 125,952 | Episodes:   123 | EpReward:   -25.19 | FPS:     30 | Actor Loss: -0.0000 | Critic Loss: 0.0041
+2026-07-06 16:40:06,510 | INFO |   Env | HO: 81.55% | Cont: 98.52% | Task: 83.89% | Resolved: 99.93% | Delay: 2.596s | Energy: 1462.91J | MEC fair: 0.956
+2026-07-06 16:40:06,510 | INFO |   Reward | D: -1291.48 | E: -32.18 | Q: 819.55 | H: 5.22 | LB: 0.07 | Enq: 0.00 | Pen: -545.96
+2026-07-06 16:40:39,577 | INFO | Update  124 | Steps: 126,976 | Episodes:   124 | EpReward:   -25.02 | FPS:     31 | Actor Loss: -0.0000 | Critic Loss: 0.0033
+2026-07-06 16:40:39,577 | INFO |   Env | HO: 72.73% | Cont: 97.98% | Task: 83.68% | Resolved: 99.94% | Delay: 2.558s | Energy: 1369.60J | MEC fair: 0.955
+2026-07-06 16:40:39,578 | INFO |   Reward | D: -1273.82 | E: -31.54 | Q: 798.90 | H: 6.46 | LB: 0.09 | Enq: 0.00 | Pen: -439.00
+2026-07-06 16:41:12,664 | INFO | Update  125 | Steps: 128,000 | Episodes:   125 | EpReward:   -24.97 | FPS:     31 | Actor Loss: -0.0004 | Critic Loss: 0.0026
+2026-07-06 16:41:12,665 | INFO |   Env | HO: 74.26% | Cont: 97.39% | Task: 83.29% | Resolved: 99.97% | Delay: 2.552s | Energy: 1371.84J | MEC fair: 0.955
+2026-07-06 16:41:12,665 | INFO |   Reward | D: -1253.93 | E: -32.45 | Q: 776.15 | H: 6.19 | LB: 0.00 | Enq: 0.00 | Pen: -456.72
+2026-07-06 16:41:46,327 | INFO | Update  126 | Steps: 129,024 | Episodes:   126 | EpReward:   -25.08 | FPS:     30 | Actor Loss: -0.0014 | Critic Loss: 0.0089
+2026-07-06 16:41:46,328 | INFO |   Env | HO: 82.89% | Cont: 98.71% | Task: 84.22% | Resolved: 100.00% | Delay: 2.605s | Energy: 1455.80J | MEC fair: 0.956
+2026-07-06 16:41:46,328 | INFO |   Reward | D: -1261.34 | E: -31.58 | Q: 819.40 | H: 4.05 | LB: 0.00 | Enq: 0.00 | Pen: -536.27
+2026-07-06 16:42:20,279 | INFO | Update  127 | Steps: 130,048 | Episodes:   127 | EpReward:   -25.07 | FPS:     30 | Actor Loss: 0.0006 | Critic Loss: 0.0090
+2026-07-06 16:42:20,281 | INFO |   Env | HO: 68.60% | Cont: 94.94% | Task: 82.90% | Resolved: 99.99% | Delay: 2.566s | Energy: 1270.91J | MEC fair: 0.956
+2026-07-06 16:42:20,281 | INFO |   Reward | D: -1207.25 | E: -30.63 | Q: 737.90 | H: 12.35 | LB: 0.01 | Enq: 0.00 | Pen: -400.67
+2026-07-06 16:42:55,577 | INFO | Update  128 | Steps: 131,072 | Episodes:   128 | EpReward:   -25.09 | FPS:     29 | Actor Loss: 0.0009 | Critic Loss: 0.0061
+2026-07-06 16:42:55,577 | INFO |   Env | HO: 71.81% | Cont: 96.30% | Task: 84.36% | Resolved: 99.99% | Delay: 2.492s | Energy: 1242.96J | MEC fair: 0.956
+2026-07-06 16:42:55,577 | INFO |   Reward | D: -1232.47 | E: -30.97 | Q: 838.90 | H: 11.53 | LB: 0.08 | Enq: 0.00 | Pen: -364.38
+2026-07-06 16:43:30,593 | INFO | Update  129 | Steps: 132,096 | Episodes:   129 | EpReward:   -25.09 | FPS:     29 | Actor Loss: 0.0008 | Critic Loss: 0.0062
+2026-07-06 16:43:30,593 | INFO |   Env | HO: 66.09% | Cont: 95.92% | Task: 83.32% | Resolved: 99.97% | Delay: 2.567s | Energy: 1319.59J | MEC fair: 0.955
+2026-07-06 16:43:30,593 | INFO |   Reward | D: -1239.38 | E: -31.58 | Q: 776.15 | H: 11.65 | LB: 0.10 | Enq: 0.00 | Pen: -434.64
+2026-07-06 16:44:04,803 | INFO | Update  130 | Steps: 133,120 | Episodes:   130 | EpReward:   -25.02 | FPS:     30 | Actor Loss: 0.0001 | Critic Loss: 0.0059
+2026-07-06 16:44:04,803 | INFO |   Env | HO: 66.41% | Cont: 96.54% | Task: 84.00% | Resolved: 100.00% | Delay: 2.552s | Energy: 1357.02J | MEC fair: 0.956
+2026-07-06 16:44:04,803 | INFO |   Reward | D: -1256.51 | E: -32.05 | Q: 827.80 | H: 10.58 | LB: 0.04 | Enq: 0.00 | Pen: -452.28
+2026-07-06 16:44:39,686 | INFO | Update  131 | Steps: 134,144 | Episodes:   131 | EpReward:   -24.91 | FPS:     29 | Actor Loss: 0.0003 | Critic Loss: 0.0031
+2026-07-06 16:44:39,686 | INFO |   Env | HO: 69.57% | Cont: 96.46% | Task: 84.25% | Resolved: 99.99% | Delay: 2.466s | Energy: 1218.37J | MEC fair: 0.956
+2026-07-06 16:44:39,686 | INFO |   Reward | D: -1219.76 | E: -31.08 | Q: 830.55 | H: 8.99 | LB: 0.04 | Enq: 0.00 | Pen: -313.60
+2026-07-06 16:45:15,791 | INFO | Update  132 | Steps: 135,168 | Episodes:   132 | EpReward:   -24.76 | FPS:     28 | Actor Loss: 0.0003 | Critic Loss: 0.0052
+2026-07-06 16:45:15,791 | INFO |   Env | HO: 75.13% | Cont: 96.58% | Task: 84.83% | Resolved: 100.00% | Delay: 2.446s | Energy: 1217.64J | MEC fair: 0.955
+2026-07-06 16:45:15,791 | INFO |   Reward | D: -1226.47 | E: -31.82 | Q: 878.25 | H: 9.33 | LB: 0.00 | Enq: 0.00 | Pen: -304.42
+2026-07-06 16:45:51,623 | INFO | Update  133 | Steps: 136,192 | Episodes:   133 | EpReward:   -24.56 | FPS:     29 | Actor Loss: 0.0001 | Critic Loss: 0.0028
+2026-07-06 16:45:51,624 | INFO |   Env | HO: 65.99% | Cont: 97.07% | Task: 85.52% | Resolved: 100.00% | Delay: 2.478s | Energy: 1281.74J | MEC fair: 0.955
+2026-07-06 16:45:51,624 | INFO |   Reward | D: -1218.44 | E: -32.48 | Q: 903.00 | H: 10.11 | LB: 0.11 | Enq: 0.00 | Pen: -335.47
+2026-07-06 16:46:32,032 | INFO | Update  134 | Steps: 137,216 | Episodes:   134 | EpReward:   -24.38 | FPS:     25 | Actor Loss: -0.0003 | Critic Loss: 0.0016
+2026-07-06 16:46:32,032 | INFO |   Env | HO: 76.14% | Cont: 97.69% | Task: 84.63% | Resolved: 100.00% | Delay: 2.547s | Energy: 1313.08J | MEC fair: 0.956
+2026-07-06 16:46:32,032 | INFO |   Reward | D: -1224.55 | E: -30.63 | Q: 840.30 | H: 8.17 | LB: 0.07 | Enq: 0.00 | Pen: -394.48
+2026-07-06 16:47:09,542 | INFO | Update  135 | Steps: 138,240 | Episodes:   135 | EpReward:   -24.26 | FPS:     27 | Actor Loss: -0.0000 | Critic Loss: 0.0044
+2026-07-06 16:47:09,542 | INFO |   Env | HO: 70.21% | Cont: 96.87% | Task: 84.24% | Resolved: 99.99% | Delay: 2.531s | Energy: 1329.91J | MEC fair: 0.956
+2026-07-06 16:47:09,542 | INFO |   Reward | D: -1223.69 | E: -32.42 | Q: 823.60 | H: 8.31 | LB: 0.04 | Enq: 0.00 | Pen: -377.31
+2026-07-06 16:47:58,773 | INFO | Update  136 | Steps: 139,264 | Episodes:   136 | EpReward:   -24.20 | FPS:     21 | Actor Loss: -0.0007 | Critic Loss: 0.0030
+2026-07-06 16:47:58,773 | INFO |   Env | HO: 65.50% | Cont: 97.40% | Task: 84.85% | Resolved: 100.00% | Delay: 2.532s | Energy: 1325.73J | MEC fair: 0.956
+2026-07-06 16:47:58,773 | INFO |   Reward | D: -1215.12 | E: -31.58 | Q: 850.20 | H: 6.90 | LB: 0.03 | Enq: 0.00 | Pen: -405.88
+2026-07-06 16:48:33,391 | INFO | Update  137 | Steps: 140,288 | Episodes:   137 | EpReward:   -24.11 | FPS:     30 | Actor Loss: -0.0004 | Critic Loss: 0.0019
+2026-07-06 16:48:33,392 | INFO |   Env | HO: 72.79% | Cont: 98.11% | Task: 85.27% | Resolved: 99.97% | Delay: 2.496s | Energy: 1357.77J | MEC fair: 0.955
+2026-07-06 16:48:33,392 | INFO |   Reward | D: -1263.48 | E: -33.30 | Q: 905.60 | H: 6.05 | LB: 0.07 | Enq: 0.00 | Pen: -375.73
+2026-07-06 16:49:08,665 | INFO | Update  138 | Steps: 141,312 | Episodes:   138 | EpReward:   -24.14 | FPS:     29 | Actor Loss: -0.0001 | Critic Loss: 0.0013
+2026-07-06 16:49:08,666 | INFO |   Env | HO: 80.69% | Cont: 97.47% | Task: 83.90% | Resolved: 99.97% | Delay: 2.518s | Energy: 1333.65J | MEC fair: 0.956
+2026-07-06 16:49:08,666 | INFO |   Reward | D: -1238.64 | E: -32.03 | Q: 808.00 | H: 7.31 | LB: 0.01 | Enq: 0.00 | Pen: -391.99
+2026-07-06 16:49:44,608 | INFO | Update  139 | Steps: 142,336 | Episodes:   139 | EpReward:   -24.28 | FPS:     28 | Actor Loss: 0.0002 | Critic Loss: 0.0037
+2026-07-06 16:49:44,609 | INFO |   Env | HO: 73.64% | Cont: 98.52% | Task: 84.33% | Resolved: 99.96% | Delay: 2.600s | Energy: 1511.39J | MEC fair: 0.955
+2026-07-06 16:49:44,609 | INFO |   Reward | D: -1289.06 | E: -33.85 | Q: 848.20 | H: 5.06 | LB: 0.01 | Enq: 0.00 | Pen: -518.17
+2026-07-06 16:50:17,561 | INFO | Update  140 | Steps: 143,360 | Episodes:   140 | EpReward:   -24.21 | FPS:     31 | Actor Loss: 0.0001 | Critic Loss: 0.0061
+2026-07-06 16:50:17,562 | INFO |   Env | HO: 75.00% | Cont: 98.36% | Task: 83.85% | Resolved: 99.97% | Delay: 2.594s | Energy: 1461.72J | MEC fair: 0.954
+2026-07-06 16:50:17,562 | INFO |   Reward | D: -1260.00 | E: -33.00 | Q: 803.65 | H: 4.72 | LB: 0.01 | Enq: 0.00 | Pen: -511.25
+2026-07-06 16:50:51,618 | INFO | Update  141 | Steps: 144,384 | Episodes:   141 | EpReward:   -24.27 | FPS:     30 | Actor Loss: 0.0005 | Critic Loss: 0.0059
+2026-07-06 16:50:51,619 | INFO |   Env | HO: 78.49% | Cont: 98.39% | Task: 83.72% | Resolved: 100.00% | Delay: 2.578s | Energy: 1427.02J | MEC fair: 0.956
+2026-07-06 16:50:51,619 | INFO |   Reward | D: -1256.07 | E: -31.98 | Q: 788.25 | H: 4.68 | LB: 0.03 | Enq: 0.00 | Pen: -496.15
+2026-07-06 16:51:29,106 | INFO | Update  142 | Steps: 145,408 | Episodes:   142 | EpReward:   -24.36 | FPS:     27 | Actor Loss: -0.0001 | Critic Loss: 0.0039
+2026-07-06 16:51:29,106 | INFO |   Env | HO: 73.96% | Cont: 98.90% | Task: 83.54% | Resolved: 99.94% | Delay: 2.641s | Energy: 1567.47J | MEC fair: 0.956
+2026-07-06 16:51:29,106 | INFO |   Reward | D: -1296.17 | E: -33.26 | Q: 789.50 | H: 4.43 | LB: 0.00 | Enq: 0.00 | Pen: -579.17
+2026-07-06 16:52:04,484 | INFO | Update  143 | Steps: 146,432 | Episodes:   143 | EpReward:   -24.34 | FPS:     29 | Actor Loss: -0.0019 | Critic Loss: 0.0041
+2026-07-06 16:52:04,484 | INFO |   Env | HO: 72.50% | Cont: 98.48% | Task: 84.33% | Resolved: 99.99% | Delay: 2.555s | Energy: 1463.69J | MEC fair: 0.956
+2026-07-06 16:52:04,485 | INFO |   Reward | D: -1280.50 | E: -33.44 | Q: 845.35 | H: 5.39 | LB: 0.00 | Enq: 0.00 | Pen: -490.63
+2026-07-06 16:52:43,014 | INFO | Update  144 | Steps: 147,456 | Episodes:   144 | EpReward:   -24.44 | FPS:     27 | Actor Loss: -0.0001 | Critic Loss: 0.0025
+2026-07-06 16:52:43,014 | INFO |   Env | HO: 68.69% | Cont: 95.21% | Task: 82.60% | Resolved: 100.00% | Delay: 2.632s | Energy: 1464.47J | MEC fair: 0.956
+2026-07-06 16:52:43,014 | INFO |   Reward | D: -1266.34 | E: -32.60 | Q: 736.75 | H: 18.33 | LB: 0.02 | Enq: 0.00 | Pen: -544.62
+2026-07-06 16:53:19,766 | INFO | Update  145 | Steps: 148,480 | Episodes:   145 | EpReward:   -24.49 | FPS:     28 | Actor Loss: 0.0001 | Critic Loss: 0.0017
+2026-07-06 16:53:19,766 | INFO |   Env | HO: 70.91% | Cont: 95.89% | Task: 82.35% | Resolved: 99.97% | Delay: 2.641s | Energy: 1510.48J | MEC fair: 0.956
+2026-07-06 16:53:19,766 | INFO |   Reward | D: -1276.65 | E: -32.78 | Q: 717.30 | H: 19.59 | LB: 0.00 | Enq: 0.00 | Pen: -617.00
+2026-07-06 16:53:57,570 | INFO | Update  146 | Steps: 149,504 | Episodes:   146 | EpReward:   -24.50 | FPS:     27 | Actor Loss: 0.0002 | Critic Loss: 0.0019
+2026-07-06 16:53:57,570 | INFO |   Env | HO: 64.85% | Cont: 95.91% | Task: 81.45% | Resolved: 99.99% | Delay: 2.710s | Energy: 1620.32J | MEC fair: 0.956
+2026-07-06 16:53:57,570 | INFO |   Reward | D: -1299.80 | E: -33.91 | Q: 667.65 | H: 16.37 | LB: 0.03 | Enq: 0.00 | Pen: -693.89
+2026-07-06 16:54:30,811 | INFO | Update  147 | Steps: 150,528 | Episodes:   147 | EpReward:   -24.46 | FPS:     31 | Actor Loss: -0.0002 | Critic Loss: 0.0011
+2026-07-06 16:54:30,811 | INFO |   Env | HO: 70.80% | Cont: 96.46% | Task: 84.76% | Resolved: 99.99% | Delay: 2.615s | Energy: 1524.11J | MEC fair: 0.957
+2026-07-06 16:54:30,811 | INFO |   Reward | D: -1259.08 | E: -34.53 | Q: 862.90 | H: 17.20 | LB: 0.02 | Enq: 0.00 | Pen: -523.26
+2026-07-06 16:54:30,811 | INFO | ----------------------------------------
+2026-07-06 16:54:30,811 | INFO | 开始评估...
+2026-07-06 16:55:09,252 | INFO | 评估结果: 奖励 = -26.97 ± 1.86, 长度 = 600, 时延 = 2.635s, 能耗 = 2916.27J, MEC公平性 = 0.956
+2026-07-06 16:55:09,252 | INFO | 新的最佳奖励: -26.97
+2026-07-06 16:55:09,253 | INFO | ----------------------------------------
+2026-07-06 16:55:44,721 | INFO | Update  148 | Steps: 151,552 | Episodes:   148 | EpReward:   -24.55 | FPS:     29 | Actor Loss: -0.0004 | Critic Loss: 0.0033
+2026-07-06 16:55:44,722 | INFO |   Env | HO: 67.52% | Cont: 96.29% | Task: 82.63% | Resolved: 99.92% | Delay: 2.654s | Energy: 1542.62J | MEC fair: 0.956
+2026-07-06 16:55:44,722 | INFO |   Reward | D: -1263.16 | E: -33.41 | Q: 729.60 | H: 13.23 | LB: 0.01 | Enq: 0.00 | Pen: -592.46
+2026-07-06 16:56:18,654 | INFO | Update  149 | Steps: 152,576 | Episodes:   149 | EpReward:   -24.48 | FPS:     30 | Actor Loss: -0.0001 | Critic Loss: 0.0015
+2026-07-06 16:56:18,654 | INFO |   Env | HO: 68.44% | Cont: 97.21% | Task: 83.29% | Resolved: 99.97% | Delay: 2.634s | Energy: 1513.71J | MEC fair: 0.956
+2026-07-06 16:56:18,654 | INFO |   Reward | D: -1269.73 | E: -33.34 | Q: 770.45 | H: 12.19 | LB: 0.00 | Enq: 0.00 | Pen: -566.73
+2026-07-06 16:57:01,381 | INFO | Update  150 | Steps: 153,600 | Episodes:   150 | EpReward:   -24.40 | FPS:     24 | Actor Loss: -0.0006 | Critic Loss: 0.0016
+2026-07-06 16:57:01,381 | INFO |   Env | HO: 65.34% | Cont: 96.50% | Task: 84.05% | Resolved: 99.97% | Delay: 2.555s | Energy: 1396.33J | MEC fair: 0.956
+2026-07-06 16:57:01,381 | INFO |   Reward | D: -1232.60 | E: -33.47 | Q: 822.80 | H: 7.45 | LB: 0.06 | Enq: 0.00 | Pen: -443.76
+2026-07-06 16:57:40,595 | INFO | Update  151 | Steps: 154,624 | Episodes:   151 | EpReward:   -24.36 | FPS:     26 | Actor Loss: -0.0000 | Critic Loss: 0.0024
+2026-07-06 16:57:40,595 | INFO |   Env | HO: 73.03% | Cont: 98.22% | Task: 83.00% | Resolved: 100.00% | Delay: 2.656s | Energy: 1598.34J | MEC fair: 0.956
+2026-07-06 16:57:40,595 | INFO |   Reward | D: -1278.41 | E: -34.42 | Q: 749.55 | H: 8.10 | LB: 0.00 | Enq: 0.00 | Pen: -608.55
+2026-07-06 16:58:17,166 | INFO | Update  152 | Steps: 155,648 | Episodes:   152 | EpReward:   -24.32 | FPS:     28 | Actor Loss: -0.0001 | Critic Loss: 0.0015
+2026-07-06 16:58:17,166 | INFO |   Env | HO: 75.61% | Cont: 97.95% | Task: 83.35% | Resolved: 100.00% | Delay: 2.604s | Energy: 1484.50J | MEC fair: 0.957
+2026-07-06 16:58:17,166 | INFO |   Reward | D: -1259.74 | E: -33.27 | Q: 768.35 | H: 7.73 | LB: 0.00 | Enq: 0.00 | Pen: -518.89
+2026-07-06 16:58:54,589 | INFO | Update  153 | Steps: 156,672 | Episodes:   153 | EpReward:   -24.31 | FPS:     27 | Actor Loss: -0.0000 | Critic Loss: 0.0068
+2026-07-06 16:58:54,589 | INFO |   Env | HO: 74.81% | Cont: 98.15% | Task: 82.81% | Resolved: 99.99% | Delay: 2.658s | Energy: 1640.86J | MEC fair: 0.957
+2026-07-06 16:58:54,589 | INFO |   Reward | D: -1308.11 | E: -35.20 | Q: 754.85 | H: 6.03 | LB: 0.03 | Enq: 0.00 | Pen: -621.53
+2026-07-06 16:59:26,558 | INFO | Update  154 | Steps: 157,696 | Episodes:   154 | EpReward:   -24.30 | FPS:     32 | Actor Loss: 0.0005 | Critic Loss: 0.0045
+2026-07-06 16:59:26,558 | INFO |   Env | HO: 66.41% | Cont: 97.39% | Task: 83.25% | Resolved: 99.97% | Delay: 2.581s | Energy: 1458.99J | MEC fair: 0.956
+2026-07-06 16:59:26,558 | INFO |   Reward | D: -1261.90 | E: -33.19 | Q: 771.50 | H: 5.37 | LB: 0.00 | Enq: 0.00 | Pen: -518.49
+2026-07-06 16:59:57,219 | INFO | Update  155 | Steps: 158,720 | Episodes:   155 | EpReward:   -24.35 | FPS:     33 | Actor Loss: 0.0001 | Critic Loss: 0.0072
+2026-07-06 16:59:57,219 | INFO |   Env | HO: 68.89% | Cont: 97.60% | Task: 82.11% | Resolved: 99.93% | Delay: 2.662s | Energy: 1593.17J | MEC fair: 0.956
+2026-07-06 16:59:57,219 | INFO |   Reward | D: -1275.18 | E: -34.54 | Q: 694.85 | H: 5.80 | LB: 0.00 | Enq: 0.00 | Pen: -629.56
+2026-07-06 17:00:37,106 | INFO | Update  156 | Steps: 159,744 | Episodes:   156 | EpReward:   -24.50 | FPS:     26 | Actor Loss: -0.0006 | Critic Loss: 0.0060
+2026-07-06 17:00:37,106 | INFO |   Env | HO: 69.23% | Cont: 97.67% | Task: 82.00% | Resolved: 99.96% | Delay: 2.695s | Energy: 1665.40J | MEC fair: 0.957
+2026-07-06 17:00:37,106 | INFO |   Reward | D: -1304.19 | E: -35.52 | Q: 705.85 | H: 5.14 | LB: 0.01 | Enq: 0.00 | Pen: -645.14
+2026-07-06 17:01:11,739 | INFO | Update  157 | Steps: 160,768 | Episodes:   157 | EpReward:   -24.47 | FPS:     30 | Actor Loss: 0.0002 | Critic Loss: 0.0046
+2026-07-06 17:01:11,739 | INFO |   Env | HO: 76.67% | Cont: 97.25% | Task: 83.35% | Resolved: 99.99% | Delay: 2.567s | Energy: 1458.30J | MEC fair: 0.957
+2026-07-06 17:01:11,739 | INFO |   Reward | D: -1247.65 | E: -34.30 | Q: 780.05 | H: 7.10 | LB: 0.05 | Enq: 0.00 | Pen: -471.92
+2026-07-06 17:01:46,534 | INFO | Update  158 | Steps: 161,792 | Episodes:   158 | EpReward:   -24.51 | FPS:     29 | Actor Loss: 0.0004 | Critic Loss: 0.0065
+2026-07-06 17:01:46,535 | INFO |   Env | HO: 70.27% | Cont: 98.88% | Task: 83.22% | Resolved: 99.99% | Delay: 2.567s | Energy: 1515.46J | MEC fair: 0.956
+2026-07-06 17:01:46,535 | INFO |   Reward | D: -1287.90 | E: -33.87 | Q: 771.50 | H: 4.87 | LB: 0.03 | Enq: 0.00 | Pen: -537.51
+2026-07-06 17:02:20,269 | INFO | Update  159 | Steps: 162,816 | Episodes:   159 | EpReward:   -24.65 | FPS:     30 | Actor Loss: 0.0000 | Critic Loss: 0.0131
+2026-07-06 17:02:20,269 | INFO |   Env | HO: 66.67% | Cont: 98.09% | Task: 83.21% | Resolved: 99.99% | Delay: 2.614s | Energy: 1512.38J | MEC fair: 0.957
+2026-07-06 17:02:20,269 | INFO |   Reward | D: -1253.77 | E: -33.66 | Q: 760.90 | H: 5.24 | LB: 0.03 | Enq: 0.00 | Pen: -520.35
+2026-07-06 17:02:51,850 | INFO | Update  160 | Steps: 163,840 | Episodes:   160 | EpReward:   -24.79 | FPS:     32 | Actor Loss: -0.0006 | Critic Loss: 0.0119
+2026-07-06 17:02:51,851 | INFO |   Env | HO: 77.63% | Cont: 99.09% | Task: 82.91% | Resolved: 99.96% | Delay: 2.719s | Energy: 1679.93J | MEC fair: 0.956
+2026-07-06 17:02:51,851 | INFO |   Reward | D: -1292.26 | E: -34.07 | Q: 742.55 | H: 3.82 | LB: 0.00 | Enq: 0.00 | Pen: -669.30
+2026-07-06 17:03:23,360 | INFO | Update  161 | Steps: 164,864 | Episodes:   161 | EpReward:   -24.70 | FPS:     32 | Actor Loss: 0.0001 | Critic Loss: 0.0053
+2026-07-06 17:03:23,360 | INFO |   Env | HO: 90.35% | Cont: 97.35% | Task: 85.59% | Resolved: 99.97% | Delay: 2.454s | Energy: 1262.33J | MEC fair: 0.956
+2026-07-06 17:03:23,361 | INFO |   Reward | D: -1214.75 | E: -32.80 | Q: 911.25 | H: 6.44 | LB: 0.04 | Enq: 0.00 | Pen: -277.86
+2026-07-06 17:04:09,081 | INFO | Update  162 | Steps: 165,888 | Episodes:   162 | EpReward:   -24.59 | FPS:     22 | Actor Loss: 0.0006 | Critic Loss: 0.0039
+2026-07-06 17:04:09,081 | INFO |   Env | HO: 69.89% | Cont: 97.27% | Task: 85.13% | Resolved: 99.97% | Delay: 2.510s | Energy: 1361.67J | MEC fair: 0.955
+2026-07-06 17:04:09,081 | INFO |   Reward | D: -1219.80 | E: -33.49 | Q: 877.00 | H: 7.59 | LB: 0.06 | Enq: 0.00 | Pen: -390.13
+2026-07-06 17:04:50,698 | INFO | Update  163 | Steps: 166,912 | Episodes:   163 | EpReward:   -24.50 | FPS:     25 | Actor Loss: 0.0002 | Critic Loss: 0.0043
+2026-07-06 17:04:50,699 | INFO |   Env | HO: 75.78% | Cont: 97.93% | Task: 84.65% | Resolved: 100.00% | Delay: 2.568s | Energy: 1435.53J | MEC fair: 0.956
+2026-07-06 17:04:50,699 | INFO |   Reward | D: -1250.68 | E: -33.40 | Q: 849.15 | H: 6.00 | LB: 0.01 | Enq: 0.00 | Pen: -441.12
+2026-07-06 17:05:23,702 | INFO | Update  164 | Steps: 167,936 | Episodes:   164 | EpReward:   -24.48 | FPS:     31 | Actor Loss: 0.0003 | Critic Loss: 0.0038
+2026-07-06 17:05:23,702 | INFO |   Env | HO: 71.43% | Cont: 98.00% | Task: 83.98% | Resolved: 100.00% | Delay: 2.557s | Energy: 1451.22J | MEC fair: 0.956
+2026-07-06 17:05:23,702 | INFO |   Reward | D: -1253.78 | E: -34.26 | Q: 818.15 | H: 5.92 | LB: 0.03 | Enq: 0.00 | Pen: -443.70
+2026-07-06 17:06:01,550 | INFO | Update  165 | Steps: 168,960 | Episodes:   165 | EpReward:   -24.43 | FPS:     27 | Actor Loss: 0.0006 | Critic Loss: 0.0019
+2026-07-06 17:06:01,550 | INFO |   Env | HO: 75.84% | Cont: 97.61% | Task: 84.95% | Resolved: 99.99% | Delay: 2.498s | Energy: 1348.81J | MEC fair: 0.955
+2026-07-06 17:06:01,551 | INFO |   Reward | D: -1246.20 | E: -33.25 | Q: 877.30 | H: 7.04 | LB: 0.11 | Enq: 0.00 | Pen: -386.08
+2026-07-06 17:06:34,406 | INFO | Update  166 | Steps: 169,984 | Episodes:   166 | EpReward:   -24.34 | FPS:     31 | Actor Loss: 0.0003 | Critic Loss: 0.0042
+2026-07-06 17:06:34,407 | INFO |   Env | HO: 74.87% | Cont: 97.47% | Task: 85.38% | Resolved: 99.94% | Delay: 2.498s | Energy: 1353.99J | MEC fair: 0.955
+2026-07-06 17:06:34,407 | INFO |   Reward | D: -1224.33 | E: -33.71 | Q: 897.60 | H: 8.85 | LB: 0.14 | Enq: 0.00 | Pen: -342.50
+2026-07-06 17:07:18,873 | INFO | Update  167 | Steps: 171,008 | Episodes:   167 | EpReward:   -24.32 | FPS:     23 | Actor Loss: 0.0004 | Critic Loss: 0.0028
+2026-07-06 17:07:18,874 | INFO |   Env | HO: 76.74% | Cont: 98.21% | Task: 83.69% | Resolved: 100.00% | Delay: 2.591s | Energy: 1507.48J | MEC fair: 0.956
+2026-07-06 17:07:18,874 | INFO |   Reward | D: -1264.90 | E: -33.92 | Q: 796.00 | H: 8.09 | LB: 0.03 | Enq: 0.00 | Pen: -501.03
+2026-07-06 17:08:02,359 | INFO | Update  168 | Steps: 172,032 | Episodes:   168 | EpReward:   -24.25 | FPS:     24 | Actor Loss: -0.0001 | Critic Loss: 0.0028
+2026-07-06 17:08:02,359 | INFO |   Env | HO: 77.39% | Cont: 97.08% | Task: 85.22% | Resolved: 99.96% | Delay: 2.469s | Energy: 1330.28J | MEC fair: 0.956
+2026-07-06 17:08:02,359 | INFO |   Reward | D: -1227.86 | E: -34.00 | Q: 890.45 | H: 10.94 | LB: 0.12 | Enq: 0.00 | Pen: -312.99
+2026-07-06 17:08:37,799 | INFO | Update  169 | Steps: 173,056 | Episodes:   169 | EpReward:   -24.20 | FPS:     29 | Actor Loss: 0.0000 | Critic Loss: 0.0098
+2026-07-06 17:08:37,799 | INFO |   Env | HO: 69.38% | Cont: 97.09% | Task: 84.03% | Resolved: 99.99% | Delay: 2.556s | Energy: 1425.18J | MEC fair: 0.957
+2026-07-06 17:08:37,799 | INFO |   Reward | D: -1236.92 | E: -33.75 | Q: 809.55 | H: 8.90 | LB: 0.01 | Enq: 0.00 | Pen: -424.00
+2026-07-06 17:09:11,853 | INFO | Update  170 | Steps: 174,080 | Episodes:   170 | EpReward:   -24.13 | FPS:     30 | Actor Loss: -0.0005 | Critic Loss: 0.0055
+2026-07-06 17:09:11,853 | INFO |   Env | HO: 76.83% | Cont: 98.09% | Task: 84.44% | Resolved: 99.93% | Delay: 2.568s | Energy: 1495.64J | MEC fair: 0.957
+2026-07-06 17:09:11,853 | INFO |   Reward | D: -1268.90 | E: -34.79 | Q: 848.55 | H: 7.78 | LB: 0.02 | Enq: 0.00 | Pen: -475.72
+2026-07-06 17:09:48,385 | INFO | Update  171 | Steps: 175,104 | Episodes:   171 | EpReward:   -24.17 | FPS:     28 | Actor Loss: 0.0006 | Critic Loss: 0.0033
+2026-07-06 17:09:48,385 | INFO |   Env | HO: 78.88% | Cont: 98.09% | Task: 85.16% | Resolved: 100.00% | Delay: 2.478s | Energy: 1359.44J | MEC fair: 0.955
+2026-07-06 17:09:48,385 | INFO |   Reward | D: -1252.75 | E: -33.87 | Q: 891.70 | H: 7.80 | LB: 0.04 | Enq: 0.00 | Pen: -352.81
+2026-07-06 17:10:27,542 | INFO | Update  172 | Steps: 176,128 | Episodes:   172 | EpReward:   -24.25 | FPS:     26 | Actor Loss: 0.0000 | Critic Loss: 0.0039
+2026-07-06 17:10:27,542 | INFO |   Env | HO: 66.50% | Cont: 97.24% | Task: 83.42% | Resolved: 99.99% | Delay: 2.540s | Energy: 1390.33J | MEC fair: 0.957
+2026-07-06 17:10:27,542 | INFO |   Reward | D: -1253.84 | E: -33.24 | Q: 778.60 | H: 8.18 | LB: 0.01 | Enq: 0.00 | Pen: -433.48
+2026-07-06 17:10:59,327 | INFO | Update  173 | Steps: 177,152 | Episodes:   173 | EpReward:   -24.20 | FPS:     32 | Actor Loss: 0.0002 | Critic Loss: 0.0044
+2026-07-06 17:10:59,329 | INFO |   Env | HO: 69.51% | Cont: 96.92% | Task: 84.35% | Resolved: 99.92% | Delay: 2.507s | Energy: 1332.63J | MEC fair: 0.955
+2026-07-06 17:10:59,330 | INFO |   Reward | D: -1236.06 | E: -33.00 | Q: 837.50 | H: 10.74 | LB: 0.04 | Enq: 0.00 | Pen: -345.28
+2026-07-06 17:11:31,867 | INFO | Update  174 | Steps: 178,176 | Episodes:   174 | EpReward:   -24.14 | FPS:     31 | Actor Loss: 0.0004 | Critic Loss: 0.0017
+2026-07-06 17:11:31,867 | INFO |   Env | HO: 72.17% | Cont: 96.20% | Task: 84.66% | Resolved: 99.97% | Delay: 2.509s | Energy: 1272.71J | MEC fair: 0.956
+2026-07-06 17:11:31,867 | INFO |   Reward | D: -1211.53 | E: -32.46 | Q: 859.05 | H: 9.51 | LB: -0.00 | Enq: 0.00 | Pen: -334.15
+2026-07-06 17:12:04,416 | INFO | Update  175 | Steps: 179,200 | Episodes:   175 | EpReward:   -24.10 | FPS:     31 | Actor Loss: -0.0004 | Critic Loss: 0.0047
+2026-07-06 17:12:04,416 | INFO |   Env | HO: 74.67% | Cont: 97.39% | Task: 85.47% | Resolved: 99.96% | Delay: 2.441s | Energy: 1230.48J | MEC fair: 0.956
+2026-07-06 17:12:04,416 | INFO |   Reward | D: -1211.84 | E: -31.82 | Q: 898.15 | H: 10.51 | LB: 0.06 | Enq: 0.00 | Pen: -282.79
+2026-07-06 17:12:35,597 | INFO | Update  176 | Steps: 180,224 | Episodes:   176 | EpReward:   -24.15 | FPS:     33 | Actor Loss: 0.0004 | Critic Loss: 0.0059
+2026-07-06 17:12:35,597 | INFO |   Env | HO: 74.07% | Cont: 97.90% | Task: 84.97% | Resolved: 100.00% | Delay: 2.561s | Energy: 1431.79J | MEC fair: 0.955
+2026-07-06 17:12:35,597 | INFO |   Reward | D: -1249.56 | E: -33.50 | Q: 877.85 | H: 7.30 | LB: 0.04 | Enq: 0.00 | Pen: -418.53
+2026-07-06 17:13:09,218 | INFO | Update  177 | Steps: 181,248 | Episodes:   177 | EpReward:   -24.16 | FPS:     30 | Actor Loss: 0.0003 | Critic Loss: 0.0040
+2026-07-06 17:13:09,219 | INFO |   Env | HO: 71.51% | Cont: 97.98% | Task: 84.36% | Resolved: 99.97% | Delay: 2.538s | Energy: 1407.43J | MEC fair: 0.956
+2026-07-06 17:13:09,219 | INFO |   Reward | D: -1260.94 | E: -33.22 | Q: 841.10 | H: 7.63 | LB: 0.04 | Enq: 0.00 | Pen: -462.11
+2026-07-06 17:13:46,597 | INFO | Update  178 | Steps: 182,272 | Episodes:   178 | EpReward:   -24.11 | FPS:     27 | Actor Loss: 0.0002 | Critic Loss: 0.0014
+2026-07-06 17:13:46,597 | INFO |   Env | HO: 74.53% | Cont: 98.09% | Task: 86.10% | Resolved: 99.94% | Delay: 2.474s | Energy: 1316.44J | MEC fair: 0.956
+2026-07-06 17:13:46,597 | INFO |   Reward | D: -1241.12 | E: -32.89 | Q: 948.10 | H: 7.51 | LB: -0.01 | Enq: 0.00 | Pen: -327.95
+2026-07-06 17:14:24,068 | INFO | Update  179 | Steps: 183,296 | Episodes:   179 | EpReward:   -24.00 | FPS:     27 | Actor Loss: -0.0001 | Critic Loss: 0.0037
+2026-07-06 17:14:24,069 | INFO |   Env | HO: 72.58% | Cont: 98.33% | Task: 84.83% | Resolved: 100.00% | Delay: 2.491s | Energy: 1315.21J | MEC fair: 0.956
+2026-07-06 17:14:24,069 | INFO |   Reward | D: -1229.84 | E: -31.95 | Q: 856.20 | H: 5.59 | LB: 0.05 | Enq: 0.00 | Pen: -386.57
+2026-07-06 17:14:55,887 | INFO | Update  180 | Steps: 184,320 | Episodes:   180 | EpReward:   -24.08 | FPS:     32 | Actor Loss: -0.0003 | Critic Loss: 0.0047
+2026-07-06 17:14:55,887 | INFO |   Env | HO: 71.64% | Cont: 98.00% | Task: 83.97% | Resolved: 99.96% | Delay: 2.608s | Energy: 1512.66J | MEC fair: 0.956
+2026-07-06 17:14:55,887 | INFO |   Reward | D: -1275.36 | E: -33.78 | Q: 818.35 | H: 5.99 | LB: 0.06 | Enq: 0.00 | Pen: -544.60
+2026-07-06 17:15:34,812 | INFO | Update  181 | Steps: 185,344 | Episodes:   181 | EpReward:   -24.10 | FPS:     26 | Actor Loss: -0.0003 | Critic Loss: 0.0184
+2026-07-06 17:15:34,812 | INFO |   Env | HO: 75.00% | Cont: 97.85% | Task: 82.77% | Resolved: 100.00% | Delay: 2.663s | Energy: 1565.03J | MEC fair: 0.955
+2026-07-06 17:15:34,812 | INFO |   Reward | D: -1293.80 | E: -33.42 | Q: 748.50 | H: 6.17 | LB: 0.00 | Enq: 0.00 | Pen: -597.33
+2026-07-06 17:16:13,799 | INFO | Update  182 | Steps: 186,368 | Episodes:   182 | EpReward:   -24.08 | FPS:     26 | Actor Loss: 0.0005 | Critic Loss: 0.0043
+2026-07-06 17:16:13,804 | INFO |   Env | HO: 73.51% | Cont: 97.53% | Task: 84.33% | Resolved: 99.99% | Delay: 2.537s | Energy: 1408.98J | MEC fair: 0.956
+2026-07-06 17:16:13,804 | INFO |   Reward | D: -1269.45 | E: -33.48 | Q: 855.30 | H: 6.96 | LB: 0.03 | Enq: 0.00 | Pen: -414.86
+2026-07-06 17:16:54,603 | INFO | Update  183 | Steps: 187,392 | Episodes:   183 | EpReward:   -24.09 | FPS:     25 | Actor Loss: 0.0005 | Critic Loss: 0.0078
+2026-07-06 17:16:54,603 | INFO |   Env | HO: 74.80% | Cont: 97.88% | Task: 82.47% | Resolved: 99.99% | Delay: 2.635s | Energy: 1483.81J | MEC fair: 0.956
+2026-07-06 17:16:54,603 | INFO |   Reward | D: -1258.58 | E: -32.37 | Q: 711.75 | H: 5.79 | LB: 0.04 | Enq: 0.00 | Pen: -532.55
+2026-07-06 17:17:25,098 | INFO | Update  184 | Steps: 188,416 | Episodes:   184 | EpReward:   -24.04 | FPS:     34 | Actor Loss: 0.0005 | Critic Loss: 0.0034
+2026-07-06 17:17:25,099 | INFO |   Env | HO: 79.25% | Cont: 98.44% | Task: 84.08% | Resolved: 100.00% | Delay: 2.566s | Energy: 1453.70J | MEC fair: 0.956
+2026-07-06 17:17:25,107 | INFO |   Reward | D: -1268.86 | E: -33.04 | Q: 820.35 | H: 5.24 | LB: 0.04 | Enq: 0.00 | Pen: -496.76
+2026-07-06 17:17:55,426 | INFO | Update  185 | Steps: 189,440 | Episodes:   185 | EpReward:   -23.95 | FPS:     34 | Actor Loss: 0.0008 | Critic Loss: 0.0040
+2026-07-06 17:17:55,427 | INFO |   Env | HO: 75.44% | Cont: 97.86% | Task: 84.06% | Resolved: 99.97% | Delay: 2.565s | Energy: 1469.04J | MEC fair: 0.956
+2026-07-06 17:17:55,427 | INFO |   Reward | D: -1256.97 | E: -34.27 | Q: 821.20 | H: 5.36 | LB: 0.01 | Enq: 0.00 | Pen: -470.55
+2026-07-06 17:18:25,835 | INFO | Update  186 | Steps: 190,464 | Episodes:   186 | EpReward:   -23.91 | FPS:     34 | Actor Loss: 0.0004 | Critic Loss: 0.0033
+2026-07-06 17:18:25,835 | INFO |   Env | HO: 80.00% | Cont: 98.18% | Task: 83.95% | Resolved: 99.97% | Delay: 2.588s | Energy: 1494.42J | MEC fair: 0.957
+2026-07-06 17:18:25,835 | INFO |   Reward | D: -1286.75 | E: -33.57 | Q: 822.45 | H: 5.49 | LB: 0.03 | Enq: 0.00 | Pen: -511.60
+2026-07-06 17:18:57,937 | INFO | Update  187 | Steps: 191,488 | Episodes:   187 | EpReward:   -23.77 | FPS:     32 | Actor Loss: -0.0002 | Critic Loss: 0.0011
+2026-07-06 17:18:57,937 | INFO |   Env | HO: 76.32% | Cont: 97.72% | Task: 84.87% | Resolved: 99.96% | Delay: 2.488s | Energy: 1318.41J | MEC fair: 0.955
+2026-07-06 17:18:57,937 | INFO |   Reward | D: -1232.67 | E: -32.94 | Q: 866.25 | H: 5.35 | LB: 0.00 | Enq: 0.00 | Pen: -343.03
+2026-07-06 17:19:25,075 | INFO | Update  188 | Steps: 192,512 | Episodes:   188 | EpReward:   -23.63 | FPS:     38 | Actor Loss: -0.0002 | Critic Loss: 0.0007
+2026-07-06 17:19:25,075 | INFO |   Env | HO: 80.99% | Cont: 97.80% | Task: 84.82% | Resolved: 99.99% | Delay: 2.480s | Energy: 1328.36J | MEC fair: 0.956
+2026-07-06 17:19:25,075 | INFO |   Reward | D: -1225.24 | E: -33.72 | Q: 860.35 | H: 6.13 | LB: 0.00 | Enq: 0.00 | Pen: -336.63
+2026-07-06 17:19:57,200 | INFO | Update  189 | Steps: 193,536 | Episodes:   189 | EpReward:   -23.61 | FPS:     32 | Actor Loss: 0.0006 | Critic Loss: 0.0022
+2026-07-06 17:19:57,200 | INFO |   Env | HO: 75.66% | Cont: 97.93% | Task: 84.24% | Resolved: 99.99% | Delay: 2.545s | Energy: 1448.93J | MEC fair: 0.956
+2026-07-06 17:19:57,200 | INFO |   Reward | D: -1263.71 | E: -34.04 | Q: 836.15 | H: 7.07 | LB: 0.07 | Enq: 0.00 | Pen: -435.48
+2026-07-06 17:20:28,131 | INFO | Update  190 | Steps: 194,560 | Episodes:   190 | EpReward:   -23.51 | FPS:     33 | Actor Loss: 0.0001 | Critic Loss: 0.0056
+2026-07-06 17:20:28,131 | INFO |   Env | HO: 77.05% | Cont: 98.33% | Task: 84.74% | Resolved: 100.00% | Delay: 2.554s | Energy: 1449.01J | MEC fair: 0.956
+2026-07-06 17:20:28,131 | INFO |   Reward | D: -1234.60 | E: -33.70 | Q: 848.80 | H: 5.76 | LB: 0.09 | Enq: 0.00 | Pen: -449.47
+2026-07-06 17:20:59,658 | INFO | Update  191 | Steps: 195,584 | Episodes:   191 | EpReward:   -23.51 | FPS:     32 | Actor Loss: -0.0003 | Critic Loss: 0.0035
+2026-07-06 17:20:59,658 | INFO |   Env | HO: 68.75% | Cont: 97.83% | Task: 84.70% | Resolved: 99.96% | Delay: 2.562s | Energy: 1417.20J | MEC fair: 0.956
+2026-07-06 17:20:59,658 | INFO |   Reward | D: -1233.58 | E: -33.03 | Q: 851.15 | H: 5.35 | LB: 0.06 | Enq: 0.00 | Pen: -462.07
+2026-07-06 17:21:32,375 | INFO | Update  192 | Steps: 196,608 | Episodes:   192 | EpReward:   -23.42 | FPS:     31 | Actor Loss: 0.0003 | Critic Loss: 0.0026
+2026-07-06 17:21:32,375 | INFO |   Env | HO: 76.00% | Cont: 98.53% | Task: 85.55% | Resolved: 99.94% | Delay: 2.494s | Energy: 1388.26J | MEC fair: 0.956
+2026-07-06 17:21:32,375 | INFO |   Reward | D: -1241.34 | E: -33.56 | Q: 908.30 | H: 4.59 | LB: 0.01 | Enq: 0.00 | Pen: -393.28
+2026-07-06 17:22:06,683 | INFO | Update  193 | Steps: 197,632 | Episodes:   193 | EpReward:   -23.28 | FPS:     30 | Actor Loss: 0.0006 | Critic Loss: 0.0034
+2026-07-06 17:22:06,683 | INFO |   Env | HO: 75.18% | Cont: 97.54% | Task: 85.03% | Resolved: 99.97% | Delay: 2.490s | Energy: 1371.48J | MEC fair: 0.956
+2026-07-06 17:22:06,684 | INFO |   Reward | D: -1248.69 | E: -34.52 | Q: 893.25 | H: 6.31 | LB: 0.04 | Enq: 0.00 | Pen: -350.21
+2026-07-06 17:22:40,811 | INFO | Update  194 | Steps: 198,656 | Episodes:   194 | EpReward:   -23.29 | FPS:     30 | Actor Loss: -0.0001 | Critic Loss: 0.0015
+2026-07-06 17:22:40,815 | INFO |   Env | HO: 77.21% | Cont: 97.40% | Task: 83.61% | Resolved: 99.99% | Delay: 2.565s | Energy: 1431.53J | MEC fair: 0.957
+2026-07-06 17:22:40,815 | INFO |   Reward | D: -1260.78 | E: -33.32 | Q: 801.55 | H: 6.55 | LB: 0.03 | Enq: 0.00 | Pen: -457.44
+2026-07-06 17:23:13,615 | INFO | Update  195 | Steps: 199,680 | Episodes:   195 | EpReward:   -23.39 | FPS:     31 | Actor Loss: -0.0000 | Critic Loss: 0.0018
+2026-07-06 17:23:13,615 | INFO |   Env | HO: 65.69% | Cont: 97.75% | Task: 84.00% | Resolved: 100.00% | Delay: 2.556s | Energy: 1470.58J | MEC fair: 0.955
+2026-07-06 17:23:13,615 | INFO |   Reward | D: -1274.25 | E: -33.88 | Q: 826.65 | H: 5.73 | LB: 0.00 | Enq: 0.00 | Pen: -496.15
+2026-07-06 17:23:50,943 | INFO | Update  196 | Steps: 200,704 | Episodes:   196 | EpReward:   -23.32 | FPS:     27 | Actor Loss: 0.0004 | Critic Loss: 0.0017
+2026-07-06 17:23:50,943 | INFO |   Env | HO: 71.90% | Cont: 98.10% | Task: 84.13% | Resolved: 100.00% | Delay: 2.607s | Energy: 1530.89J | MEC fair: 0.956
+2026-07-06 17:23:50,943 | INFO |   Reward | D: -1266.94 | E: -34.03 | Q: 824.30 | H: 5.39 | LB: 0.01 | Enq: 0.00 | Pen: -522.51
+2026-07-06 17:23:50,943 | INFO | ----------------------------------------
+2026-07-06 17:23:50,943 | INFO | 开始评估...
+2026-07-06 17:24:27,265 | INFO | 评估结果: 奖励 = -25.03 ± 1.02, 长度 = 600, 时延 = 2.587s, 能耗 = 2694.86J, MEC公平性 = 0.956
+2026-07-06 17:24:27,265 | INFO | 新的最佳模型 (average delay): score = -2.5869, delay = 2.587s, completion = 83.74%, continuity = 98.32%, mec_fairness = 0.956
+2026-07-06 17:24:27,301 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/best_model.pt
+2026-07-06 17:24:27,302 | INFO | 新的最佳奖励: -25.03
+2026-07-06 17:24:27,302 | INFO | ----------------------------------------
+2026-07-06 17:24:27,329 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/checkpoint_200704.pt
+2026-07-06 17:24:58,099 | INFO | Update  197 | Steps: 201,728 | Episodes:   197 | EpReward:   -23.22 | FPS:     33 | Actor Loss: 0.0003 | Critic Loss: 0.0027
+2026-07-06 17:24:58,099 | INFO |   Env | HO: 72.18% | Cont: 98.67% | Task: 85.41% | Resolved: 100.00% | Delay: 2.535s | Energy: 1455.12J | MEC fair: 0.956
+2026-07-06 17:24:58,099 | INFO |   Reward | D: -1252.18 | E: -34.53 | Q: 905.45 | H: 5.90 | LB: 0.07 | Enq: 0.00 | Pen: -434.02
+2026-07-06 17:25:34,050 | INFO | Update  198 | Steps: 202,752 | Episodes:   198 | EpReward:   -23.08 | FPS:     28 | Actor Loss: -0.0001 | Critic Loss: 0.0020
+2026-07-06 17:25:34,051 | INFO |   Env | HO: 74.36% | Cont: 97.81% | Task: 84.59% | Resolved: 99.97% | Delay: 2.534s | Energy: 1398.62J | MEC fair: 0.956
+2026-07-06 17:25:34,051 | INFO |   Reward | D: -1244.47 | E: -33.17 | Q: 851.30 | H: 5.50 | LB: 0.00 | Enq: 0.00 | Pen: -420.46
+2026-07-06 17:26:05,468 | INFO | Update  199 | Steps: 203,776 | Episodes:   199 | EpReward:   -23.06 | FPS:     33 | Actor Loss: 0.0002 | Critic Loss: 0.0025
+2026-07-06 17:26:05,468 | INFO |   Env | HO: 76.67% | Cont: 97.46% | Task: 83.29% | Resolved: 99.99% | Delay: 2.601s | Energy: 1479.65J | MEC fair: 0.955
+2026-07-06 17:26:05,468 | INFO |   Reward | D: -1270.82 | E: -33.61 | Q: 775.50 | H: 8.46 | LB: 0.00 | Enq: 0.00 | Pen: -521.71
+2026-07-06 17:26:42,898 | INFO | Update  200 | Steps: 204,800 | Episodes:   200 | EpReward:   -23.00 | FPS:     27 | Actor Loss: 0.0006 | Critic Loss: 0.0020
+2026-07-06 17:26:42,899 | INFO |   Env | HO: 73.55% | Cont: 97.55% | Task: 84.59% | Resolved: 99.96% | Delay: 2.512s | Energy: 1356.02J | MEC fair: 0.956
+2026-07-06 17:26:42,899 | INFO |   Reward | D: -1237.52 | E: -32.79 | Q: 848.20 | H: 6.95 | LB: 0.07 | Enq: 0.00 | Pen: -385.96
+2026-07-06 17:27:13,415 | INFO | Update  201 | Steps: 205,824 | Episodes:   201 | EpReward:   -22.82 | FPS:     34 | Actor Loss: -0.0004 | Critic Loss: 0.0016
+2026-07-06 17:27:13,415 | INFO |   Env | HO: 73.17% | Cont: 97.76% | Task: 84.54% | Resolved: 99.97% | Delay: 2.611s | Energy: 1537.84J | MEC fair: 0.954
+2026-07-06 17:27:13,415 | INFO |   Reward | D: -1263.63 | E: -35.27 | Q: 855.65 | H: 7.30 | LB: 0.03 | Enq: 0.00 | Pen: -508.49
+2026-07-06 17:27:43,783 | INFO | Update  202 | Steps: 206,848 | Episodes:   202 | EpReward:   -22.66 | FPS:     34 | Actor Loss: 0.0007 | Critic Loss: 0.0028
+2026-07-06 17:27:43,783 | INFO |   Env | HO: 69.46% | Cont: 97.20% | Task: 85.24% | Resolved: 99.94% | Delay: 2.495s | Energy: 1330.85J | MEC fair: 0.956
+2026-07-06 17:27:43,783 | INFO |   Reward | D: -1219.57 | E: -33.05 | Q: 888.85 | H: 7.12 | LB: 0.00 | Enq: 0.00 | Pen: -356.67
+2026-07-06 17:28:18,691 | INFO | Update  203 | Steps: 207,872 | Episodes:   203 | EpReward:   -22.66 | FPS:     29 | Actor Loss: 0.0007 | Critic Loss: 0.0079
+2026-07-06 17:28:18,691 | INFO |   Env | HO: 80.67% | Cont: 98.49% | Task: 83.97% | Resolved: 99.94% | Delay: 2.646s | Energy: 1585.14J | MEC fair: 0.956
+2026-07-06 17:28:18,691 | INFO |   Reward | D: -1277.56 | E: -34.79 | Q: 815.60 | H: 5.96 | LB: 0.10 | Enq: 0.00 | Pen: -560.63
+2026-07-06 17:28:52,198 | INFO | Update  204 | Steps: 208,896 | Episodes:   204 | EpReward:   -22.56 | FPS:     31 | Actor Loss: -0.0004 | Critic Loss: 0.0059
+2026-07-06 17:28:52,198 | INFO |   Env | HO: 80.87% | Cont: 97.95% | Task: 84.70% | Resolved: 99.99% | Delay: 2.616s | Energy: 1503.05J | MEC fair: 0.956
+2026-07-06 17:28:52,198 | INFO |   Reward | D: -1250.89 | E: -33.55 | Q: 850.50 | H: 5.80 | LB: -0.01 | Enq: 0.00 | Pen: -513.19
+2026-07-06 17:29:25,762 | INFO | Update  205 | Steps: 209,920 | Episodes:   205 | EpReward:   -22.45 | FPS:     31 | Actor Loss: 0.0005 | Critic Loss: 0.0036
+2026-07-06 17:29:25,762 | INFO |   Env | HO: 77.69% | Cont: 97.46% | Task: 83.32% | Resolved: 99.96% | Delay: 2.565s | Energy: 1432.58J | MEC fair: 0.956
+2026-07-06 17:29:25,762 | INFO |   Reward | D: -1248.40 | E: -32.50 | Q: 774.20 | H: 5.80 | LB: 0.04 | Enq: 0.00 | Pen: -485.60
+2026-07-06 17:29:56,590 | INFO | Update  206 | Steps: 210,944 | Episodes:   206 | EpReward:   -22.37 | FPS:     33 | Actor Loss: 0.0006 | Critic Loss: 0.0010
+2026-07-06 17:29:56,590 | INFO |   Env | HO: 74.17% | Cont: 97.92% | Task: 84.29% | Resolved: 99.97% | Delay: 2.552s | Energy: 1448.83J | MEC fair: 0.954
+2026-07-06 17:29:56,590 | INFO |   Reward | D: -1272.65 | E: -34.45 | Q: 846.95 | H: 5.53 | LB: 0.00 | Enq: 0.00 | Pen: -462.37
+2026-07-06 17:30:20,655 | INFO | Update  207 | Steps: 211,968 | Episodes:   207 | EpReward:   -22.23 | FPS:     43 | Actor Loss: 0.0003 | Critic Loss: 0.0034
+2026-07-06 17:30:20,655 | INFO |   Env | HO: 65.49% | Cont: 97.91% | Task: 84.19% | Resolved: 99.94% | Delay: 2.553s | Energy: 1428.15J | MEC fair: 0.955
+2026-07-06 17:30:20,655 | INFO |   Reward | D: -1248.85 | E: -33.41 | Q: 827.15 | H: 4.63 | LB: 0.06 | Enq: 0.00 | Pen: -463.15
+2026-07-06 17:30:54,094 | INFO | Update  208 | Steps: 212,992 | Episodes:   208 | EpReward:   -22.34 | FPS:     31 | Actor Loss: 0.0000 | Critic Loss: 0.0061
+2026-07-06 17:30:54,094 | INFO |   Env | HO: 74.23% | Cont: 98.62% | Task: 83.84% | Resolved: 99.97% | Delay: 2.606s | Energy: 1527.28J | MEC fair: 0.956
+2026-07-06 17:30:54,094 | INFO |   Reward | D: -1278.87 | E: -33.79 | Q: 804.60 | H: 4.56 | LB: 0.00 | Enq: 0.00 | Pen: -530.50
+2026-07-06 17:31:25,315 | INFO | Update  209 | Steps: 214,016 | Episodes:   209 | EpReward:   -22.48 | FPS:     33 | Actor Loss: 0.0005 | Critic Loss: 0.0050
+2026-07-06 17:31:25,315 | INFO |   Env | HO: 70.78% | Cont: 96.41% | Task: 82.78% | Resolved: 100.00% | Delay: 2.555s | Energy: 1335.35J | MEC fair: 0.957
+2026-07-06 17:31:25,315 | INFO |   Reward | D: -1212.70 | E: -31.62 | Q: 732.15 | H: 6.72 | LB: 0.03 | Enq: 0.00 | Pen: -404.16
+2026-07-06 17:31:57,138 | INFO | Update  210 | Steps: 215,040 | Episodes:   210 | EpReward:   -22.56 | FPS:     32 | Actor Loss: 0.0006 | Critic Loss: 0.0114
+2026-07-06 17:31:57,139 | INFO |   Env | HO: 77.32% | Cont: 98.57% | Task: 83.01% | Resolved: 99.96% | Delay: 2.636s | Energy: 1602.45J | MEC fair: 0.956
+2026-07-06 17:31:57,139 | INFO |   Reward | D: -1305.43 | E: -34.66 | Q: 768.65 | H: 4.67 | LB: 0.04 | Enq: 0.00 | Pen: -602.54
+2026-07-06 17:32:29,371 | INFO | Update  211 | Steps: 216,064 | Episodes:   211 | EpReward:   -22.48 | FPS:     32 | Actor Loss: -0.0004 | Critic Loss: 0.0012
+2026-07-06 17:32:29,371 | INFO |   Env | HO: 78.85% | Cont: 97.76% | Task: 85.22% | Resolved: 99.92% | Delay: 2.519s | Energy: 1377.71J | MEC fair: 0.956
+2026-07-06 17:32:29,371 | INFO |   Reward | D: -1227.96 | E: -33.42 | Q: 888.90 | H: 5.11 | LB: 0.00 | Enq: 0.00 | Pen: -398.18
+2026-07-06 17:33:00,726 | INFO | Update  212 | Steps: 217,088 | Episodes:   212 | EpReward:   -22.52 | FPS:     33 | Actor Loss: 0.0001 | Critic Loss: 0.0016
+2026-07-06 17:33:00,726 | INFO |   Env | HO: 81.52% | Cont: 98.33% | Task: 84.11% | Resolved: 99.97% | Delay: 2.597s | Energy: 1516.55J | MEC fair: 0.956
+2026-07-06 17:33:00,726 | INFO |   Reward | D: -1269.35 | E: -33.65 | Q: 823.60 | H: 4.77 | LB: 0.03 | Enq: 0.00 | Pen: -528.46
+2026-07-06 17:33:38,349 | INFO | Update  213 | Steps: 218,112 | Episodes:   213 | EpReward:   -22.57 | FPS:     27 | Actor Loss: -0.0000 | Critic Loss: 0.0066
+2026-07-06 17:33:38,349 | INFO |   Env | HO: 76.40% | Cont: 98.98% | Task: 82.95% | Resolved: 99.99% | Delay: 2.670s | Energy: 1656.72J | MEC fair: 0.956
+2026-07-06 17:33:38,349 | INFO |   Reward | D: -1307.16 | E: -34.67 | Q: 752.40 | H: 4.37 | LB: 0.04 | Enq: 0.00 | Pen: -658.35
+2026-07-06 17:34:05,691 | INFO | Update  214 | Steps: 219,136 | Episodes:   214 | EpReward:   -22.54 | FPS:     37 | Actor Loss: -0.0007 | Critic Loss: 0.0029
+2026-07-06 17:34:05,691 | INFO |   Env | HO: 80.61% | Cont: 98.24% | Task: 84.34% | Resolved: 99.97% | Delay: 2.559s | Energy: 1462.83J | MEC fair: 0.955
+2026-07-06 17:34:05,691 | INFO |   Reward | D: -1266.03 | E: -33.70 | Q: 837.30 | H: 4.98 | LB: 0.01 | Enq: 0.00 | Pen: -474.64
+2026-07-06 17:34:38,011 | INFO | Update  215 | Steps: 220,160 | Episodes:   215 | EpReward:   -22.39 | FPS:     32 | Actor Loss: 0.0001 | Critic Loss: 0.0044
+2026-07-06 17:34:38,011 | INFO |   Env | HO: 80.00% | Cont: 97.61% | Task: 84.70% | Resolved: 99.94% | Delay: 2.449s | Energy: 1304.41J | MEC fair: 0.956
+2026-07-06 17:34:38,011 | INFO |   Reward | D: -1229.94 | E: -33.33 | Q: 855.55 | H: 6.50 | LB: 0.01 | Enq: 0.00 | Pen: -327.93
+2026-07-06 17:35:10,994 | INFO | Update  216 | Steps: 221,184 | Episodes:   216 | EpReward:   -22.49 | FPS:     31 | Actor Loss: 0.0006 | Critic Loss: 0.0028
+2026-07-06 17:35:10,995 | INFO |   Env | HO: 79.82% | Cont: 97.94% | Task: 84.86% | Resolved: 99.95% | Delay: 2.541s | Energy: 1458.39J | MEC fair: 0.955
+2026-07-06 17:35:10,995 | INFO |   Reward | D: -1272.44 | E: -34.22 | Q: 886.15 | H: 5.67 | LB: 0.13 | Enq: 0.00 | Pen: -453.58
+2026-07-06 17:35:52,339 | INFO | Update  217 | Steps: 222,208 | Episodes:   217 | EpReward:   -22.40 | FPS:     25 | Actor Loss: 0.0005 | Critic Loss: 0.0033
+2026-07-06 17:35:52,339 | INFO |   Env | HO: 75.61% | Cont: 97.76% | Task: 84.90% | Resolved: 99.94% | Delay: 2.570s | Energy: 1496.17J | MEC fair: 0.956
+2026-07-06 17:35:52,339 | INFO |   Reward | D: -1262.61 | E: -34.90 | Q: 883.15 | H: 5.74 | LB: 0.07 | Enq: 0.00 | Pen: -450.15
+2026-07-06 17:36:27,494 | INFO | Update  218 | Steps: 223,232 | Episodes:   218 | EpReward:   -22.23 | FPS:     29 | Actor Loss: -0.0007 | Critic Loss: 0.0012
+2026-07-06 17:36:27,494 | INFO |   Env | HO: 66.06% | Cont: 97.83% | Task: 84.90% | Resolved: 99.97% | Delay: 2.518s | Energy: 1356.07J | MEC fair: 0.957
+2026-07-06 17:36:27,494 | INFO |   Reward | D: -1221.92 | E: -32.52 | Q: 856.70 | H: 4.48 | LB: 0.04 | Enq: 0.00 | Pen: -393.71
+2026-07-06 17:37:00,041 | INFO | Update  219 | Steps: 224,256 | Episodes:   219 | EpReward:   -22.22 | FPS:     31 | Actor Loss: -0.0018 | Critic Loss: 0.0046
+2026-07-06 17:37:00,041 | INFO |   Env | HO: 75.76% | Cont: 98.33% | Task: 83.18% | Resolved: 99.99% | Delay: 2.614s | Energy: 1510.30J | MEC fair: 0.957
+2026-07-06 17:37:00,041 | INFO |   Reward | D: -1262.94 | E: -33.09 | Q: 758.15 | H: 4.77 | LB: 0.01 | Enq: 0.00 | Pen: -560.79
+2026-07-06 17:37:40,088 | INFO | Update  220 | Steps: 225,280 | Episodes:   220 | EpReward:   -22.22 | FPS:     26 | Actor Loss: 0.0009 | Critic Loss: 0.0093
+2026-07-06 17:37:40,088 | INFO |   Env | HO: 69.54% | Cont: 97.05% | Task: 83.35% | Resolved: 99.94% | Delay: 2.593s | Energy: 1484.12J | MEC fair: 0.956
+2026-07-06 17:37:40,089 | INFO |   Reward | D: -1263.46 | E: -33.29 | Q: 785.00 | H: 6.33 | LB: 0.04 | Enq: 0.00 | Pen: -485.86
+2026-07-06 17:38:15,495 | INFO | Update  221 | Steps: 226,304 | Episodes:   221 | EpReward:   -22.04 | FPS:     29 | Actor Loss: -0.0003 | Critic Loss: 0.0021
+2026-07-06 17:38:15,496 | INFO |   Env | HO: 79.47% | Cont: 97.16% | Task: 84.62% | Resolved: 99.92% | Delay: 2.496s | Energy: 1364.64J | MEC fair: 0.956
+2026-07-06 17:38:15,496 | INFO |   Reward | D: -1242.72 | E: -34.68 | Q: 864.35 | H: 7.42 | LB: 0.01 | Enq: 0.00 | Pen: -333.48
+2026-07-06 17:38:48,436 | INFO | Update  222 | Steps: 227,328 | Episodes:   222 | EpReward:   -22.00 | FPS:     31 | Actor Loss: 0.0006 | Critic Loss: 0.0026
+2026-07-06 17:38:48,436 | INFO |   Env | HO: 71.24% | Cont: 97.97% | Task: 84.04% | Resolved: 100.00% | Delay: 2.580s | Energy: 1511.39J | MEC fair: 0.956
+2026-07-06 17:38:48,436 | INFO |   Reward | D: -1280.36 | E: -34.58 | Q: 828.00 | H: 6.68 | LB: 0.06 | Enq: 0.00 | Pen: -481.26
+2026-07-06 17:39:28,672 | INFO | Update  223 | Steps: 228,352 | Episodes:   223 | EpReward:   -21.96 | FPS:     25 | Actor Loss: 0.0003 | Critic Loss: 0.0024
+2026-07-06 17:39:28,672 | INFO |   Env | HO: 71.19% | Cont: 98.39% | Task: 84.10% | Resolved: 99.99% | Delay: 2.595s | Energy: 1525.85J | MEC fair: 0.956
+2026-07-06 17:39:28,672 | INFO |   Reward | D: -1260.43 | E: -34.85 | Q: 821.95 | H: 5.19 | LB: 0.03 | Enq: 0.00 | Pen: -498.80
+2026-07-06 17:40:01,505 | INFO | Update  224 | Steps: 229,376 | Episodes:   224 | EpReward:   -21.97 | FPS:     31 | Actor Loss: 0.0007 | Critic Loss: 0.0020
+2026-07-06 17:40:01,505 | INFO |   Env | HO: 73.79% | Cont: 97.75% | Task: 85.22% | Resolved: 100.00% | Delay: 2.513s | Energy: 1415.71J | MEC fair: 0.956
+2026-07-06 17:40:01,505 | INFO |   Reward | D: -1253.99 | E: -34.59 | Q: 897.40 | H: 6.76 | LB: -0.01 | Enq: 0.00 | Pen: -408.12
+2026-07-06 17:40:35,794 | INFO | Update  225 | Steps: 230,400 | Episodes:   225 | EpReward:   -21.99 | FPS:     30 | Actor Loss: -0.0001 | Critic Loss: 0.0049
+2026-07-06 17:40:35,794 | INFO |   Env | HO: 66.49% | Cont: 94.73% | Task: 82.17% | Resolved: 99.97% | Delay: 2.625s | Energy: 1431.58J | MEC fair: 0.955
+2026-07-06 17:40:35,795 | INFO |   Reward | D: -1233.16 | E: -33.48 | Q: 704.00 | H: 15.73 | LB: 0.05 | Enq: 0.00 | Pen: -517.39
+2026-07-06 17:41:09,852 | INFO | Update  226 | Steps: 231,424 | Episodes:   226 | EpReward:   -21.90 | FPS:     30 | Actor Loss: 0.0003 | Critic Loss: 0.0009
+2026-07-06 17:41:09,853 | INFO |   Env | HO: 71.20% | Cont: 97.96% | Task: 84.10% | Resolved: 100.00% | Delay: 2.572s | Energy: 1487.95J | MEC fair: 0.955
+2026-07-06 17:41:09,853 | INFO |   Reward | D: -1273.19 | E: -34.15 | Q: 831.40 | H: 8.16 | LB: 0.00 | Enq: 0.00 | Pen: -482.98
+2026-07-06 17:41:53,305 | INFO | Update  227 | Steps: 232,448 | Episodes:   227 | EpReward:   -21.93 | FPS:     24 | Actor Loss: 0.0003 | Critic Loss: 0.0026
+2026-07-06 17:41:53,305 | INFO |   Env | HO: 63.11% | Cont: 97.10% | Task: 82.42% | Resolved: 99.96% | Delay: 2.634s | Energy: 1520.31J | MEC fair: 0.956
+2026-07-06 17:41:53,305 | INFO |   Reward | D: -1265.26 | E: -33.32 | Q: 714.60 | H: 8.00 | LB: 0.04 | Enq: 0.00 | Pen: -562.64
+2026-07-06 17:42:25,847 | INFO | Update  228 | Steps: 233,472 | Episodes:   228 | EpReward:   -21.98 | FPS:     31 | Actor Loss: 0.0008 | Critic Loss: 0.0019
+2026-07-06 17:42:25,847 | INFO |   Env | HO: 70.59% | Cont: 98.04% | Task: 84.61% | Resolved: 99.97% | Delay: 2.577s | Energy: 1495.64J | MEC fair: 0.957
+2026-07-06 17:42:25,847 | INFO |   Reward | D: -1262.63 | E: -33.84 | Q: 853.05 | H: 6.59 | LB: 0.06 | Enq: 0.00 | Pen: -510.38
+2026-07-06 17:42:59,710 | INFO | Update  229 | Steps: 234,496 | Episodes:   229 | EpReward:   -22.02 | FPS:     30 | Actor Loss: 0.0002 | Critic Loss: 0.0043
+2026-07-06 17:42:59,710 | INFO |   Env | HO: 70.37% | Cont: 98.11% | Task: 83.42% | Resolved: 99.99% | Delay: 2.644s | Energy: 1579.65J | MEC fair: 0.956
+2026-07-06 17:42:59,710 | INFO |   Reward | D: -1265.32 | E: -33.81 | Q: 772.50 | H: 7.13 | LB: 0.01 | Enq: 0.00 | Pen: -604.17
+2026-07-06 17:43:32,117 | INFO | Update  230 | Steps: 235,520 | Episodes:   230 | EpReward:   -22.06 | FPS:     32 | Actor Loss: -0.0005 | Critic Loss: 0.0011
+2026-07-06 17:43:32,117 | INFO |   Env | HO: 75.81% | Cont: 98.23% | Task: 84.23% | Resolved: 100.00% | Delay: 2.557s | Energy: 1479.73J | MEC fair: 0.956
+2026-07-06 17:43:32,117 | INFO |   Reward | D: -1260.61 | E: -33.83 | Q: 829.70 | H: 6.03 | LB: 0.00 | Enq: 0.00 | Pen: -492.17
+2026-07-06 17:44:03,894 | INFO | Update  231 | Steps: 236,544 | Episodes:   231 | EpReward:   -22.07 | FPS:     32 | Actor Loss: 0.0004 | Critic Loss: 0.0024
+2026-07-06 17:44:03,895 | INFO |   Env | HO: 67.13% | Cont: 98.42% | Task: 85.38% | Resolved: 99.97% | Delay: 2.552s | Energy: 1455.08J | MEC fair: 0.956
+2026-07-06 17:44:03,895 | INFO |   Reward | D: -1245.33 | E: -33.86 | Q: 892.70 | H: 5.90 | LB: 0.01 | Enq: 0.00 | Pen: -448.82
+2026-07-06 17:44:29,480 | INFO | Update  232 | Steps: 237,568 | Episodes:   232 | EpReward:   -22.06 | FPS:     40 | Actor Loss: 0.0000 | Critic Loss: 0.0022
+2026-07-06 17:44:29,480 | INFO |   Env | HO: 77.55% | Cont: 97.79% | Task: 85.01% | Resolved: 100.00% | Delay: 2.454s | Energy: 1320.25J | MEC fair: 0.956
+2026-07-06 17:44:29,481 | INFO |   Reward | D: -1222.57 | E: -33.91 | Q: 878.85 | H: 7.02 | LB: 0.07 | Enq: 0.00 | Pen: -307.23
+2026-07-06 17:45:00,251 | INFO | Update  233 | Steps: 238,592 | Episodes:   233 | EpReward:   -22.19 | FPS:     33 | Actor Loss: 0.0005 | Critic Loss: 0.0022
+2026-07-06 17:45:00,251 | INFO |   Env | HO: 66.84% | Cont: 96.75% | Task: 83.98% | Resolved: 99.96% | Delay: 2.509s | Energy: 1370.78J | MEC fair: 0.956
+2026-07-06 17:45:00,251 | INFO |   Reward | D: -1215.29 | E: -33.21 | Q: 799.75 | H: 7.81 | LB: 0.07 | Enq: 0.00 | Pen: -410.60
+2026-07-06 17:45:30,691 | INFO | Update  234 | Steps: 239,616 | Episodes:   234 | EpReward:   -22.22 | FPS:     34 | Actor Loss: -0.0004 | Critic Loss: 0.0059
+2026-07-06 17:45:30,692 | INFO |   Env | HO: 74.05% | Cont: 97.23% | Task: 84.80% | Resolved: 99.96% | Delay: 2.511s | Energy: 1358.23J | MEC fair: 0.956
+2026-07-06 17:45:30,692 | INFO |   Reward | D: -1213.96 | E: -33.25 | Q: 854.00 | H: 7.14 | LB: 0.01 | Enq: 0.00 | Pen: -377.82
+2026-07-06 17:46:00,072 | INFO | Update  235 | Steps: 240,640 | Episodes:   235 | EpReward:   -22.26 | FPS:     35 | Actor Loss: 0.0017 | Critic Loss: 0.0033
+2026-07-06 17:46:00,073 | INFO |   Env | HO: 70.19% | Cont: 96.33% | Task: 83.85% | Resolved: 99.94% | Delay: 2.524s | Energy: 1362.10J | MEC fair: 0.955
+2026-07-06 17:46:00,073 | INFO |   Reward | D: -1219.39 | E: -33.60 | Q: 805.10 | H: 8.96 | LB: 0.04 | Enq: 0.00 | Pen: -383.22
+2026-07-06 17:46:33,148 | INFO | Update  236 | Steps: 241,664 | Episodes:   236 | EpReward:   -22.24 | FPS:     31 | Actor Loss: 0.0022 | Critic Loss: 0.0031
+2026-07-06 17:46:33,148 | INFO |   Env | HO: 70.95% | Cont: 96.49% | Task: 84.53% | Resolved: 99.97% | Delay: 2.526s | Energy: 1404.71J | MEC fair: 0.956
+2026-07-06 17:46:33,148 | INFO |   Reward | D: -1241.52 | E: -34.64 | Q: 861.10 | H: 9.05 | LB: 0.01 | Enq: 0.00 | Pen: -394.49
+2026-07-06 17:47:05,411 | INFO | Update  237 | Steps: 242,688 | Episodes:   237 | EpReward:   -22.29 | FPS:     32 | Actor Loss: 0.0017 | Critic Loss: 0.0022
+2026-07-06 17:47:05,411 | INFO |   Env | HO: 69.27% | Cont: 96.97% | Task: 83.57% | Resolved: 100.00% | Delay: 2.491s | Energy: 1332.66J | MEC fair: 0.956
+2026-07-06 17:47:05,411 | INFO |   Reward | D: -1238.15 | E: -32.77 | Q: 786.15 | H: 7.62 | LB: 0.00 | Enq: 0.00 | Pen: -378.91
+2026-07-06 17:47:36,715 | INFO | Update  238 | Steps: 243,712 | Episodes:   238 | EpReward:   -22.29 | FPS:     33 | Actor Loss: 0.0008 | Critic Loss: 0.0043
+2026-07-06 17:47:36,715 | INFO |   Env | HO: 78.57% | Cont: 97.75% | Task: 84.85% | Resolved: 99.96% | Delay: 2.545s | Energy: 1476.40J | MEC fair: 0.956
+2026-07-06 17:47:36,715 | INFO |   Reward | D: -1261.01 | E: -34.98 | Q: 882.20 | H: 6.71 | LB: -0.00 | Enq: 0.00 | Pen: -452.34
+2026-07-06 17:48:07,187 | INFO | Update  239 | Steps: 244,736 | Episodes:   239 | EpReward:   -22.16 | FPS:     34 | Actor Loss: 0.0007 | Critic Loss: 0.0008
+2026-07-06 17:48:07,187 | INFO |   Env | HO: 68.04% | Cont: 96.98% | Task: 84.71% | Resolved: 99.96% | Delay: 2.502s | Energy: 1377.80J | MEC fair: 0.955
+2026-07-06 17:48:07,187 | INFO |   Reward | D: -1230.80 | E: -34.22 | Q: 868.00 | H: 7.94 | LB: 0.06 | Enq: 0.00 | Pen: -358.55
+2026-07-06 17:48:40,884 | INFO | Update  240 | Steps: 245,760 | Episodes:   240 | EpReward:   -22.11 | FPS:     30 | Actor Loss: 0.0016 | Critic Loss: 0.0036
+2026-07-06 17:48:40,884 | INFO |   Env | HO: 76.13% | Cont: 97.61% | Task: 85.22% | Resolved: 99.94% | Delay: 2.516s | Energy: 1354.99J | MEC fair: 0.956
+2026-07-06 17:48:40,884 | INFO |   Reward | D: -1224.72 | E: -33.08 | Q: 881.45 | H: 7.42 | LB: 0.04 | Enq: 0.00 | Pen: -350.16
+2026-07-06 17:49:13,073 | INFO | Update  241 | Steps: 246,784 | Episodes:   241 | EpReward:   -22.04 | FPS:     32 | Actor Loss: 0.0002 | Critic Loss: 0.0019
+2026-07-06 17:49:13,073 | INFO |   Env | HO: 70.67% | Cont: 97.84% | Task: 84.79% | Resolved: 100.00% | Delay: 2.503s | Energy: 1375.84J | MEC fair: 0.956
+2026-07-06 17:49:13,073 | INFO |   Reward | D: -1249.82 | E: -33.12 | Q: 870.15 | H: 6.39 | LB: 0.04 | Enq: 0.00 | Pen: -375.13
+2026-07-06 17:49:46,759 | INFO | Update  242 | Steps: 247,808 | Episodes:   242 | EpReward:   -21.94 | FPS:     30 | Actor Loss: 0.0004 | Critic Loss: 0.0030
+2026-07-06 17:49:46,759 | INFO |   Env | HO: 66.92% | Cont: 98.10% | Task: 84.59% | Resolved: 99.97% | Delay: 2.548s | Energy: 1438.57J | MEC fair: 0.956
+2026-07-06 17:49:46,759 | INFO |   Reward | D: -1244.83 | E: -33.81 | Q: 846.25 | H: 5.43 | LB: 0.04 | Enq: 0.00 | Pen: -449.07
+2026-07-06 17:50:20,177 | INFO | Update  243 | Steps: 248,832 | Episodes:   243 | EpReward:   -21.93 | FPS:     31 | Actor Loss: 0.0005 | Critic Loss: 0.0019
+2026-07-06 17:50:20,178 | INFO |   Env | HO: 71.43% | Cont: 97.63% | Task: 84.20% | Resolved: 99.99% | Delay: 2.490s | Energy: 1351.95J | MEC fair: 0.956
+2026-07-06 17:50:20,178 | INFO |   Reward | D: -1250.50 | E: -33.51 | Q: 835.15 | H: 7.01 | LB: 0.03 | Enq: 0.00 | Pen: -368.95
+2026-07-06 17:50:52,089 | INFO | Update  244 | Steps: 249,856 | Episodes:   244 | EpReward:   -21.82 | FPS:     32 | Actor Loss: 0.0007 | Critic Loss: 0.0024
+2026-07-06 17:50:52,089 | INFO |   Env | HO: 69.53% | Cont: 98.15% | Task: 84.46% | Resolved: 99.99% | Delay: 2.541s | Energy: 1436.41J | MEC fair: 0.956
+2026-07-06 17:50:52,089 | INFO |   Reward | D: -1260.53 | E: -33.55 | Q: 847.55 | H: 5.41 | LB: 0.00 | Enq: 0.00 | Pen: -456.38
+2026-07-06 17:51:32,384 | INFO | Update  245 | Steps: 250,880 | Episodes:   245 | EpReward:   -21.79 | FPS:     25 | Actor Loss: 0.0009 | Critic Loss: 0.0043
+2026-07-06 17:51:32,385 | INFO |   Env | HO: 80.49% | Cont: 98.73% | Task: 84.50% | Resolved: 99.96% | Delay: 2.554s | Energy: 1471.57J | MEC fair: 0.957
+2026-07-06 17:51:32,385 | INFO |   Reward | D: -1265.76 | E: -33.73 | Q: 842.35 | H: 6.22 | LB: -0.01 | Enq: 0.00 | Pen: -471.68
+2026-07-06 17:51:32,385 | INFO | ----------------------------------------
+2026-07-06 17:51:32,385 | INFO | 开始评估...
+2026-07-06 17:52:25,403 | INFO | 评估结果: 奖励 = -26.34 ± 1.65, 长度 = 600, 时延 = 2.595s, 能耗 = 2631.25J, MEC公平性 = 0.956
+2026-07-06 17:52:25,403 | INFO | ----------------------------------------
+2026-07-06 17:53:04,149 | INFO | Update  246 | Steps: 251,904 | Episodes:   246 | EpReward:   -21.70 | FPS:     26 | Actor Loss: 0.0007 | Critic Loss: 0.0128
+2026-07-06 17:53:04,149 | INFO |   Env | HO: 77.69% | Cont: 98.34% | Task: 84.25% | Resolved: 99.99% | Delay: 2.580s | Energy: 1478.40J | MEC fair: 0.955
+2026-07-06 17:53:04,149 | INFO |   Reward | D: -1259.52 | E: -33.52 | Q: 830.40 | H: 5.74 | LB: 0.01 | Enq: 0.00 | Pen: -445.98
+2026-07-06 17:53:37,046 | INFO | Update  247 | Steps: 252,928 | Episodes:   247 | EpReward:   -21.69 | FPS:     31 | Actor Loss: -0.0001 | Critic Loss: 0.0046
+2026-07-06 17:53:37,047 | INFO |   Env | HO: 78.02% | Cont: 99.02% | Task: 84.09% | Resolved: 100.00% | Delay: 2.590s | Energy: 1542.05J | MEC fair: 0.956
+2026-07-06 17:53:37,047 | INFO |   Reward | D: -1287.60 | E: -34.00 | Q: 827.05 | H: 4.36 | LB: 0.03 | Enq: 0.00 | Pen: -563.89
+2026-07-06 17:54:15,426 | INFO | Update  248 | Steps: 253,952 | Episodes:   248 | EpReward:   -21.60 | FPS:     27 | Actor Loss: 0.0007 | Critic Loss: 0.0068
+2026-07-06 17:54:15,426 | INFO |   Env | HO: 75.00% | Cont: 98.51% | Task: 84.47% | Resolved: 99.99% | Delay: 2.588s | Energy: 1546.96J | MEC fair: 0.956
+2026-07-06 17:54:15,426 | INFO |   Reward | D: -1277.35 | E: -34.26 | Q: 847.40 | H: 5.04 | LB: 0.03 | Enq: 0.00 | Pen: -549.65
+2026-07-06 17:54:50,179 | INFO | Update  249 | Steps: 254,976 | Episodes:   249 | EpReward:   -21.52 | FPS:     29 | Actor Loss: 0.0003 | Critic Loss: 0.0025
+2026-07-06 17:54:50,179 | INFO |   Env | HO: 74.65% | Cont: 96.74% | Task: 84.09% | Resolved: 99.93% | Delay: 2.487s | Energy: 1327.30J | MEC fair: 0.956
+2026-07-06 17:54:50,179 | INFO |   Reward | D: -1223.87 | E: -33.23 | Q: 819.80 | H: 6.58 | LB: 0.14 | Enq: 0.00 | Pen: -339.19
+2026-07-06 17:55:22,099 | INFO | Update  250 | Steps: 256,000 | Episodes:   250 | EpReward:   -21.60 | FPS:     32 | Actor Loss: 0.0001 | Critic Loss: 0.0026
+2026-07-06 17:55:22,099 | INFO |   Env | HO: 72.00% | Cont: 98.66% | Task: 84.84% | Resolved: 99.99% | Delay: 2.626s | Energy: 1590.09J | MEC fair: 0.956
+2026-07-06 17:55:22,099 | INFO |   Reward | D: -1290.09 | E: -34.67 | Q: 877.05 | H: 4.55 | LB: 0.04 | Enq: 0.00 | Pen: -567.94
+2026-07-06 17:55:52,988 | INFO | Update  251 | Steps: 257,024 | Episodes:   251 | EpReward:   -21.49 | FPS:     33 | Actor Loss: 0.0007 | Critic Loss: 0.0047
+2026-07-06 17:55:52,988 | INFO |   Env | HO: 72.56% | Cont: 96.56% | Task: 83.58% | Resolved: 100.00% | Delay: 2.501s | Energy: 1319.51J | MEC fair: 0.956
+2026-07-06 17:55:52,988 | INFO |   Reward | D: -1226.54 | E: -32.98 | Q: 796.75 | H: 7.36 | LB: 0.05 | Enq: 0.00 | Pen: -347.90
+2026-07-06 17:56:24,646 | INFO | Update  252 | Steps: 258,048 | Episodes:   252 | EpReward:   -21.38 | FPS:     32 | Actor Loss: 0.0004 | Critic Loss: 0.0052
+2026-07-06 17:56:24,646 | INFO |   Env | HO: 78.62% | Cont: 97.92% | Task: 84.83% | Resolved: 100.00% | Delay: 2.506s | Energy: 1361.40J | MEC fair: 0.956
+2026-07-06 17:56:24,646 | INFO |   Reward | D: -1242.33 | E: -33.14 | Q: 868.70 | H: 6.98 | LB: 0.04 | Enq: 0.00 | Pen: -368.15
+2026-07-06 17:56:58,662 | INFO | Update  253 | Steps: 259,072 | Episodes:   253 | EpReward:   -21.21 | FPS:     30 | Actor Loss: -0.0001 | Critic Loss: 0.0055
+2026-07-06 17:56:58,663 | INFO |   Env | HO: 73.91% | Cont: 97.69% | Task: 86.04% | Resolved: 99.99% | Delay: 2.469s | Energy: 1304.21J | MEC fair: 0.956
+2026-07-06 17:56:58,663 | INFO |   Reward | D: -1212.24 | E: -33.17 | Q: 935.60 | H: 6.37 | LB: 0.00 | Enq: 0.00 | Pen: -314.96
+2026-07-06 17:57:31,899 | INFO | Update  254 | Steps: 260,096 | Episodes:   254 | EpReward:   -21.21 | FPS:     31 | Actor Loss: 0.0001 | Critic Loss: 0.0040
+2026-07-06 17:57:31,899 | INFO |   Env | HO: 66.09% | Cont: 96.86% | Task: 83.80% | Resolved: 99.93% | Delay: 2.519s | Energy: 1347.15J | MEC fair: 0.956
+2026-07-06 17:57:31,900 | INFO |   Reward | D: -1220.62 | E: -33.01 | Q: 801.15 | H: 7.12 | LB: 0.06 | Enq: 0.00 | Pen: -388.61
+2026-07-06 17:58:05,395 | INFO | Update  255 | Steps: 261,120 | Episodes:   255 | EpReward:   -21.13 | FPS:     31 | Actor Loss: 0.0009 | Critic Loss: 0.0024
+2026-07-06 17:58:05,396 | INFO |   Env | HO: 70.94% | Cont: 98.61% | Task: 83.97% | Resolved: 99.97% | Delay: 2.593s | Energy: 1504.14J | MEC fair: 0.955
+2026-07-06 17:58:05,396 | INFO |   Reward | D: -1268.27 | E: -33.80 | Q: 810.05 | H: 5.12 | LB: 0.03 | Enq: 0.00 | Pen: -502.49
+2026-07-06 17:58:38,894 | INFO | Update  256 | Steps: 262,144 | Episodes:   256 | EpReward:   -20.90 | FPS:     31 | Actor Loss: 0.0004 | Critic Loss: 0.0022
+2026-07-06 17:58:38,894 | INFO |   Env | HO: 76.92% | Cont: 97.59% | Task: 84.74% | Resolved: 99.99% | Delay: 2.532s | Energy: 1390.38J | MEC fair: 0.956
+2026-07-06 17:58:38,895 | INFO |   Reward | D: -1231.17 | E: -33.59 | Q: 854.35 | H: 5.50 | LB: 0.04 | Enq: 0.00 | Pen: -396.62
+2026-07-06 17:59:11,526 | INFO | Update  257 | Steps: 263,168 | Episodes:   257 | EpReward:   -20.87 | FPS:     31 | Actor Loss: 0.0012 | Critic Loss: 0.0030
+2026-07-06 17:59:11,526 | INFO |   Env | HO: 75.00% | Cont: 98.51% | Task: 85.44% | Resolved: 100.00% | Delay: 2.480s | Energy: 1333.18J | MEC fair: 0.957
+2026-07-06 17:59:11,526 | INFO |   Reward | D: -1232.15 | E: -32.21 | Q: 896.60 | H: 4.96 | LB: 0.02 | Enq: 0.00 | Pen: -389.36
+2026-07-06 17:59:50,730 | INFO | Update  258 | Steps: 264,192 | Episodes:   258 | EpReward:   -20.76 | FPS:     26 | Actor Loss: 0.0005 | Critic Loss: 0.0017
+2026-07-06 17:59:50,731 | INFO |   Env | HO: 71.33% | Cont: 97.74% | Task: 85.40% | Resolved: 100.00% | Delay: 2.470s | Energy: 1307.90J | MEC fair: 0.956
+2026-07-06 17:59:50,731 | INFO |   Reward | D: -1218.29 | E: -32.91 | Q: 891.20 | H: 6.22 | LB: 0.09 | Enq: 0.00 | Pen: -331.04
+2026-07-06 18:00:25,930 | INFO | Update  259 | Steps: 265,216 | Episodes:   259 | EpReward:   -20.60 | FPS:     29 | Actor Loss: 0.0013 | Critic Loss: 0.0013
+2026-07-06 18:00:25,931 | INFO |   Env | HO: 72.79% | Cont: 97.53% | Task: 85.55% | Resolved: 100.00% | Delay: 2.442s | Energy: 1272.16J | MEC fair: 0.955
+2026-07-06 18:00:25,931 | INFO |   Reward | D: -1211.70 | E: -33.15 | Q: 912.55 | H: 6.04 | LB: 0.01 | Enq: 0.00 | Pen: -272.19
+2026-07-06 18:01:03,276 | INFO | Update  260 | Steps: 266,240 | Episodes:   260 | EpReward:   -20.44 | FPS:     27 | Actor Loss: 0.0005 | Critic Loss: 0.0011
+2026-07-06 18:01:03,277 | INFO |   Env | HO: 71.84% | Cont: 98.18% | Task: 83.91% | Resolved: 99.99% | Delay: 2.613s | Energy: 1507.88J | MEC fair: 0.956
+2026-07-06 18:01:03,277 | INFO |   Reward | D: -1271.13 | E: -33.48 | Q: 810.15 | H: 4.64 | LB: 0.03 | Enq: 0.00 | Pen: -511.29
+2026-07-06 18:01:45,433 | INFO | Update  261 | Steps: 267,264 | Episodes:   261 | EpReward:   -20.60 | FPS:     24 | Actor Loss: 0.0002 | Critic Loss: 0.0070
+2026-07-06 18:01:45,434 | INFO |   Env | HO: 70.33% | Cont: 98.88% | Task: 82.59% | Resolved: 99.97% | Delay: 2.705s | Energy: 1677.43J | MEC fair: 0.956
+2026-07-06 18:01:45,434 | INFO |   Reward | D: -1313.75 | E: -34.23 | Q: 733.70 | H: 4.06 | LB: 0.00 | Enq: 0.00 | Pen: -655.07
+2026-07-06 18:02:23,125 | INFO | Update  262 | Steps: 268,288 | Episodes:   262 | EpReward:   -20.73 | FPS:     27 | Actor Loss: 0.0002 | Critic Loss: 0.0043
+2026-07-06 18:02:23,125 | INFO |   Env | HO: 73.58% | Cont: 99.06% | Task: 82.51% | Resolved: 99.99% | Delay: 2.672s | Energy: 1640.13J | MEC fair: 0.957
+2026-07-06 18:02:23,125 | INFO |   Reward | D: -1305.69 | E: -33.79 | Q: 723.35 | H: 4.94 | LB: 0.07 | Enq: 0.00 | Pen: -660.01
+2026-07-06 18:02:59,193 | INFO | Update  263 | Steps: 269,312 | Episodes:   263 | EpReward:   -20.84 | FPS:     28 | Actor Loss: 0.0002 | Critic Loss: 0.0029
+2026-07-06 18:02:59,194 | INFO |   Env | HO: 75.56% | Cont: 99.02% | Task: 83.91% | Resolved: 99.97% | Delay: 2.646s | Energy: 1624.22J | MEC fair: 0.956
+2026-07-06 18:02:59,194 | INFO |   Reward | D: -1304.85 | E: -34.75 | Q: 821.70 | H: 4.32 | LB: 0.00 | Enq: 0.00 | Pen: -616.10
+2026-07-06 18:03:30,795 | INFO | Update  264 | Steps: 270,336 | Episodes:   264 | EpReward:   -20.92 | FPS:     32 | Actor Loss: 0.0008 | Critic Loss: 0.0067
+2026-07-06 18:03:30,795 | INFO |   Env | HO: 66.67% | Cont: 97.59% | Task: 82.84% | Resolved: 99.96% | Delay: 2.656s | Energy: 1576.38J | MEC fair: 0.956
+2026-07-06 18:03:30,795 | INFO |   Reward | D: -1286.77 | E: -34.49 | Q: 751.20 | H: 5.67 | LB: 0.01 | Enq: 0.00 | Pen: -574.57
+2026-07-06 18:04:09,997 | INFO | Update  265 | Steps: 271,360 | Episodes:   265 | EpReward:   -21.01 | FPS:     26 | Actor Loss: 0.0007 | Critic Loss: 0.0078
+2026-07-06 18:04:09,997 | INFO |   Env | HO: 75.27% | Cont: 98.76% | Task: 82.97% | Resolved: 99.97% | Delay: 2.715s | Energy: 1731.49J | MEC fair: 0.957
+2026-07-06 18:04:09,997 | INFO |   Reward | D: -1326.84 | E: -35.26 | Q: 764.70 | H: 4.42 | LB: 0.03 | Enq: 0.00 | Pen: -717.85
+2026-07-06 18:04:42,732 | INFO | Update  266 | Steps: 272,384 | Episodes:   266 | EpReward:   -21.12 | FPS:     31 | Actor Loss: 0.0003 | Critic Loss: 0.0034
+2026-07-06 18:04:42,732 | INFO |   Env | HO: 73.74% | Cont: 98.60% | Task: 83.45% | Resolved: 99.99% | Delay: 2.600s | Energy: 1557.89J | MEC fair: 0.956
+2026-07-06 18:04:42,732 | INFO |   Reward | D: -1291.87 | E: -34.73 | Q: 791.20 | H: 4.59 | LB: 0.03 | Enq: 0.00 | Pen: -573.40
+2026-07-06 18:05:18,615 | INFO | Update  267 | Steps: 273,408 | Episodes:   267 | EpReward:   -21.24 | FPS:     29 | Actor Loss: 0.0008 | Critic Loss: 0.0028
+2026-07-06 18:05:18,615 | INFO |   Env | HO: 75.53% | Cont: 98.49% | Task: 81.81% | Resolved: 100.00% | Delay: 2.757s | Energy: 1744.79J | MEC fair: 0.956
+2026-07-06 18:05:18,615 | INFO |   Reward | D: -1326.35 | E: -34.86 | Q: 688.70 | H: 4.40 | LB: 0.00 | Enq: 0.00 | Pen: -740.66
+2026-07-06 18:05:48,858 | INFO | Update  268 | Steps: 274,432 | Episodes:   268 | EpReward:   -21.33 | FPS:     34 | Actor Loss: 0.0007 | Critic Loss: 0.0049
+2026-07-06 18:05:48,859 | INFO |   Env | HO: 78.72% | Cont: 98.68% | Task: 83.17% | Resolved: 100.00% | Delay: 2.642s | Energy: 1599.65J | MEC fair: 0.956
+2026-07-06 18:05:48,859 | INFO |   Reward | D: -1278.83 | E: -34.22 | Q: 763.00 | H: 4.75 | LB: 0.00 | Enq: 0.00 | Pen: -633.77
+2026-07-06 18:06:19,043 | INFO | Update  269 | Steps: 275,456 | Episodes:   269 | EpReward:   -21.48 | FPS:     34 | Actor Loss: 0.0002 | Critic Loss: 0.0071
+2026-07-06 18:06:19,043 | INFO |   Env | HO: 82.14% | Cont: 98.07% | Task: 82.09% | Resolved: 100.00% | Delay: 2.684s | Energy: 1651.31J | MEC fair: 0.957
+2026-07-06 18:06:19,043 | INFO |   Reward | D: -1308.15 | E: -34.95 | Q: 712.75 | H: 4.20 | LB: 0.00 | Enq: 0.00 | Pen: -678.49
+2026-07-06 18:06:50,520 | INFO | Update  270 | Steps: 276,480 | Episodes:   270 | EpReward:   -21.55 | FPS:     33 | Actor Loss: 0.0003 | Critic Loss: 0.0029
+2026-07-06 18:06:50,521 | INFO |   Env | HO: 75.27% | Cont: 98.46% | Task: 82.50% | Resolved: 99.96% | Delay: 2.681s | Energy: 1641.03J | MEC fair: 0.956
+2026-07-06 18:06:50,521 | INFO |   Reward | D: -1300.45 | E: -34.23 | Q: 724.45 | H: 4.39 | LB: 0.01 | Enq: 0.00 | Pen: -644.05
+2026-07-06 18:07:24,445 | INFO | Update  271 | Steps: 277,504 | Episodes:   271 | EpReward:   -21.65 | FPS:     30 | Actor Loss: 0.0007 | Critic Loss: 0.0025
+2026-07-06 18:07:24,445 | INFO |   Env | HO: 76.29% | Cont: 98.46% | Task: 83.57% | Resolved: 100.00% | Delay: 2.632s | Energy: 1551.28J | MEC fair: 0.956
+2026-07-06 18:07:24,445 | INFO |   Reward | D: -1276.50 | E: -33.69 | Q: 784.60 | H: 4.61 | LB: 0.01 | Enq: 0.00 | Pen: -555.79
+2026-07-06 18:08:03,114 | INFO | Update  272 | Steps: 278,528 | Episodes:   272 | EpReward:   -21.74 | FPS:     26 | Actor Loss: 0.0002 | Critic Loss: 0.0022
+2026-07-06 18:08:03,115 | INFO |   Env | HO: 70.00% | Cont: 98.14% | Task: 82.31% | Resolved: 99.97% | Delay: 2.672s | Energy: 1648.13J | MEC fair: 0.956
+2026-07-06 18:08:03,115 | INFO |   Reward | D: -1316.45 | E: -34.75 | Q: 728.85 | H: 4.80 | LB: 0.00 | Enq: 0.00 | Pen: -642.78
+2026-07-06 18:08:37,191 | INFO | Update  273 | Steps: 279,552 | Episodes:   273 | EpReward:   -21.80 | FPS:     30 | Actor Loss: 0.0005 | Critic Loss: 0.0018
+2026-07-06 18:08:37,191 | INFO |   Env | HO: 81.71% | Cont: 98.71% | Task: 82.76% | Resolved: 99.99% | Delay: 2.704s | Energy: 1722.57J | MEC fair: 0.956
+2026-07-06 18:08:37,191 | INFO |   Reward | D: -1313.08 | E: -35.75 | Q: 749.10 | H: 4.21 | LB: 0.01 | Enq: 0.00 | Pen: -686.74
+2026-07-06 18:09:09,802 | INFO | Update  274 | Steps: 280,576 | Episodes:   274 | EpReward:   -21.91 | FPS:     31 | Actor Loss: 0.0007 | Critic Loss: 0.0017
+2026-07-06 18:09:09,802 | INFO |   Env | HO: 69.90% | Cont: 98.74% | Task: 82.69% | Resolved: 99.97% | Delay: 2.669s | Energy: 1635.19J | MEC fair: 0.956
+2026-07-06 18:09:09,802 | INFO |   Reward | D: -1287.46 | E: -34.29 | Q: 734.40 | H: 4.59 | LB: 0.00 | Enq: 0.00 | Pen: -624.78
+2026-07-06 18:09:41,498 | INFO | Update  275 | Steps: 281,600 | Episodes:   275 | EpReward:   -22.05 | FPS:     32 | Actor Loss: 0.0005 | Critic Loss: 0.0020
+2026-07-06 18:09:41,499 | INFO |   Env | HO: 78.41% | Cont: 98.38% | Task: 82.36% | Resolved: 99.99% | Delay: 2.620s | Energy: 1527.58J | MEC fair: 0.956
+2026-07-06 18:09:41,499 | INFO |   Reward | D: -1280.93 | E: -32.49 | Q: 718.15 | H: 4.39 | LB: 0.03 | Enq: 0.00 | Pen: -579.63
+2026-07-06 18:10:12,563 | INFO | Update  276 | Steps: 282,624 | Episodes:   276 | EpReward:   -22.10 | FPS:     33 | Actor Loss: 0.0009 | Critic Loss: 0.0043
+2026-07-06 18:10:12,566 | INFO |   Env | HO: 73.20% | Cont: 98.15% | Task: 83.03% | Resolved: 99.96% | Delay: 2.631s | Energy: 1529.19J | MEC fair: 0.956
+2026-07-06 18:10:12,567 | INFO |   Reward | D: -1253.26 | E: -32.64 | Q: 746.20 | H: 4.42 | LB: 0.06 | Enq: 0.00 | Pen: -579.21
+2026-07-06 18:10:46,791 | INFO | Update  277 | Steps: 283,648 | Episodes:   277 | EpReward:   -22.21 | FPS:     30 | Actor Loss: 0.0006 | Critic Loss: 0.0046
+2026-07-06 18:10:46,791 | INFO |   Env | HO: 77.17% | Cont: 98.83% | Task: 82.67% | Resolved: 99.96% | Delay: 2.728s | Energy: 1748.40J | MEC fair: 0.956
+2026-07-06 18:10:46,791 | INFO |   Reward | D: -1333.27 | E: -35.27 | Q: 748.05 | H: 4.46 | LB: 0.00 | Enq: 0.00 | Pen: -731.00
+2026-07-06 18:11:23,646 | INFO | Update  278 | Steps: 284,672 | Episodes:   278 | EpReward:   -22.40 | FPS:     28 | Actor Loss: 0.0004 | Critic Loss: 0.0050
+2026-07-06 18:11:23,646 | INFO |   Env | HO: 72.82% | Cont: 97.88% | Task: 83.47% | Resolved: 99.94% | Delay: 2.615s | Energy: 1520.22J | MEC fair: 0.956
+2026-07-06 18:11:23,646 | INFO |   Reward | D: -1271.72 | E: -34.07 | Q: 781.90 | H: 4.75 | LB: 0.00 | Enq: 0.00 | Pen: -545.00
+2026-07-06 18:11:56,951 | INFO | Update  279 | Steps: 285,696 | Episodes:   279 | EpReward:   -22.55 | FPS:     31 | Actor Loss: 0.0002 | Critic Loss: 0.0105
+2026-07-06 18:11:56,952 | INFO |   Env | HO: 78.05% | Cont: 99.13% | Task: 82.36% | Resolved: 99.99% | Delay: 2.716s | Energy: 1726.88J | MEC fair: 0.956
+2026-07-06 18:11:56,952 | INFO |   Reward | D: -1336.96 | E: -34.94 | Q: 725.10 | H: 4.10 | LB: 0.01 | Enq: 0.00 | Pen: -688.37
+2026-07-06 18:12:32,367 | INFO | Update  280 | Steps: 286,720 | Episodes:   280 | EpReward:   -22.59 | FPS:     29 | Actor Loss: -0.0004 | Critic Loss: 0.0072
+2026-07-06 18:12:32,367 | INFO |   Env | HO: 75.27% | Cont: 98.74% | Task: 82.79% | Resolved: 100.00% | Delay: 2.685s | Energy: 1645.35J | MEC fair: 0.957
+2026-07-06 18:12:32,367 | INFO |   Reward | D: -1300.96 | E: -34.13 | Q: 744.25 | H: 4.43 | LB: 0.01 | Enq: 0.00 | Pen: -652.10
+2026-07-06 18:12:56,615 | INFO | Update  281 | Steps: 287,744 | Episodes:   281 | EpReward:   -22.62 | FPS:     42 | Actor Loss: -0.0005 | Critic Loss: 0.0240
+2026-07-06 18:12:56,615 | INFO |   Env | HO: 71.58% | Cont: 89.36% | Task: 78.70% | Resolved: 99.73% | Delay: 2.616s | Energy: 1192.22J | MEC fair: 0.956
+2026-07-06 18:12:56,615 | INFO |   Reward | D: -1121.64 | E: -31.00 | Q: 489.80 | H: 12.73 | LB: 0.09 | Enq: 0.00 | Pen: -374.25
+2026-07-06 18:13:31,994 | INFO | Update  282 | Steps: 288,768 | Episodes:   282 | EpReward:   -22.70 | FPS:     29 | Actor Loss: 0.0010 | Critic Loss: 0.0184
+2026-07-06 18:13:31,995 | INFO |   Env | HO: 75.00% | Cont: 96.67% | Task: 83.89% | Resolved: 100.00% | Delay: 2.538s | Energy: 1389.18J | MEC fair: 0.956
+2026-07-06 18:13:31,995 | INFO |   Reward | D: -1244.03 | E: -32.66 | Q: 815.95 | H: 11.21 | LB: 0.06 | Enq: 0.00 | Pen: -426.16
+2026-07-06 18:14:00,617 | INFO | Update  283 | Steps: 289,792 | Episodes:   283 | EpReward:   -22.66 | FPS:     36 | Actor Loss: 0.0017 | Critic Loss: 0.0219
+2026-07-06 18:14:00,618 | INFO |   Env | HO: 70.45% | Cont: 93.99% | Task: 81.27% | Resolved: 100.00% | Delay: 2.598s | Energy: 1376.12J | MEC fair: 0.956
+2026-07-06 18:14:00,618 | INFO |   Reward | D: -1220.51 | E: -32.98 | Q: 661.50 | H: 11.35 | LB: 0.06 | Enq: 0.00 | Pen: -433.78
+2026-07-06 18:14:32,633 | INFO | Update  284 | Steps: 290,816 | Episodes:   284 | EpReward:   -22.70 | FPS:     32 | Actor Loss: 0.0015 | Critic Loss: 0.0167
+2026-07-06 18:14:32,634 | INFO |   Env | HO: 70.55% | Cont: 94.84% | Task: 82.68% | Resolved: 100.00% | Delay: 2.530s | Energy: 1328.08J | MEC fair: 0.956
+2026-07-06 18:14:32,634 | INFO |   Reward | D: -1238.65 | E: -33.31 | Q: 751.55 | H: 12.62 | LB: 0.04 | Enq: 0.00 | Pen: -393.52
+2026-07-06 18:15:06,657 | INFO | Update  285 | Steps: 291,840 | Episodes:   285 | EpReward:   -22.69 | FPS:     30 | Actor Loss: 0.0007 | Critic Loss: 0.0124
+2026-07-06 18:15:06,657 | INFO |   Env | HO: 77.14% | Cont: 98.00% | Task: 84.29% | Resolved: 100.00% | Delay: 2.521s | Energy: 1432.46J | MEC fair: 0.956
+2026-07-06 18:15:06,657 | INFO |   Reward | D: -1271.71 | E: -34.10 | Q: 845.65 | H: 8.33 | LB: 0.04 | Enq: 0.00 | Pen: -427.18
+2026-07-06 18:15:42,699 | INFO | Update  286 | Steps: 292,864 | Episodes:   286 | EpReward:   -22.65 | FPS:     28 | Actor Loss: 0.0006 | Critic Loss: 0.0078
+2026-07-06 18:15:42,699 | INFO |   Env | HO: 77.85% | Cont: 97.64% | Task: 85.29% | Resolved: 100.00% | Delay: 2.477s | Energy: 1328.20J | MEC fair: 0.956
+2026-07-06 18:15:42,700 | INFO |   Reward | D: -1214.65 | E: -33.44 | Q: 884.65 | H: 7.46 | LB: 0.07 | Enq: 0.00 | Pen: -332.31
+2026-07-06 18:16:14,859 | INFO | Update  287 | Steps: 293,888 | Episodes:   287 | EpReward:   -22.60 | FPS:     32 | Actor Loss: 0.0007 | Critic Loss: 0.0067
+2026-07-06 18:16:14,859 | INFO |   Env | HO: 77.06% | Cont: 97.67% | Task: 85.18% | Resolved: 99.94% | Delay: 2.511s | Energy: 1358.69J | MEC fair: 0.955
+2026-07-06 18:16:14,859 | INFO |   Reward | D: -1216.63 | E: -33.12 | Q: 870.75 | H: 8.20 | LB: 0.01 | Enq: 0.00 | Pen: -372.86
+2026-07-06 18:16:49,849 | INFO | Update  288 | Steps: 294,912 | Episodes:   288 | EpReward:   -22.77 | FPS:     29 | Actor Loss: 0.0001 | Critic Loss: 0.0057
+2026-07-06 18:16:49,850 | INFO |   Env | HO: 69.59% | Cont: 97.43% | Task: 83.53% | Resolved: 99.99% | Delay: 2.571s | Energy: 1463.80J | MEC fair: 0.956
+2026-07-06 18:16:49,850 | INFO |   Reward | D: -1255.49 | E: -33.22 | Q: 785.15 | H: 6.48 | LB: 0.00 | Enq: 0.00 | Pen: -498.16
+2026-07-06 18:17:23,049 | INFO | Update  289 | Steps: 295,936 | Episodes:   289 | EpReward:   -22.80 | FPS:     31 | Actor Loss: 0.0015 | Critic Loss: 0.0024
+2026-07-06 18:17:23,049 | INFO |   Env | HO: 63.22% | Cont: 96.78% | Task: 83.58% | Resolved: 99.99% | Delay: 2.567s | Energy: 1388.85J | MEC fair: 0.956
+2026-07-06 18:17:23,050 | INFO |   Reward | D: -1205.40 | E: -32.48 | Q: 766.90 | H: 9.54 | LB: 0.01 | Enq: 0.00 | Pen: -463.04
+2026-07-06 18:18:00,670 | INFO | Update  290 | Steps: 296,960 | Episodes:   290 | EpReward:   -22.82 | FPS:     27 | Actor Loss: 0.0002 | Critic Loss: 0.0046
+2026-07-06 18:18:00,670 | INFO |   Env | HO: 73.47% | Cont: 97.43% | Task: 83.67% | Resolved: 99.94% | Delay: 2.534s | Energy: 1401.86J | MEC fair: 0.956
+2026-07-06 18:18:00,670 | INFO |   Reward | D: -1235.39 | E: -33.25 | Q: 788.20 | H: 8.94 | LB: 0.04 | Enq: 0.00 | Pen: -405.71
+2026-07-06 18:18:39,063 | INFO | Update  291 | Steps: 297,984 | Episodes:   291 | EpReward:   -22.82 | FPS:     27 | Actor Loss: 0.0007 | Critic Loss: 0.0031
+2026-07-06 18:18:39,063 | INFO |   Env | HO: 75.68% | Cont: 97.98% | Task: 84.72% | Resolved: 99.99% | Delay: 2.536s | Energy: 1437.09J | MEC fair: 0.956
+2026-07-06 18:18:39,063 | INFO |   Reward | D: -1250.17 | E: -33.90 | Q: 856.75 | H: 8.67 | LB: 0.10 | Enq: 0.00 | Pen: -452.79
+2026-07-06 18:19:10,163 | INFO | Update  292 | Steps: 299,008 | Episodes:   292 | EpReward:   -22.91 | FPS:     33 | Actor Loss: 0.0005 | Critic Loss: 0.0043
+2026-07-06 18:19:10,163 | INFO |   Env | HO: 66.67% | Cont: 95.85% | Task: 83.18% | Resolved: 99.99% | Delay: 2.573s | Energy: 1427.96J | MEC fair: 0.956
+2026-07-06 18:19:10,163 | INFO |   Reward | D: -1244.39 | E: -34.10 | Q: 773.65 | H: 9.00 | LB: 0.16 | Enq: 0.00 | Pen: -437.33
+2026-07-06 18:19:37,511 | INFO | Update  293 | Steps: 300,032 | Episodes:   293 | EpReward:   -23.05 | FPS:     37 | Actor Loss: 0.0008 | Critic Loss: 0.0083
+2026-07-06 18:19:37,511 | INFO |   Env | HO: 72.99% | Cont: 98.03% | Task: 83.68% | Resolved: 99.99% | Delay: 2.622s | Energy: 1541.68J | MEC fair: 0.955
+2026-07-06 18:19:37,511 | INFO |   Reward | D: -1260.33 | E: -34.76 | Q: 792.15 | H: 6.21 | LB: 0.00 | Enq: 0.00 | Pen: -536.30
+2026-07-06 18:19:37,511 | INFO | ----------------------------------------
+2026-07-06 18:19:37,511 | INFO | 开始评估...
+2026-07-06 18:20:12,884 | INFO | 评估结果: 奖励 = -28.28 ± 0.83, 长度 = 600, 时延 = 2.622s, 能耗 = 2764.13J, MEC公平性 = 0.956
+2026-07-06 18:20:12,884 | INFO | ----------------------------------------
+2026-07-06 18:20:12,911 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/checkpoint_300032.pt
+2026-07-06 18:20:12,911 | INFO | ============================================================
+2026-07-06 18:20:12,911 | INFO | 训练完成!
+2026-07-06 18:20:12,912 | INFO |   总时间: 2.90 小时
+2026-07-06 18:20:12,912 | INFO |   总步数: 300,032
+2026-07-06 18:20:12,912 | INFO |   总episode: 293
+2026-07-06 18:20:12,912 | INFO |   最佳奖励: -25.03
+2026-07-06 18:20:12,912 | INFO |   最佳模型指标: average delay = -2.5869
+2026-07-06 18:20:12,912 | INFO | ============================================================
+2026-07-06 18:20:12,939 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/final_model.pt
+2026-07-06 18:20:12,985 | INFO | 训练历史已保存: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u20_20260706_152600/training_history.json
