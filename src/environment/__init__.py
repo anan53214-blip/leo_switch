@@ -7,12 +7,21 @@ from .constellation import WalkerConstellation
 from .visibility import VisibilityCalculator, VisibilityInfo
 from .user import User, UserPosition, UserState, UserGenerator, UserManager
 from .task import Task, TaskType, TaskStatus, TaskGenerator, TaskManager, TaskConfig
-from .channel import SatelliteChannel, ChannelConfig, MultiUserChannel
+from .channel import SatelliteChannel, ChannelConfig
 from .mec import MECServer, MECConfig, MECManager, OffloadingCalculator, ComputeResult
 
 # Gymnasium环境（需要安装gymnasium）
 try:
-    from .gym_env import LEOSatelliteEnv, EnvConfig, make_env
+    from .gym_env import (
+        LEOSatelliteEnv,
+        EnvConfig,
+        REWARD_BREAKDOWN_KEYS,
+        REWARD_ENERGY_REFERENCE_J,
+        TASK_FAILURE_PENALTY,
+        TASK_SUCCESS_REWARD,
+        build_env_config,
+        make_env,
+    )
     _GYM_AVAILABLE = True
 except ImportError:
     _GYM_AVAILABLE = False
@@ -34,7 +43,6 @@ __all__ = [
     'TaskConfig',
     'SatelliteChannel',
     'ChannelConfig',
-    'MultiUserChannel',
     'MECServer',
     'MECConfig',
     'MECManager',
@@ -44,4 +52,13 @@ __all__ = [
 
 # 条件导出Gymnasium环境
 if _GYM_AVAILABLE:
-    __all__.extend(['LEOSatelliteEnv', 'EnvConfig', 'make_env'])
+    __all__.extend([
+        'LEOSatelliteEnv',
+        'EnvConfig',
+        'REWARD_BREAKDOWN_KEYS',
+        'REWARD_ENERGY_REFERENCE_J',
+        'TASK_FAILURE_PENALTY',
+        'TASK_SUCCESS_REWARD',
+        'build_env_config',
+        'make_env',
+    ])

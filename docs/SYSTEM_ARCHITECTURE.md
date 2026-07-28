@@ -101,15 +101,14 @@ HAN 编码器将这些异构信息转为用户嵌入和卫星嵌入，供 MAPPO 
 
 ## 6. Reward 与指标
 
-Reward 主要由以下部分组成：
+Reward 采用简单的两层结构：
 
-- 时延奖励或惩罚。
-- 能耗奖励或惩罚。
-- QoS 奖励。
-- 切换收益与切换代价。
-- 负载均衡奖励。
-- 任务成功入队奖励。
-- 队列满、deadline 违约、非法动作等惩罚。
+- 任务层：deadline 内完成时获得基础收益，并扣除归一化时延和能耗；超时或最终失败
+  固定为 `-1`。
+- 连接层：按实际服务中断比例处罚，并对切换失败施加固定惩罚。
+
+负载均衡、队列状态、切换行为和动作合法性不再重复进入 reward，而是分别由评价指标、
+环境约束和 action mask 处理。完整公式见 `docs/REWARD_WEIGHT_CONFIG.md`。
 
 训练与评估会记录：
 
@@ -119,7 +118,9 @@ Reward 主要由以下部分组成：
 - `handover_success_rate`
 - `service_continuity_rate`
 - `service_availability_rate`
-- `task_completion_rate`
+- `task_success_rate`
+- `task_failure_rate`
+- `task_settlement_rate`
 - `task_resolution_rate`
 - `pending_task_rate`
 - `energy_per_successful_task`

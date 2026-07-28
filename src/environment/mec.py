@@ -13,9 +13,8 @@ MEC（移动边缘计算）模型
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 from .channel import SatelliteChannel, ChannelConfig
 
@@ -63,6 +62,18 @@ class ComputeResult:
     
     # 是否满足时延约束
     deadline_met: bool = True
+
+
+@dataclass(frozen=True)
+class MigrationPlan:
+    """用于原子迁移提交的只读任务快照。"""
+    user_id: int
+    old_sat_id: int
+    new_sat_id: int
+    task_ids: Tuple[int, ...]
+    required_slots: int
+    feasible: bool
+    failure_reason: Optional[str] = None
     
 
 class MECServer:
@@ -209,8 +220,6 @@ class MECServer:
         self.current_load = 0.0
         self.total_tasks_processed = 0
         self.total_compute_cycles = 0
-        self._completed_tasks: List[Dict] = []  # 已完成任务缓冲
-    
     # ==================== 任务队列管理（竞争机制） ====================
     
     def enqueue_task(
@@ -303,27 +312,39 @@ class MECServer:
         
         tasks_to_remove = []
         
+        slot_end = float(current_time) + float(time_step)
+        processing_rate_cycles_per_sec = freq_per_task_ghz * 1e9
+
         for task in active_tasks:
             if task['status'] == 'queued':
                 task['status'] = 'processing'
                 task['start_processing_time'] = current_time
             
             # 处理计算
+            remaining_before = max(float(task['remaining_cycles']), 0.0)
             task['remaining_cycles'] -= cycles_per_task
             
             # 检查是否完成
             if task['remaining_cycles'] <= 0:
                 task['remaining_cycles'] = 0
                 task['status'] = 'completed'
+
+                # 任务可能在 slot 内提前完成，完成时刻按实际消耗 cycles 插值。
+                completion_offset = (
+                    remaining_before / processing_rate_cycles_per_sec
+                    if processing_rate_cycles_per_sec > 0.0 else float(time_step)
+                )
+                completion_offset = float(np.clip(completion_offset, 0.0, time_step))
+                finish_time = float(current_time) + completion_offset
                 
                 # 计算总时延 = 上传 + 排队等待 + 处理 + 下载
                 queue_wait = task['start_processing_time'] - task['arrival_time']
-                processing_time = current_time - task['start_processing_time'] + time_step
+                processing_time = finish_time - task['start_processing_time']
                 total_delay = task['upload_delay'] + queue_wait + processing_time + task['download_delay']
                 
                 task['total_delay'] = total_delay
                 task['deadline_met'] = total_delay <= task['max_delay']
-                task['finish_time'] = current_time + time_step
+                task['finish_time'] = finish_time
                 
                 completed_this_step.append(task)
                 tasks_to_remove.append(task)
@@ -332,12 +353,12 @@ class MECServer:
                 self.total_compute_cycles += task['offload_cycles']
             else:
                 # 检查是否超时（任务仍在处理但已超过 deadline）
-                elapsed = current_time - task['arrival_time'] + task['upload_delay']
+                elapsed = slot_end - task['arrival_time'] + task['upload_delay']
                 if elapsed > task['max_delay']:
                     task['status'] = 'timeout'
                     task['total_delay'] = elapsed
                     task['deadline_met'] = False
-                    task['finish_time'] = current_time
+                    task['finish_time'] = slot_end
                     
                     completed_this_step.append(task)
                     tasks_to_remove.append(task)
@@ -787,52 +808,130 @@ class MECManager:
         
         return best_sat
     
-    def migrate_user_tasks(
+    def prepare_user_task_migration(
         self,
         user_id: int,
         old_sat_id: int,
         new_sat_id: int,
-        handover_delay: float = 0.0
-    ) -> Dict[str, int]:
-        """
-        切换时将用户在旧卫星上的排队/处理中任务迁移到新卫星
-        
-        Args:
-            user_id: 用户ID
-            old_sat_id: 旧卫星ID
-            new_sat_id: 新卫星ID
-            handover_delay: 切换带来的额外上传时延 (秒)
-            
-        Returns:
-            迁移结果统计 {'migrated': n, 'failed': m}
-        """
+    ) -> MigrationPlan:
+        """只做容量与任务快照检查，不修改任一队列。"""
         old_server = self.servers.get(old_sat_id)
         new_server = self.servers.get(new_sat_id)
-        
-        if old_server is None or new_server is None:
-            return {'migrated': 0, 'failed': 0}
-        
-        # 找到该用户在旧卫星上的所有任务
-        user_tasks = [t for t in old_server.task_queue if t['user_id'] == user_id]
-        
-        migrated = 0
-        failed = 0
-        
-        for task in user_tasks:
-            # 从旧服务器移除
-            old_server.task_queue.remove(task)
-            
-            # 尝试加入新服务器
-            if not new_server.is_full:
-                # 保留已完成的计算进度，添加切换时延
-                task['upload_delay'] += handover_delay
-                new_server.task_queue.append(task)
-                migrated += 1
-            else:
-                # 新服务器队列满，任务丢失
-                failed += 1
-        
-        return {'migrated': migrated, 'failed': failed}
+
+        if new_server is None:
+            return MigrationPlan(
+                user_id, old_sat_id, new_sat_id, (), 0, False,
+                'target_server_unavailable',
+            )
+        if old_sat_id < 0:
+            return MigrationPlan(user_id, old_sat_id, new_sat_id, (), 0, True)
+        if old_server is None:
+            return MigrationPlan(
+                user_id, old_sat_id, new_sat_id, (), 0, False,
+                'source_server_unavailable',
+            )
+        if old_server is new_server:
+            return MigrationPlan(
+                user_id, old_sat_id, new_sat_id, (), 0, False,
+                'same_server',
+            )
+
+        user_tasks = [
+            task for task in old_server.task_queue
+            if task['user_id'] == user_id
+        ]
+        task_ids = tuple(int(task['task_id']) for task in user_tasks)
+        available_slots = max(
+            int(new_server.config.max_queue_size) - new_server.queue_length,
+            0,
+        )
+        feasible = len(user_tasks) <= available_slots
+        return MigrationPlan(
+            user_id=user_id,
+            old_sat_id=old_sat_id,
+            new_sat_id=new_sat_id,
+            task_ids=task_ids,
+            required_slots=len(user_tasks),
+            feasible=feasible,
+            failure_reason=None if feasible else 'target_queue_capacity',
+        )
+
+    def commit_user_task_migration(
+        self,
+        plan: MigrationPlan,
+        handover_delay: float = 0.0,
+    ) -> Dict[str, Any]:
+        """迁移计划全部满足时一次提交，否则两个队列均保持不变。"""
+        failed_result = {
+            'migrated': 0,
+            'failed': int(plan.required_slots),
+            'migrated_task_ids': [],
+            'failed_task_ids': list(plan.task_ids),
+            'failure_reason': plan.failure_reason,
+        }
+        if not plan.feasible:
+            return failed_result
+
+        new_server = self.servers.get(plan.new_sat_id)
+        old_server = self.servers.get(plan.old_sat_id)
+        if new_server is None:
+            return {**failed_result, 'failure_reason': 'target_server_unavailable'}
+        if plan.old_sat_id < 0:
+            return {
+                'migrated': 0,
+                'failed': 0,
+                'migrated_task_ids': [],
+                'failed_task_ids': [],
+                'failure_reason': None,
+            }
+        if old_server is None or old_server is new_server:
+            reason = 'source_server_unavailable' if old_server is None else 'same_server'
+            return {**failed_result, 'failure_reason': reason}
+
+        current_tasks = [
+            task for task in old_server.task_queue
+            if task['user_id'] == plan.user_id
+        ]
+        current_ids = tuple(int(task['task_id']) for task in current_tasks)
+        if current_ids != plan.task_ids:
+            return {**failed_result, 'failure_reason': 'source_tasks_changed'}
+        available_slots = max(
+            int(new_server.config.max_queue_size) - new_server.queue_length,
+            0,
+        )
+        if len(current_tasks) > available_slots:
+            return {**failed_result, 'failure_reason': 'target_queue_capacity_changed'}
+
+        for task in current_tasks:
+            task['upload_delay'] += float(handover_delay)
+        old_server.task_queue = [
+            task for task in old_server.task_queue
+            if task['user_id'] != plan.user_id
+        ]
+        new_server.task_queue.extend(current_tasks)
+        return {
+            'migrated': len(current_tasks),
+            'failed': 0,
+            'migrated_task_ids': list(plan.task_ids),
+            'failed_task_ids': [],
+            'failure_reason': None,
+        }
+
+    def remove_user_tasks(self, sat_id: int, user_id: int) -> List[Dict[str, Any]]:
+        """移除并返回用户在指定卫星上的全部未完成任务。"""
+        server = self.servers.get(sat_id)
+        if server is None:
+            return []
+        removed = [
+            task for task in server.task_queue
+            if task['user_id'] == user_id
+        ]
+        if removed:
+            server.task_queue = [
+                task for task in server.task_queue
+                if task['user_id'] != user_id
+            ]
+        return removed
     
     def reset_all(self):
         """重置所有MEC服务器"""

@@ -18,7 +18,7 @@ LEO卫星网络切换与任务卸载联合优化 - 完整训练脚本
 python scripts/train.py
 
 # 指定参数
-python scripts/train.py --num_users 10 --total_timesteps 500000 --seed 42
+python scripts/train.py --num_users 10 --total_timesteps 300000 --seed 42
 
 # 从检查点恢复
 python scripts/train.py --load_path results/models/checkpoint_100000.pt
@@ -31,7 +31,6 @@ python scripts/train.py --load_path results/models/checkpoint_100000.pt
 - MAPPO: 多智能体PPO算法
 """
 
-import os
 import sys
 import time
 import argparse
@@ -52,9 +51,16 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'src'))
 
 from scripts.load_balance_metrics import normalize_load_balance_metrics
+from scripts.paper_metrics import derive_paper_metrics
 
 # 导入项目模块
-from src.environment.gym_env import LEOSatelliteEnv, EnvConfig, summarize_env_stats
+from src.environment.gym_env import (
+    LEOSatelliteEnv,
+    EnvConfig,
+    REWARD_BREAKDOWN_KEYS,
+    build_env_config,
+    summarize_env_stats,
+)
 from src.features.satellite_load import (
     SATELLITE_CONTEXT_FEATURE_DIM,
     SATELLITE_LOAD_FEATURE_DIM,
@@ -66,8 +72,6 @@ from src.features.satellite_load import (
 from src.graph.builder import HeteroGraphBuilder
 from src.graph.features import FeatureExtractor
 from src.model.hetero_gnn import HANEncoder, HANConfig
-from src.model.actor import MultiAgentActor, ActorConfig
-from src.model.critic import CentralizedCritic, CriticConfig
 from src.algorithm.mappo import MAPPO, MAPPOConfig
 from src.algorithm.attention_mappo import AttentionMAPPO
 from src.algorithm.buffer import MultiAgentRolloutBuffer
@@ -76,9 +80,24 @@ from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
 
+MODEL_SCHEMA_VERSION = 2
+GEOMETRY_SCHEMA_VERSION = 2
+ENVIRONMENT_SCHEMA_VERSION = 5
+
+
+def reward_breakdown(stats: Dict[str, Any]) -> Dict[str, float]:
+    """提取当前 reward 结构的全部分项。"""
+    return {
+        key: float(stats.get(key, 0.0))
+        for key in REWARD_BREAKDOWN_KEYS
+    }
+
+
 BEST_MODEL_METRIC_CHOICES = (
     "reward",
     "avg_delay",
+    "avg_success_delay",
+    "p95_success_delay",
     "total_energy",
     "service_continuity_rate",
     "service_availability_rate",
@@ -86,6 +105,7 @@ BEST_MODEL_METRIC_CHOICES = (
     "load_balance_coefficient",
     "load_balance_variance",
     "mec_load_fairness",
+    "jain_mec_load_fairness",
     "avg_load_balance_score",
     "energy_per_successful_task",
     "task_completion_rate",
@@ -97,6 +117,8 @@ BEST_MODEL_METRIC_CHOICES = (
 BEST_MODEL_METRIC_LABELS = {
     "reward": "reward",
     "avg_delay": "average delay",
+    "avg_success_delay": "successful-task average delay",
+    "p95_success_delay": "successful-task P95 delay",
     "total_energy": "energy per resolved task",
     "service_continuity_rate": "service continuity",
     "service_availability_rate": "service availability",
@@ -104,6 +126,7 @@ BEST_MODEL_METRIC_LABELS = {
     "load_balance_coefficient": "load balance coefficient",
     "load_balance_variance": "load balance variance",
     "mec_load_fairness": "MEC load fairness",
+    "jain_mec_load_fairness": "MEC load Jain fairness",
     "avg_load_balance_score": "load balance",
     "energy_per_successful_task": "energy per successful task",
     "task_completion_rate": "task completion",
@@ -134,7 +157,7 @@ def summarize_env_stats_with_load_balance(env_stats: Dict[str, Any]) -> Dict[str
     summary = summarize_env_stats(env_stats)
     if "load_variance_samples" in env_stats:
         summary["load_variance_samples"] = env_stats.get("load_variance_samples", [])
-    return normalize_load_balance_metrics(summary)
+    return derive_paper_metrics(normalize_load_balance_metrics(summary))
 
 
 def _bounded_unit_score(value: Any) -> float:
@@ -149,9 +172,19 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
         return float(record.get("eval_mean_reward", record.get("mean_reward", 0.0)))
     if metric_name == "avg_delay":
         return -float(record.get("avg_delay", float("inf")))
+    if metric_name == "avg_success_delay":
+        if float(record.get("completed_tasks", 0.0)) <= 0.0:
+            return float("-inf")
+        return -float(record.get("avg_success_delay", float("inf")))
+    if metric_name == "p95_success_delay":
+        if float(record.get("completed_tasks", 0.0)) <= 0.0:
+            return float("-inf")
+        return -float(record.get("p95_success_delay", float("inf")))
     if metric_name == "total_energy":
         return -energy_per_resolved_task(record)
     if metric_name == "energy_per_successful_task":
+        if float(record.get("completed_tasks", 0.0)) <= 0.0:
+            return float("-inf")
         return -energy_per_successful_task(record)
     if metric_name == "service_continuity_rate":
         return _bounded_unit_score(record.get("service_continuity_rate", 0.0))
@@ -172,6 +205,10 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
     if metric_name == "mec_load_fairness":
         return _bounded_unit_score(
             normalize_load_balance_metrics(record).get("mec_load_fairness", 0.0)
+        )
+    if metric_name == "jain_mec_load_fairness":
+        return _bounded_unit_score(
+            derive_paper_metrics(record).get("jain_mec_load_fairness", 0.0)
         )
     if metric_name == "task_completion_rate":
         return _bounded_unit_score(record.get("task_completion_rate", 0.0))
@@ -201,26 +238,20 @@ class TrainConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     
     # ---------- 环境参数 ----------
-    num_planes: int = 6                   # 轨道平面数
-    sats_per_plane: int = 11              # 每轨道卫星数
-    altitude_km: float = 550.0            # 轨道高度
-    inclination_deg: float = 53.0         # 轨道倾角
-    num_users: int = 20                   # 用户数量
-    max_steps: int = 600                  # 每episode最大步数
-    time_step_sec: float = 1.0            # 时间步长
-    min_effective_offload_ratio: float = 0.05
-    reward_delay_weight: float = 0.25
-    reward_energy_weight: float = 0.30
-    reward_handover_weight: float = 0.10
-    reward_load_balance_weight: float = 0.05
-    reward_qos_weight: float = 0.25
-    reward_service_continuity_weight: float = 0.15
-    reward_deadline_slack_weight: float = 0.10
-    reward_enqueue_bonus: float = 0.0
-    reward_failed_handover_penalty: float = 0.3
-    reward_deadline_penalty: float = 0.70
-    reward_failed_task_penalty: float = 0.60
-    pre_handover_rvt_sec: float = 30.0    # Pre-handover RVT 阈值
+    num_planes: int = EnvConfig.num_planes
+    sats_per_plane: int = EnvConfig.sats_per_plane
+    altitude_km: float = EnvConfig.altitude_km
+    inclination_deg: float = EnvConfig.inclination_deg
+    num_users: int = EnvConfig.num_users
+    max_steps: int = EnvConfig.max_steps
+    time_step_sec: float = EnvConfig.time_step_sec
+    min_effective_offload_ratio: float = EnvConfig.min_effective_offload_ratio
+    reward_delay_weight: float = EnvConfig.reward_delay_weight
+    reward_energy_weight: float = EnvConfig.reward_energy_weight
+    reward_interruption_weight: float = EnvConfig.reward_interruption_weight
+    reward_failed_handover_penalty: float = EnvConfig.reward_failed_handover_penalty
+    pre_handover_rvt_sec: float = EnvConfig.pre_handover_rvt_sec
+    handover_min_snr_db: float = EnvConfig.handover_min_snr_db
 
     # ---------- 图参数 ----------
     max_visible_sats: int = 10            # 最大可见卫星数（候选集）
@@ -268,12 +299,12 @@ class TrainConfig:
     target_update_interval: int = 500
     
     # ---------- 训练参数 ----------
-    total_timesteps: int = 1_200_000      # 总训练步数
+    total_timesteps: int = 300_000        # 总训练步数
     n_steps: int = 1024                   # 每次更新收集步数
-    eval_interval: int = 100_000          # 评估间隔
+    eval_interval: int = 50_000           # 评估间隔
     eval_episodes: int = 3                # 评估episode数
-    graph_update_interval: int = 100      # 图重建间隔（步），增大可提速
-    save_interval: int = 200_000          # 保存间隔
+    graph_update_interval: int = 1        # 每步更新动态图
+    save_interval: int = 100_000          # 检查点保存间隔
     log_interval: int = 1                 # 日志间隔
     
     # ---------- 路径参数 ----------
@@ -285,12 +316,7 @@ class TrainConfig:
     
     # ---------- Early Stopping ----------
     early_stop_patience: int = 0          # 连续N次更新无改善则停止（0=禁用）
-    best_model_metric: str = "reward"     # best_model.pt 的选优指标
-
-
-def get_default_config() -> TrainConfig:
-    """获取默认配置"""
-    return TrainConfig()
+    best_model_metric: str = "avg_delay"  # best_model.pt 的选优指标
 
 
 # ============================================================
@@ -422,31 +448,7 @@ class HANMAPPOTrainer:
         """初始化环境"""
         self.logger.info("初始化环境...")
         
-        env_config = EnvConfig(
-            num_planes=self.config.num_planes,
-            sats_per_plane=self.config.sats_per_plane,
-            altitude_km=self.config.altitude_km,
-            inclination_deg=self.config.inclination_deg,
-            num_users=self.config.num_users,
-            max_steps=self.config.max_steps,
-            time_step_sec=self.config.time_step_sec,
-            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
-            reward_delay_weight=self.config.reward_delay_weight,
-            reward_energy_weight=self.config.reward_energy_weight,
-            reward_handover_weight=self.config.reward_handover_weight,
-            reward_load_balance_weight=self.config.reward_load_balance_weight,
-            reward_qos_weight=self.config.reward_qos_weight,
-            reward_service_continuity_weight=self.config.reward_service_continuity_weight,
-            reward_deadline_slack_weight=self.config.reward_deadline_slack_weight,
-            reward_enqueue_bonus=self.config.reward_enqueue_bonus,
-            reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
-            reward_deadline_penalty=self.config.reward_deadline_penalty,
-            reward_failed_task_penalty=self.config.reward_failed_task_penalty,
-            pre_handover_rvt_sec=self.config.pre_handover_rvt_sec,
-            seed=self.config.seed
-        )
-        
-        self.env = LEOSatelliteEnv(env_config)
+        self.env = LEOSatelliteEnv(build_env_config(self.config))
         
         # 提取环境信息
         self.num_agents = self.config.num_users
@@ -537,6 +539,11 @@ class HANMAPPOTrainer:
         )
         
         self.mappo = MAPPO(mappo_config)
+        self.mappo.set_representation_module(
+            self.han_encoder,
+            self._reencode_mappo_batch,
+            learning_rate=self.config.learning_rate,
+        )
         
         # 统计参数量
         actor_params = sum(p.numel() for p in self.mappo.actor.parameters())
@@ -565,6 +572,104 @@ class HANMAPPOTrainer:
     def _invalidate_han_cache(self) -> None:
         self._cached_han_user_embed = None
         self._cached_sat_embed = None
+        self._cached_graph_snapshot = None
+
+    def _encode_graph_snapshot(self, graph):
+        """在当前设备上编码一个不可变图快照。"""
+        node_features = {
+            node_type: torch.as_tensor(
+                features,
+                dtype=torch.float32,
+                device=self.device,
+            )
+            for node_type, features in graph.node_features.items()
+        }
+        edge_index = {
+            edge_type: (
+                torch.as_tensor(
+                    indices[0],
+                    dtype=torch.long,
+                    device=self.device,
+                ),
+                torch.as_tensor(
+                    indices[1],
+                    dtype=torch.long,
+                    device=self.device,
+                ),
+            )
+            for edge_type, indices in graph.edge_index.items()
+        }
+        edge_features = {
+            edge_type: torch.as_tensor(
+                features,
+                dtype=torch.float32,
+                device=self.device,
+            )
+            for edge_type, features in graph.edge_features.items()
+        }
+        return self.han_encoder(
+            node_features,
+            edge_index,
+            edge_features,
+        )
+
+    def _reencode_mappo_batch(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """用当前 HAN 参数重算 PPO minibatch 的图表示。"""
+        time_indices = batch["time_indices"].detach().cpu().tolist()
+        agent_indices = batch["agent_indices"].detach().cpu().tolist()
+        encoded_by_time = {}
+
+        for time_index in sorted(set(time_indices)):
+            graph = self.buffer.graph_snapshots[time_index]
+            if graph is None:
+                raise RuntimeError(
+                    f"rollout 的第 {time_index} 步缺少图快照"
+                )
+            node_embeddings = self._encode_graph_snapshot(graph)
+            stored_observations = torch.as_tensor(
+                self.buffer.observations[time_index],
+                dtype=torch.float32,
+                device=self.device,
+            )
+            policy_observations = torch.cat(
+                [
+                    stored_observations[:, :self.raw_obs_dim],
+                    node_embeddings["user"],
+                    stored_observations[:, -5:],
+                ],
+                dim=1,
+            )
+            encoded_by_time[time_index] = (
+                policy_observations,
+                node_embeddings["satellite"],
+                policy_observations.reshape(-1),
+            )
+
+        batch["observations"] = torch.stack(
+            [
+                encoded_by_time[time_index][0][agent_index]
+                for time_index, agent_index in zip(
+                    time_indices,
+                    agent_indices,
+                )
+            ]
+        )
+        batch["satellite_embeddings"] = torch.stack(
+            [
+                encoded_by_time[time_index][1]
+                for time_index in time_indices
+            ]
+        )
+        batch["global_states"] = torch.stack(
+            [
+                encoded_by_time[time_index][2]
+                for time_index in time_indices
+            ]
+        )
+        return batch
 
     def _raw_policy_observations(self) -> np.ndarray:
         raw_observations = np.asarray(self.env._get_observation(), dtype=np.float32)
@@ -595,25 +700,11 @@ class HANMAPPOTrainer:
         
         if need_full_update:
             graph = self.graph_builder.build(self.env)
-            node_features = {
-                'satellite': torch.tensor(graph.node_features['satellite'], dtype=torch.float32, device=self.device),
-                'user': torch.tensor(graph.node_features['user'], dtype=torch.float32, device=self.device),
-            }
-            edge_index = {
-                k: (
-                    torch.tensor(v[0], dtype=torch.long, device=self.device),
-                    torch.tensor(v[1], dtype=torch.long, device=self.device),
-                )
-                for k, v in graph.edge_index.items()
-            }
-            edge_features = {
-                k: torch.tensor(v, dtype=torch.float32, device=self.device)
-                for k, v in graph.edge_features.items()
-            }
             with torch.no_grad():
-                node_embeddings = self.han_encoder(node_features, edge_index, edge_features)
+                node_embeddings = self._encode_graph_snapshot(graph)
             self._cached_han_user_embed = node_embeddings['user'].detach().cpu().numpy().astype(np.float32)
             self._cached_sat_embed = node_embeddings['satellite'].detach().cpu().numpy().astype(np.float32)
+            self._cached_graph_snapshot = graph
         
         # 轻量级更新：内联提取task/rvt，避免调用完整的extract_node_features
         rvt_warning = np.zeros((self.num_agents, 1), dtype=np.float32)
@@ -645,7 +736,7 @@ class HANMAPPOTrainer:
             else:
                 rvt_warning[uid, 0] = 1.0
             # available_actions and candidate_sat_ids
-            visible_sats = self.env._get_visible_satellites(user)
+            visible_sats = self.env._get_handover_candidates(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
                 available_actions[uid, 1:valid_count + 1] = 1.0
@@ -724,9 +815,16 @@ class HANMAPPOTrainer:
         return env_actions
 
     @staticmethod
-    def _empty_env_stats() -> Dict[str, float]:
+    def _empty_env_stats() -> Dict[str, Any]:
         return {
             'total_handovers': 0,
+            'handover_attempts': 0,
+            'handover_committed': 0,
+            'handover_aborted': 0,
+            'handover_radio_failures': 0,
+            'migration_rejections': 0,
+            'reconnection_attempts': 0,
+            'reconnections': 0,
             'successful_handovers': 0,
             'failed_handovers': 0,
             'forced_disconnects': 0,
@@ -737,32 +835,30 @@ class HANMAPPOTrainer:
             'total_tasks': 0,
             'completed_tasks': 0,
             'deadline_violations': 0,
+            'failed_tasks': 0,
             'total_delay': 0.0,
             'total_energy': 0.0,
-            'reward_delay': 0.0,
-            'reward_energy': 0.0,
-            'reward_qos': 0.0,
+            'successful_task_delay_samples': [],
             'reward_task_success': 0.0,
-            'reward_deadline_slack': 0.0,
-            'reward_service_continuity': 0.0,
-            'reward_handover': 0.0,
-            'reward_load_balance': 0.0,
-            'reward_enqueue': 0.0,
-            'penalty_deadline': 0.0,
+            'penalty_delay': 0.0,
+            'penalty_energy': 0.0,
             'penalty_task_failure': 0.0,
-            'penalty_queue_full': 0.0,
-            'penalty_invalid_action': 0.0,
-            'penalty_blocked': 0.0,
+            'penalty_service_interruption': 0.0,
             'penalty_failed_handover': 0.0,
-            'penalty_handover_cost': 0.0,
             'load_balance_sum': 0.0,
             'mec_activity_sum': 0.0,
             'load_balance_samples': 0,
+            'jain_load_fairness_sum': 0.0,
+            'jain_load_fairness_samples': 0,
             'load_variance_samples': [],
         }
 
     @classmethod
-    def _accumulate_env_stats(cls, target: Dict[str, float], source: Dict[str, float]) -> Dict[str, float]:
+    def _accumulate_env_stats(
+        cls,
+        target: Dict[str, Any],
+        source: Dict[str, Any],
+    ) -> Dict[str, Any]:
         for key, default_value in cls._empty_env_stats().items():
             if isinstance(default_value, list):
                 target.setdefault(key, [])
@@ -863,7 +959,8 @@ class HANMAPPOTrainer:
                 value=value,
                 log_probs=log_probs,
                 candidate_masks=available_actions,
-                candidate_sat_ids=candidate_sat_ids
+                candidate_sat_ids=candidate_sat_ids,
+                graph_snapshot=self._cached_graph_snapshot,
             )
             
             # 更新统计
@@ -922,6 +1019,13 @@ class HANMAPPOTrainer:
             'rollout_mean_reward': rollout_mean_reward,
             # 环境指标
             'total_handovers': env_stats.get('total_handovers', 0),
+            'handover_attempts': env_stats.get('handover_attempts', 0),
+            'handover_committed': env_stats.get('handover_committed', 0),
+            'handover_aborted': env_stats.get('handover_aborted', 0),
+            'handover_radio_failures': env_stats.get('handover_radio_failures', 0),
+            'migration_rejections': env_stats.get('migration_rejections', 0),
+            'reconnection_attempts': env_stats.get('reconnection_attempts', 0),
+            'reconnections': env_stats.get('reconnections', 0),
             'successful_handovers': env_stats.get('successful_handovers', 0),
             'failed_handovers': env_stats.get('failed_handovers', 0),
             'forced_disconnects': env_stats.get('forced_disconnects', 0),
@@ -937,6 +1041,7 @@ class HANMAPPOTrainer:
             'total_tasks': env_stats.get('total_tasks', 0),
             'completed_tasks': env_stats.get('completed_tasks', 0),
             'deadline_violations': env_stats.get('deadline_violations', 0),
+            'failed_tasks': env_stats.get('failed_tasks', 0),
             'resolved_tasks': summary_env_stats.get('resolved_tasks', 0),
             'pending_tasks': summary_env_stats.get('pending_tasks', 0),
             'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
@@ -947,7 +1052,11 @@ class HANMAPPOTrainer:
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
             'avg_delay': summary_env_stats.get('avg_delay', 0.0),
+            'avg_success_delay': summary_env_stats.get('avg_success_delay', 0.0),
+            'p95_success_delay': summary_env_stats.get('p95_success_delay', 0.0),
             'handover_frequency': summary_env_stats.get('handover_frequency', 0.0),
+            'handovers_per_user_minute': summary_env_stats.get('handovers_per_user_minute', 0.0),
+            'blocked_time_ratio': summary_env_stats.get('blocked_time_ratio', 0.0),
             'total_energy': env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 env_stats.get('total_energy', 0.0) /
@@ -958,24 +1067,10 @@ class HANMAPPOTrainer:
             'load_balance_coefficient': summary_env_stats.get('load_balance_coefficient', 0.0),
             'load_variance_sample_count': summary_env_stats.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary_env_stats.get('mec_load_fairness', 0.0),
+            'jain_mec_load_fairness': summary_env_stats.get('jain_mec_load_fairness', 0.0),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary_env_stats.get('active_load_balance_score', 0.0),
-            'reward_delay': env_stats.get('reward_delay', 0.0),
-            'reward_energy': env_stats.get('reward_energy', 0.0),
-            'reward_qos': env_stats.get('reward_qos', 0.0),
-            'reward_task_success': env_stats.get('reward_task_success', 0.0),
-            'reward_deadline_slack': env_stats.get('reward_deadline_slack', 0.0),
-            'reward_service_continuity': env_stats.get('reward_service_continuity', 0.0),
-            'reward_handover': env_stats.get('reward_handover', 0.0),
-            'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
-            'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
-            'penalty_deadline': env_stats.get('penalty_deadline', 0.0),
-            'penalty_task_failure': env_stats.get('penalty_task_failure', 0.0),
-            'penalty_queue_full': env_stats.get('penalty_queue_full', 0.0),
-            'penalty_invalid_action': env_stats.get('penalty_invalid_action', 0.0),
-            'penalty_blocked': env_stats.get('penalty_blocked', 0.0),
-            'penalty_failed_handover': env_stats.get('penalty_failed_handover', 0.0),
-            'penalty_handover_cost': env_stats.get('penalty_handover_cost', 0.0),
+            **reward_breakdown(env_stats),
         }
         
         return stats
@@ -1031,8 +1126,20 @@ class HANMAPPOTrainer:
                 'entropy': update_stats.get('entropy', 0),
                 'kl_divergence': update_stats.get('kl_divergence', 0),
                 'clip_fraction': update_stats.get('clip_fraction', 0),
+                'han_grad_norm': update_stats.get('han_grad_norm', 0),
+                'han_parameter_delta': update_stats.get('han_parameter_delta', 0),
+                'han_metapaths_executed': update_stats.get(
+                    'han_metapaths_executed', 0
+                ),
                 # 环境指标
                 'total_handovers': rollout_stats.get('total_handovers', 0),
+                'handover_attempts': rollout_stats.get('handover_attempts', 0),
+                'handover_committed': rollout_stats.get('handover_committed', 0),
+                'handover_aborted': rollout_stats.get('handover_aborted', 0),
+                'handover_radio_failures': rollout_stats.get('handover_radio_failures', 0),
+                'migration_rejections': rollout_stats.get('migration_rejections', 0),
+                'reconnection_attempts': rollout_stats.get('reconnection_attempts', 0),
+                'reconnections': rollout_stats.get('reconnections', 0),
                 'successful_handovers': rollout_stats.get('successful_handovers', 0),
                 'failed_handovers': rollout_stats.get('failed_handovers', 0),
                 'forced_disconnects': rollout_stats.get('forced_disconnects', 0),
@@ -1048,6 +1155,7 @@ class HANMAPPOTrainer:
                 'total_tasks': rollout_stats.get('total_tasks', 0),
                 'completed_tasks': rollout_stats.get('completed_tasks', 0),
                 'deadline_violations': rollout_stats.get('deadline_violations', 0),
+                'failed_tasks': rollout_stats.get('failed_tasks', 0),
                 'resolved_tasks': rollout_stats.get('resolved_tasks', 0),
                 'pending_tasks': rollout_stats.get('pending_tasks', 0),
                 'task_completion_rate': rollout_stats.get('task_completion_rate', 0),
@@ -1058,7 +1166,11 @@ class HANMAPPOTrainer:
                 'pending_task_rate': rollout_stats.get('pending_task_rate', 0),
                 'deadline_violation_rate': rollout_stats.get('deadline_violation_rate', 0),
                 'avg_delay': rollout_stats.get('avg_delay', 0),
+                'avg_success_delay': rollout_stats.get('avg_success_delay', 0),
+                'p95_success_delay': rollout_stats.get('p95_success_delay', 0),
                 'handover_frequency': rollout_stats.get('handover_frequency', 0),
+                'handovers_per_user_minute': rollout_stats.get('handovers_per_user_minute', 0),
+                'blocked_time_ratio': rollout_stats.get('blocked_time_ratio', 0),
                 'total_energy': rollout_stats.get('total_energy', 0),
                 'energy_per_resolved_task': energy_per_resolved_task(rollout_stats),
                 'energy_per_successful_task': energy_per_successful_task(rollout_stats),
@@ -1066,24 +1178,10 @@ class HANMAPPOTrainer:
                 'load_balance_coefficient': rollout_stats.get('load_balance_coefficient', rollout_stats.get('mec_load_fairness', 0)),
                 'load_variance_sample_count': rollout_stats.get('load_variance_sample_count', 0),
                 'mec_load_fairness': rollout_stats.get('mec_load_fairness', rollout_stats.get('avg_load_balance_score', 0)),
+                'jain_mec_load_fairness': rollout_stats.get('jain_mec_load_fairness', 0),
                 'avg_load_balance_score': rollout_stats.get('avg_load_balance_score', 0),
                 'active_load_balance_score': rollout_stats.get('active_load_balance_score', 0),
-                'reward_delay': rollout_stats.get('reward_delay', 0),
-                'reward_energy': rollout_stats.get('reward_energy', 0),
-                'reward_qos': rollout_stats.get('reward_qos', 0),
-                'reward_task_success': rollout_stats.get('reward_task_success', 0),
-                'reward_deadline_slack': rollout_stats.get('reward_deadline_slack', 0),
-                'reward_service_continuity': rollout_stats.get('reward_service_continuity', 0),
-                'reward_handover': rollout_stats.get('reward_handover', 0),
-                'reward_load_balance': rollout_stats.get('reward_load_balance', 0),
-                'reward_enqueue': rollout_stats.get('reward_enqueue', 0),
-                'penalty_deadline': rollout_stats.get('penalty_deadline', 0),
-                'penalty_task_failure': rollout_stats.get('penalty_task_failure', 0),
-                'penalty_queue_full': rollout_stats.get('penalty_queue_full', 0),
-                'penalty_invalid_action': rollout_stats.get('penalty_invalid_action', 0),
-                'penalty_blocked': rollout_stats.get('penalty_blocked', 0),
-                'penalty_failed_handover': rollout_stats.get('penalty_failed_handover', 0),
-                'penalty_handover_cost': rollout_stats.get('penalty_handover_cost', 0),
+                **reward_breakdown(rollout_stats),
             }
             self.training_history.append(record)
             
@@ -1150,7 +1248,10 @@ class HANMAPPOTrainer:
             f"{reward_type}Reward: {display_reward:8.2f} | "
             f"FPS: {fps:6.0f} | "
             f"Actor Loss: {update_stats.get('actor_loss', 0):.4f} | "
-            f"Critic Loss: {update_stats.get('critic_loss', 0):.4f}"
+            f"Critic Loss: {update_stats.get('critic_loss', 0):.4f} | "
+            f"HAN Grad: {update_stats.get('han_grad_norm', 0):.4f} | "
+            f"HAN Δ: {update_stats.get('han_parameter_delta', 0):.6f} | "
+            f"HAN Metapaths: {update_stats.get('han_metapaths_executed', 0)}"
         )
         self.logger.info(
             "  Env | "
@@ -1164,71 +1265,125 @@ class HANMAPPOTrainer:
         )
         self.logger.info(
             "  Reward | "
-            f"D: {rollout_stats.get('reward_delay', 0):.2f} | "
-            f"E: {rollout_stats.get('reward_energy', 0):.2f} | "
-            f"Q: {rollout_stats.get('reward_qos', 0):.2f} | "
-            f"H: {rollout_stats.get('reward_handover', 0):.2f} | "
-            f"LB: {rollout_stats.get('reward_load_balance', 0):.2f} | "
-            f"Enq: {rollout_stats.get('reward_enqueue', 0):.2f} | "
-            f"Pen: {rollout_stats.get('penalty_deadline', 0) + rollout_stats.get('penalty_queue_full', 0) + rollout_stats.get('penalty_invalid_action', 0) + rollout_stats.get('penalty_blocked', 0) + rollout_stats.get('penalty_failed_handover', 0) + rollout_stats.get('penalty_handover_cost', 0):.2f}"
+            f"Success: {rollout_stats.get('reward_task_success', 0):.2f} | "
+            f"Delay: {rollout_stats.get('penalty_delay', 0):.2f} | "
+            f"Energy: {rollout_stats.get('penalty_energy', 0):.2f} | "
+            f"TaskFail: {rollout_stats.get('penalty_task_failure', 0):.2f} | "
+            f"Interrupt: {rollout_stats.get('penalty_service_interruption', 0):.2f} | "
+            f"HOFail: {rollout_stats.get('penalty_failed_handover', 0):.2f}"
         )
     
+    def _run_isolated_on_policy_evaluation(self):
+        """在独立环境和固定种子上运行 on-policy 评估。"""
+        eval_rewards = []
+        eval_lengths = []
+        eval_env_stats = self._empty_env_stats()
+        training_env = self.env
+        eval_env = self._create_eval_env()
+        cached_state = (
+            getattr(self, '_cached_han_user_embed', None),
+            getattr(self, '_cached_sat_embed', None),
+            getattr(self, '_cached_graph_snapshot', None),
+        )
+        model_modes = (
+            self.han_encoder.training,
+            self.mappo.actor.training,
+            self.mappo.critic.training,
+        )
+
+        try:
+            self.env = eval_env
+            self.han_encoder.eval()
+            self.mappo.actor.eval()
+            self.mappo.critic.eval()
+
+            for ep in range(self.config.eval_episodes):
+                self.env.reset(seed=self.config.seed + 100_000 + ep)
+                self._invalidate_han_cache()
+                (
+                    observations,
+                    satellite_embeddings,
+                    available_actions,
+                    candidate_sat_ids,
+                ) = self._encode_graph_state()
+                # 应用 pre-handover 掩码
+                pre_handover_mask = self.env.get_pre_handover_mask()
+                available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
+
+                episode_reward = 0.0
+                episode_length = 0
+                done = False
+
+                while not done:
+                    with torch.no_grad():
+                        actions, _, _ = self.mappo.act(
+                            observations,
+                            available_actions,
+                            satellite_embeddings=satellite_embeddings,
+                            candidate_sat_ids=candidate_sat_ids,
+                            deterministic=True
+                        )
+
+                    env_actions = self._process_actions(actions)
+                    _, rewards, terminated, truncated, _ = self.env.step(
+                        env_actions,
+                        return_observation=False,
+                        return_info=False
+                    )
+                    done = bool(terminated or truncated)
+
+                    if isinstance(rewards, (int, float)):
+                        episode_reward += rewards
+                    elif isinstance(rewards, dict):
+                        episode_reward += sum(rewards.values())
+                    else:
+                        episode_reward += np.sum(rewards)
+
+                    episode_length += 1
+                    if not done:
+                        (
+                            observations,
+                            satellite_embeddings,
+                            available_actions,
+                            candidate_sat_ids,
+                        ) = self._encode_graph_state()
+                        pre_handover_mask = self.env.get_pre_handover_mask()
+                        available_actions = self._apply_pre_handover_action_mask(
+                            available_actions,
+                            pre_handover_mask,
+                        )
+
+                eval_rewards.append(episode_reward)
+                eval_lengths.append(episode_length)
+                self._accumulate_env_stats(
+                    eval_env_stats,
+                    self.env.get_stats_summary(),
+                )
+        finally:
+            self.env = training_env
+            (
+                self._cached_han_user_embed,
+                self._cached_sat_embed,
+                self._cached_graph_snapshot,
+            ) = cached_state
+            self.han_encoder.train(model_modes[0])
+            self.mappo.actor.train(model_modes[1])
+            self.mappo.critic.train(model_modes[2])
+            if eval_env is not training_env and hasattr(eval_env, 'close'):
+                eval_env.close()
+
+        return eval_rewards, eval_lengths, eval_env_stats
+
     def _evaluate(self):
         """评估当前策略"""
         self.logger.info("-" * 40)
         self.logger.info("开始评估...")
-        
-        eval_rewards = []
-        eval_lengths = []
-        eval_env_stats = self._empty_env_stats()
-        
-        for ep in range(self.config.eval_episodes):
-            obs, info = self.env.reset()
-            self._invalidate_han_cache()
-            observations, satellite_embeddings, available_actions, candidate_sat_ids = self._encode_graph_state()
-            # 应用 pre-handover 掩码
-            pre_handover_mask = self.env.get_pre_handover_mask()
-            available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
 
-            episode_reward = 0
-            episode_length = 0
-            done = False
-
-            while not done:
-                with torch.no_grad():
-                    actions, _, _ = self.mappo.act(
-                        observations,
-                        available_actions,
-                        satellite_embeddings=satellite_embeddings,
-                        candidate_sat_ids=candidate_sat_ids,
-                        deterministic=True
-                    )
-
-                env_actions = self._process_actions(actions)
-                _, rewards, terminated, truncated, _ = self.env.step(
-                    env_actions,
-                    return_observation=False,
-                    return_info=False
-                )
-
-                done = terminated or truncated
-
-                if isinstance(rewards, (int, float)):
-                    episode_reward += rewards
-                elif isinstance(rewards, dict):
-                    episode_reward += sum(rewards.values())
-                else:
-                    episode_reward += np.sum(rewards)
-
-                episode_length += 1
-                observations, satellite_embeddings, available_actions, candidate_sat_ids = self._encode_graph_state()
-                # 应用 pre-handover 掩码
-                pre_handover_mask = self.env.get_pre_handover_mask()
-                available_actions = self._apply_pre_handover_action_mask(available_actions, pre_handover_mask)
-            
-            eval_rewards.append(episode_reward)
-            eval_lengths.append(episode_length)
-            self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
+        (
+            eval_rewards,
+            eval_lengths,
+            eval_env_stats,
+        ) = self._run_isolated_on_policy_evaluation()
         
         mean_reward = np.mean(eval_rewards)
         std_reward = np.std(eval_rewards)
@@ -1244,6 +1399,13 @@ class HANMAPPOTrainer:
             'eval_mean_length': float(mean_length),
             'eval_rewards': [float(r) for r in eval_rewards],
             'total_handovers': eval_env_stats.get('total_handovers', 0),
+            'handover_attempts': eval_env_stats.get('handover_attempts', 0),
+            'handover_committed': eval_env_stats.get('handover_committed', 0),
+            'handover_aborted': eval_env_stats.get('handover_aborted', 0),
+            'handover_radio_failures': eval_env_stats.get('handover_radio_failures', 0),
+            'migration_rejections': eval_env_stats.get('migration_rejections', 0),
+            'reconnection_attempts': eval_env_stats.get('reconnection_attempts', 0),
+            'reconnections': eval_env_stats.get('reconnections', 0),
             'successful_handovers': eval_env_stats.get('successful_handovers', 0),
             'failed_handovers': eval_env_stats.get('failed_handovers', 0),
             'forced_disconnects': eval_env_stats.get('forced_disconnects', 0),
@@ -1261,6 +1423,7 @@ class HANMAPPOTrainer:
             'total_tasks': eval_env_stats.get('total_tasks', 0),
             'completed_tasks': eval_env_stats.get('completed_tasks', 0),
             'deadline_violations': eval_env_stats.get('deadline_violations', 0),
+            'failed_tasks': eval_env_stats.get('failed_tasks', 0),
             'task_completion_rate': summary_env_stats.get('task_completion_rate', 0.0),
             'task_success_rate': summary_env_stats.get('task_success_rate', 0.0),
             'task_failure_rate': summary_env_stats.get('task_failure_rate', 0.0),
@@ -1269,7 +1432,11 @@ class HANMAPPOTrainer:
             'pending_task_rate': summary_env_stats.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary_env_stats.get('deadline_violation_rate', 0.0),
             'avg_delay': summary_env_stats.get('avg_delay', 0.0),
+            'avg_success_delay': summary_env_stats.get('avg_success_delay', 0.0),
+            'p95_success_delay': summary_env_stats.get('p95_success_delay', 0.0),
             'handover_frequency': summary_env_stats.get('handover_frequency', 0.0),
+            'handovers_per_user_minute': summary_env_stats.get('handovers_per_user_minute', 0.0),
+            'blocked_time_ratio': summary_env_stats.get('blocked_time_ratio', 0.0),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary_env_stats.get('resolved_tasks', 0.0)), 1.0)
@@ -1279,26 +1446,16 @@ class HANMAPPOTrainer:
             'load_balance_coefficient': summary_env_stats.get('load_balance_coefficient', 0.0),
             'load_variance_sample_count': summary_env_stats.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary_env_stats.get('mec_load_fairness', 0.0),
+            'jain_mec_load_fairness': summary_env_stats.get('jain_mec_load_fairness', 0.0),
             'avg_load_balance_score': summary_env_stats.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary_env_stats.get('active_load_balance_score', 0.0),
-            'reward_delay': eval_env_stats.get('reward_delay', 0.0),
-            'reward_energy': eval_env_stats.get('reward_energy', 0.0),
-            'reward_qos': eval_env_stats.get('reward_qos', 0.0),
-            'reward_task_success': eval_env_stats.get('reward_task_success', 0.0),
-            'reward_deadline_slack': eval_env_stats.get('reward_deadline_slack', 0.0),
-            'reward_service_continuity': eval_env_stats.get('reward_service_continuity', 0.0),
-            'reward_handover': eval_env_stats.get('reward_handover', 0.0),
-            'reward_load_balance': eval_env_stats.get('reward_load_balance', 0.0),
-            'reward_enqueue': eval_env_stats.get('reward_enqueue', 0.0),
-            'penalty_deadline': eval_env_stats.get('penalty_deadline', 0.0),
-            'penalty_task_failure': eval_env_stats.get('penalty_task_failure', 0.0),
-            'penalty_queue_full': eval_env_stats.get('penalty_queue_full', 0.0),
-            'penalty_invalid_action': eval_env_stats.get('penalty_invalid_action', 0.0),
-            'penalty_blocked': eval_env_stats.get('penalty_blocked', 0.0),
-            'penalty_failed_handover': eval_env_stats.get('penalty_failed_handover', 0.0),
-            'penalty_handover_cost': eval_env_stats.get('penalty_handover_cost', 0.0),
+            **reward_breakdown(eval_env_stats),
         }
-        selection_metric = getattr(self.config, 'best_model_metric', 'reward')
+        selection_metric = getattr(
+            self.config,
+            'best_model_metric',
+            TrainConfig.best_model_metric,
+        )
         eval_record['best_model_metric'] = selection_metric
         eval_record['best_model_score'] = float(
             compute_model_selection_score(eval_record, selection_metric)
@@ -1342,6 +1499,9 @@ class HANMAPPOTrainer:
         save_dir.mkdir(parents=True, exist_ok=True)
         
         history = {
+            'model_schema_version': MODEL_SCHEMA_VERSION,
+            'geometry_schema_version': GEOMETRY_SCHEMA_VERSION,
+            'environment_schema_version': ENVIRONMENT_SCHEMA_VERSION,
             'config': asdict(self.config),
             'training': self.training_history,
             'evaluation': self.eval_history,
@@ -1375,6 +1535,9 @@ class HANMAPPOTrainer:
         save_path = save_dir / filename
         
         checkpoint = {
+            'model_schema_version': MODEL_SCHEMA_VERSION,
+            'geometry_schema_version': GEOMETRY_SCHEMA_VERSION,
+            'environment_schema_version': ENVIRONMENT_SCHEMA_VERSION,
             'total_steps': self.total_steps,
             'episodes': self.episodes,
             'best_reward': self.best_reward,
@@ -1385,7 +1548,12 @@ class HANMAPPOTrainer:
             'critic_state_dict': self.mappo.critic.state_dict(),
             'actor_optimizer_state_dict': self.mappo.actor_optimizer.state_dict(),
             'critic_optimizer_state_dict': self.mappo.critic_optimizer.state_dict(),
-            'han_state_dict': self.han_encoder.state_dict()
+            'han_state_dict': self.han_encoder.state_dict(),
+            'han_optimizer_state_dict': (
+                self.mappo.representation_optimizer.state_dict()
+                if self.mappo.representation_optimizer is not None
+                else None
+            ),
         }
         
         torch.save(checkpoint, save_path)
@@ -1396,6 +1564,20 @@ class HANMAPPOTrainer:
         self.logger.info(f"加载检查点: {path}")
         
         checkpoint = torch.load(path, map_location=self.device)
+        schema_version = int(checkpoint.get('model_schema_version', 1))
+        if schema_version < MODEL_SCHEMA_VERSION:
+            raise ValueError(
+                "该检查点来自 P0 修复前的 HAN/环境结构，不能用于恢复训练或正式比较；"
+                "请使用修复后的代码重新训练。"
+            )
+        environment_schema_version = int(
+            checkpoint.get('environment_schema_version', 1)
+        )
+        if environment_schema_version < ENVIRONMENT_SCHEMA_VERSION:
+            raise ValueError(
+                "该检查点来自 P1 修复前的 MEC 时序、切换候选或奖励结算语义，"
+                "不能用于恢复训练或正式比较；请使用当前代码重新训练。"
+            )
         
         self.total_steps = checkpoint['total_steps']
         self.episodes = checkpoint['episodes']
@@ -1411,6 +1593,13 @@ class HANMAPPOTrainer:
         
         if 'han_state_dict' in checkpoint:
             self.han_encoder.load_state_dict(checkpoint['han_state_dict'])
+        if (
+            checkpoint.get('han_optimizer_state_dict') is not None
+            and self.mappo.representation_optimizer is not None
+        ):
+            self.mappo.representation_optimizer.load_state_dict(
+                checkpoint['han_optimizer_state_dict']
+            )
         
         self.logger.info(f"从步数 {self.total_steps:,} 恢复训练")
 
@@ -1424,31 +1613,7 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
     def _init_environment(self):
         self.logger.info("Initializing environment for AttentionMAPPO...")
 
-        env_config = EnvConfig(
-            num_planes=self.config.num_planes,
-            sats_per_plane=self.config.sats_per_plane,
-            altitude_km=self.config.altitude_km,
-            inclination_deg=self.config.inclination_deg,
-            num_users=self.config.num_users,
-            max_steps=self.config.max_steps,
-            time_step_sec=self.config.time_step_sec,
-            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
-            reward_delay_weight=self.config.reward_delay_weight,
-            reward_energy_weight=self.config.reward_energy_weight,
-            reward_handover_weight=self.config.reward_handover_weight,
-            reward_load_balance_weight=self.config.reward_load_balance_weight,
-            reward_qos_weight=self.config.reward_qos_weight,
-            reward_service_continuity_weight=self.config.reward_service_continuity_weight,
-            reward_deadline_slack_weight=self.config.reward_deadline_slack_weight,
-            reward_enqueue_bonus=self.config.reward_enqueue_bonus,
-            reward_failed_handover_penalty=self.config.reward_failed_handover_penalty,
-            reward_deadline_penalty=self.config.reward_deadline_penalty,
-            reward_failed_task_penalty=self.config.reward_failed_task_penalty,
-            pre_handover_rvt_sec=self.config.pre_handover_rvt_sec,
-            seed=self.config.seed,
-        )
-
-        self.env = LEOSatelliteEnv(env_config)
+        self.env = LEOSatelliteEnv(build_env_config(self.config))
         self.num_agents = self.config.num_users
         self.max_candidates = self.config.max_visible_sats
         self.raw_obs_dim = self.env.user_obs_dim
@@ -1525,7 +1690,7 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
         )
 
         for uid, user in enumerate(self.env.user_manager.users):
-            visible_sats = self.env._get_visible_satellites(user)
+            visible_sats = self.env._get_handover_candidates(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
                 available_actions[uid, 1 : valid_count + 1] = 1.0
@@ -1536,7 +1701,7 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
         return raw_observations, satellite_features, available_actions, candidate_sat_ids
 
 
-class CPQHANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
+class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
     """Final HAN+Attention MAPPO with predictive queue-risk context."""
 
     algorithm_name = "han_attn"
@@ -1710,7 +1875,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         rvt_threshold = float(getattr(self.env.config, 'rvt_threshold_sec', 60.0))
 
         for uid, user in enumerate(self.env.user_manager.users):
-            visible_sats = list(self.env._get_visible_satellites(user))[: self.max_candidates]
+            visible_sats = list(self.env._get_handover_candidates(user))[: self.max_candidates]
             keep_current = False
             if user.serving_satellite >= 0:
                 vis = self.env._get_satellite_visibility(user, user.serving_satellite)
@@ -1772,6 +1937,13 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'epsilon': float(update_stats.get('epsilon', 0.0)),
             'exploration_noise': float(update_stats.get('exploration_noise', 0.0)),
             'total_handovers': env_stats.get('total_handovers', 0),
+            'handover_attempts': env_stats.get('handover_attempts', 0),
+            'handover_committed': env_stats.get('handover_committed', 0),
+            'handover_aborted': env_stats.get('handover_aborted', 0),
+            'handover_radio_failures': env_stats.get('handover_radio_failures', 0),
+            'migration_rejections': env_stats.get('migration_rejections', 0),
+            'reconnection_attempts': env_stats.get('reconnection_attempts', 0),
+            'reconnections': env_stats.get('reconnections', 0),
             'successful_handovers': env_stats.get('successful_handovers', 0),
             'failed_handovers': env_stats.get('failed_handovers', 0),
             'forced_disconnects': env_stats.get('forced_disconnects', 0),
@@ -1787,6 +1959,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'total_tasks': env_stats.get('total_tasks', 0),
             'completed_tasks': env_stats.get('completed_tasks', 0),
             'deadline_violations': env_stats.get('deadline_violations', 0),
+            'failed_tasks': env_stats.get('failed_tasks', 0),
             'resolved_tasks': summary.get('resolved_tasks', 0),
             'pending_tasks': summary.get('pending_tasks', 0),
             'task_completion_rate': summary.get('task_completion_rate', 0.0),
@@ -1797,7 +1970,11 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'pending_task_rate': summary.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary.get('deadline_violation_rate', 0.0),
             'avg_delay': summary.get('avg_delay', 0.0),
+            'avg_success_delay': summary.get('avg_success_delay', 0.0),
+            'p95_success_delay': summary.get('p95_success_delay', 0.0),
             'handover_frequency': summary.get('handover_frequency', 0.0),
+            'handovers_per_user_minute': summary.get('handovers_per_user_minute', 0.0),
+            'blocked_time_ratio': summary.get('blocked_time_ratio', 0.0),
             'total_energy': env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 env_stats.get('total_energy', 0.0) /
@@ -1808,24 +1985,10 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'load_balance_coefficient': summary.get('load_balance_coefficient', 0.0),
             'load_variance_sample_count': summary.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary.get('mec_load_fairness', 0.0),
+            'jain_mec_load_fairness': summary.get('jain_mec_load_fairness', 0.0),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
-            'reward_delay': env_stats.get('reward_delay', 0.0),
-            'reward_energy': env_stats.get('reward_energy', 0.0),
-            'reward_qos': env_stats.get('reward_qos', 0.0),
-            'reward_task_success': env_stats.get('reward_task_success', 0.0),
-            'reward_deadline_slack': env_stats.get('reward_deadline_slack', 0.0),
-            'reward_service_continuity': env_stats.get('reward_service_continuity', 0.0),
-            'reward_handover': env_stats.get('reward_handover', 0.0),
-            'reward_load_balance': env_stats.get('reward_load_balance', 0.0),
-            'reward_enqueue': env_stats.get('reward_enqueue', 0.0),
-            'penalty_deadline': env_stats.get('penalty_deadline', 0.0),
-            'penalty_task_failure': env_stats.get('penalty_task_failure', 0.0),
-            'penalty_queue_full': env_stats.get('penalty_queue_full', 0.0),
-            'penalty_invalid_action': env_stats.get('penalty_invalid_action', 0.0),
-            'penalty_blocked': env_stats.get('penalty_blocked', 0.0),
-            'penalty_failed_handover': env_stats.get('penalty_failed_handover', 0.0),
-            'penalty_handover_cost': env_stats.get('penalty_handover_cost', 0.0),
+            **reward_breakdown(env_stats),
         }
         if partial_episode:
             record['partial_episode'] = True
@@ -1976,6 +2139,13 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'eval_mean_length': mean_length,
             'eval_rewards': [float(r) for r in eval_rewards],
             'total_handovers': eval_env_stats.get('total_handovers', 0),
+            'handover_attempts': eval_env_stats.get('handover_attempts', 0),
+            'handover_committed': eval_env_stats.get('handover_committed', 0),
+            'handover_aborted': eval_env_stats.get('handover_aborted', 0),
+            'handover_radio_failures': eval_env_stats.get('handover_radio_failures', 0),
+            'migration_rejections': eval_env_stats.get('migration_rejections', 0),
+            'reconnection_attempts': eval_env_stats.get('reconnection_attempts', 0),
+            'reconnections': eval_env_stats.get('reconnections', 0),
             'successful_handovers': eval_env_stats.get('successful_handovers', 0),
             'failed_handovers': eval_env_stats.get('failed_handovers', 0),
             'forced_disconnects': eval_env_stats.get('forced_disconnects', 0),
@@ -1993,6 +2163,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'total_tasks': eval_env_stats.get('total_tasks', 0),
             'completed_tasks': eval_env_stats.get('completed_tasks', 0),
             'deadline_violations': eval_env_stats.get('deadline_violations', 0),
+            'failed_tasks': eval_env_stats.get('failed_tasks', 0),
             'task_completion_rate': summary.get('task_completion_rate', 0.0),
             'task_success_rate': summary.get('task_success_rate', 0.0),
             'task_failure_rate': summary.get('task_failure_rate', 0.0),
@@ -2001,7 +2172,11 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'pending_task_rate': summary.get('pending_task_rate', 0.0),
             'deadline_violation_rate': summary.get('deadline_violation_rate', 0.0),
             'avg_delay': summary.get('avg_delay', 0.0),
+            'avg_success_delay': summary.get('avg_success_delay', 0.0),
+            'p95_success_delay': summary.get('p95_success_delay', 0.0),
             'handover_frequency': summary.get('handover_frequency', 0.0),
+            'handovers_per_user_minute': summary.get('handovers_per_user_minute', 0.0),
+            'blocked_time_ratio': summary.get('blocked_time_ratio', 0.0),
             'total_energy': eval_env_stats.get('total_energy', 0.0),
             'energy_per_resolved_task': (
                 eval_env_stats.get('total_energy', 0.0) / max(float(summary.get('resolved_tasks', 0.0)), 1.0)
@@ -2011,10 +2186,15 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'load_balance_coefficient': summary.get('load_balance_coefficient', 0.0),
             'load_variance_sample_count': summary.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary.get('mec_load_fairness', 0.0),
+            'jain_mec_load_fairness': summary.get('jain_mec_load_fairness', 0.0),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
         }
-        selection_metric = getattr(self.config, 'best_model_metric', 'reward')
+        selection_metric = getattr(
+            self.config,
+            'best_model_metric',
+            TrainConfig.best_model_metric,
+        )
         eval_record['best_model_metric'] = selection_metric
         eval_record['best_model_score'] = float(compute_model_selection_score(eval_record, selection_metric))
         self.eval_history.append(eval_record)
@@ -2060,6 +2240,9 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         else:
             filename = f"checkpoint_{self.total_steps}.pt"
         checkpoint = {
+            'model_schema_version': MODEL_SCHEMA_VERSION,
+            'geometry_schema_version': GEOMETRY_SCHEMA_VERSION,
+            'environment_schema_version': ENVIRONMENT_SCHEMA_VERSION,
             'total_steps': self.total_steps,
             'episodes': self.episodes,
             'best_reward': self.best_reward,
@@ -2076,6 +2259,14 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
     def load_checkpoint(self, path: str):
         self.logger.info(f"加载检查点: {path}")
         checkpoint = torch.load(path, map_location=self.device)
+        environment_schema_version = int(
+            checkpoint.get('environment_schema_version', 1)
+        )
+        if environment_schema_version < ENVIRONMENT_SCHEMA_VERSION:
+            raise ValueError(
+                "该检查点来自 P1 修复前的环境动作/时序语义，不能用于恢复训练或"
+                "正式比较；请使用当前代码重新训练。"
+            )
         self.total_steps = checkpoint['total_steps']
         self.episodes = checkpoint['episodes']
         self.best_reward = checkpoint['best_reward']
@@ -2092,16 +2283,6 @@ class HANPDQNTrainer(HANMADDPGTrainer):
     """HAN feature encoder with PDQN over the hybrid handover/offload action."""
 
     algorithm_name = "pdqn"
-
-    def _init_environment(self):
-        super()._init_environment()
-        self.logger.info(
-            f"  - HAN+PDQN observation dim: {self.obs_dim} "
-            f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim} + rvt/task 5)"
-        )
-
-    def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return super()._encode_graph_state()
 
     def _epsilon_decay_steps(self) -> int:
         fraction = float(getattr(self.config, "epsilon_decay_fraction", 0.25))
@@ -2185,114 +2366,102 @@ class HANPDQNTrainer(HANMADDPGTrainer):
 
 def parse_args():
     """解析命令行参数"""
+    defaults = TrainConfig()
     parser = argparse.ArgumentParser(
         description='LEO卫星网络切换与任务卸载联合优化训练脚本'
     )
     
     # 实验参数
-    parser.add_argument('--exp_name', type=str, default='han_mappo_delay_focus_fast',
+    parser.add_argument('--exp_name', type=str, default=defaults.exp_name,
                         help='实验名称')
-    parser.add_argument('--seed', type=int, default=42,
+    parser.add_argument('--seed', type=int, default=defaults.seed,
                         help='随机种子')
     parser.add_argument('--device', type=str, default='auto',
                         help='设备 (cuda/cpu/auto)')
     parser.add_argument(
         "--algorithm",
         type=str,
-        default="mappo",
-        choices=["mappo", "attn_mappo", "han_attn", "han_attn_cpq", "maddpg", "pdqn"],
+        default=defaults.algorithm,
+        choices=["mappo", "attn_mappo", "han_attn", "maddpg", "pdqn"],
         help=(
-            "Training algorithm: mappo, attn_mappo, han_attn, "
-            "han_attn_cpq (deprecated alias), maddpg, or pdqn"
+            "Training algorithm: mappo, attn_mappo, han_attn, maddpg, or pdqn"
         ),
     )
     
     # 环境参数
-    parser.add_argument('--num_users', type=int, default=20,
+    parser.add_argument('--num_users', type=int, default=defaults.num_users,
                         help='用户数量')
-    parser.add_argument('--max_steps', type=int, default=600,
+    parser.add_argument('--max_steps', type=int, default=defaults.max_steps,
                         help='每episode最大步数')
-    parser.add_argument('--reward_delay_weight', type=float, default=0.25,
-                        help='时延奖励权重')
-    parser.add_argument('--reward_energy_weight', type=float, default=0.30,
-                        help='能耗奖励权重')
-    parser.add_argument('--reward_handover_weight', type=float, default=0.10,
-                        help='切换奖励权重')
-    parser.add_argument('--reward_load_balance_weight', type=float, default=0.05,
-                        help='负载均衡奖励权重')
-    parser.add_argument('--reward_qos_weight', type=float, default=0.25,
-                        help='QoS reward weight')
-    parser.add_argument('--reward_service_continuity_weight', type=float, default=0.15,
-                        help='Service interruption penalty weight')
-    parser.add_argument('--reward_deadline_slack_weight', type=float, default=0.10,
-                        help='Deadline slack reward weight for successful tasks')
-    parser.add_argument('--reward_enqueue_bonus', type=float, default=0.0,
-                        help='Queue admission bonus weight')
-    parser.add_argument('--reward_failed_handover_penalty', type=float, default=0.3,
-                        help='Failed handover penalty weight')
-    parser.add_argument('--reward_deadline_penalty', type=float, default=0.70,
-                        help='Deadline violation penalty weight')
-    parser.add_argument('--reward_failed_task_penalty', type=float, default=0.60,
-                        help='Fixed penalty for tasks that miss their deadline')
-    parser.add_argument('--min_effective_offload_ratio', type=float, default=0.05,
+    parser.add_argument('--reward_delay_weight', type=float, default=defaults.reward_delay_weight,
+                        help='成功任务的归一化时延惩罚权重')
+    parser.add_argument('--reward_energy_weight', type=float, default=defaults.reward_energy_weight,
+                        help='成功任务的归一化能耗惩罚权重')
+    parser.add_argument('--reward_interruption_weight', type=float, default=defaults.reward_interruption_weight,
+                        help='用户级服务中断比例惩罚权重')
+    parser.add_argument('--reward_failed_handover_penalty', type=float, default=defaults.reward_failed_handover_penalty,
+                        help='失败切换的固定惩罚')
+    parser.add_argument('--min_effective_offload_ratio', type=float, default=defaults.min_effective_offload_ratio,
                         help='Treat smaller offload ratios as local execution')
-    parser.add_argument('--pre_handover_rvt_sec', type=float, default=30.0,
+    parser.add_argument('--pre_handover_rvt_sec', type=float, default=defaults.pre_handover_rvt_sec,
                         help='Pre-handover RVT threshold (seconds)')
+    parser.add_argument('--handover_min_snr_db', type=float, default=defaults.handover_min_snr_db,
+                        help='Minimum target-link SNR for handover admission (dB)')
 
     # 训练参数
-    parser.add_argument('--total_timesteps', type=int, default=1200000,
+    parser.add_argument('--total_timesteps', type=int, default=defaults.total_timesteps,
                         help='总训练步数')
-    parser.add_argument('--n_steps', type=int, default=1024,
+    parser.add_argument('--n_steps', type=int, default=defaults.n_steps,
                         help='每次更新收集步数')
-    parser.add_argument('--learning_rate', type=float, default=3e-4,
+    parser.add_argument('--learning_rate', type=float, default=defaults.learning_rate,
                         help='学习率')
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=defaults.batch_size,
                         help='批大小')
-    parser.add_argument('--n_epochs', type=int, default=6,
+    parser.add_argument('--n_epochs', type=int, default=defaults.n_epochs,
                         help='PPO epochs per update')
-    parser.add_argument('--entropy_coef', type=float, default=0.005,
+    parser.add_argument('--entropy_coef', type=float, default=defaults.entropy_coef,
                         help='Entropy coefficient')
-    parser.add_argument('--entropy_schedule', type=str, default='constant', choices=['constant', 'linear'],
+    parser.add_argument('--entropy_schedule', type=str, default=defaults.entropy_schedule, choices=['constant', 'linear'],
                         help='Entropy coefficient schedule')
-    parser.add_argument('--bc_loss_coef', type=float, default=0.001,
+    parser.add_argument('--bc_loss_coef', type=float, default=defaults.bc_loss_coef,
                         help='PDQN behavior-cloning loss coefficient')
     
     # HAN参数
-    parser.add_argument('--han_hidden_dim', type=int, default=64,
+    parser.add_argument('--han_hidden_dim', type=int, default=defaults.han_hidden_dim,
                         help='HAN隐藏维度')
-    parser.add_argument('--han_num_heads', type=int, default=4,
+    parser.add_argument('--han_num_heads', type=int, default=defaults.han_num_heads,
                         help='注意力头数')
-    parser.add_argument('--han_num_layers', type=int, default=2,
+    parser.add_argument('--han_num_layers', type=int, default=defaults.han_num_layers,
                         help='HAN层数')
     
     # 保存加载
-    parser.add_argument('--save_path', type=str, default='results/full_train_delay_focus',
+    parser.add_argument('--save_path', type=str, default=defaults.save_path,
                         help='模型保存路径')
-    parser.add_argument('--log_path', type=str, default='results/logs',
+    parser.add_argument('--log_path', type=str, default=defaults.log_path,
                         help='日志保存路径')
     parser.add_argument('--load_path', type=str, default=None,
                         help='加载检查点路径')
-    parser.add_argument('--save_interval', type=int, default=200000,
+    parser.add_argument('--save_interval', type=int, default=defaults.save_interval,
                         help='检查点保存间隔（步）')
-    parser.add_argument('--log_interval', type=int, default=1,
+    parser.add_argument('--log_interval', type=int, default=defaults.log_interval,
                         help='训练日志打印间隔（update）')
     
     # 评估
-    parser.add_argument('--eval_interval', type=int, default=100000,
+    parser.add_argument('--eval_interval', type=int, default=defaults.eval_interval,
                         help='评估间隔')
-    parser.add_argument('--eval_episodes', type=int, default=3,
+    parser.add_argument('--eval_episodes', type=int, default=defaults.eval_episodes,
                         help='每次评估的episode数')
-    parser.add_argument('--graph_update_interval', type=int, default=100,
+    parser.add_argument('--graph_update_interval', type=int, default=defaults.graph_update_interval,
                         help='图重建间隔（步），增大可提速')
-    parser.add_argument('--early_stop_patience', type=int, default=0,
+    parser.add_argument('--early_stop_patience', type=int, default=defaults.early_stop_patience,
                         help='连续多少次更新无改善后早停，0表示禁用')
-    parser.add_argument('--value_loss_type', type=str, default='huber', choices=['mse', 'huber'],
+    parser.add_argument('--value_loss_type', type=str, default=defaults.value_loss_type, choices=['mse', 'huber'],
                         help='Critic损失类型')
     parser.add_argument('--disable_return_norm', action='store_true',
                         help='禁用returns标准化（默认开启）')
     parser.add_argument('--eval_only', action='store_true',
                         help='仅评估，不训练')
-    parser.add_argument('--best-model-metric', type=str, default='reward',
+    parser.add_argument('--best-model-metric', type=str, default=defaults.best_model_metric,
                         choices=list(BEST_MODEL_METRIC_CHOICES),
                         help='best_model.pt 的选优指标')
     
@@ -2303,64 +2472,20 @@ def main():
     """主函数"""
     args = parse_args()
     
-    # 创建配置
+    # argparse 与 TrainConfig 同名字段直接同步，特殊字段单独处理。
     config = TrainConfig()
-    
-    # 更新配置
-    config.exp_name = args.exp_name
-    config.seed = args.seed
-    config.algorithm = args.algorithm
-    
+    for name, value in vars(args).items():
+        if hasattr(config, name):
+            setattr(config, name, value)
     if args.device == 'auto':
         config.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    else:
-        config.device = args.device
-    
-    config.num_users = args.num_users
-    config.max_steps = args.max_steps
-    config.reward_delay_weight = args.reward_delay_weight
-    config.reward_energy_weight = args.reward_energy_weight
-    config.reward_handover_weight = args.reward_handover_weight
-    config.reward_load_balance_weight = args.reward_load_balance_weight
-    config.reward_qos_weight = args.reward_qos_weight
-    config.reward_service_continuity_weight = args.reward_service_continuity_weight
-    config.reward_deadline_slack_weight = args.reward_deadline_slack_weight
-    config.reward_enqueue_bonus = args.reward_enqueue_bonus
-    config.reward_failed_handover_penalty = args.reward_failed_handover_penalty
-    config.reward_deadline_penalty = args.reward_deadline_penalty
-    config.reward_failed_task_penalty = args.reward_failed_task_penalty
-    config.min_effective_offload_ratio = args.min_effective_offload_ratio
-    config.pre_handover_rvt_sec = args.pre_handover_rvt_sec
-    config.total_timesteps = args.total_timesteps
-    config.n_steps = args.n_steps
-    config.learning_rate = args.learning_rate
-    config.batch_size = args.batch_size
-    config.n_epochs = args.n_epochs
-    config.entropy_coef = args.entropy_coef
-    config.entropy_schedule = args.entropy_schedule
-    config.bc_loss_coef = args.bc_loss_coef
-    config.han_hidden_dim = args.han_hidden_dim
-    config.han_num_heads = args.han_num_heads
-    config.han_num_layers = args.han_num_layers
-    config.save_path = args.save_path
-    config.log_path = args.log_path
-    config.load_path = args.load_path
-    config.save_interval = args.save_interval
-    config.log_interval = args.log_interval
-    config.eval_interval = args.eval_interval
-    config.eval_episodes = args.eval_episodes
-    config.graph_update_interval = args.graph_update_interval
-    config.early_stop_patience = args.early_stop_patience
-    config.value_loss_type = args.value_loss_type
     config.normalize_returns = not args.disable_return_norm
-    config.best_model_metric = args.best_model_metric
     
     # 创建训练器
     trainer_cls = {
         "mappo": HANMAPPOTrainer,
         "attn_mappo": AttentionMAPPOTrainer,
-        "han_attn": CPQHANCandidateAttentionMAPPOTrainer,
-        "han_attn_cpq": CPQHANCandidateAttentionMAPPOTrainer,
+        "han_attn": HANCandidateAttentionMAPPOTrainer,
         "maddpg": HANMADDPGTrainer,
         "pdqn": HANPDQNTrainer,
     }[config.algorithm]

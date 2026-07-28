@@ -8,7 +8,7 @@ import logging
 
 import numpy as np
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple, Optional
+from typing import List, Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -31,20 +31,6 @@ class OrbitalElements:
     arg_periapsis: float      # 近地点幅角 (度)
     true_anomaly: float       # 真近点角 (度)
 
-
-@dataclass
-class SatelliteState:
-    """
-    卫星状态
-    包含位置、速度等动态信息
-    """
-    sat_id: int                          # 卫星ID
-    plane_id: int                        # 轨道平面ID
-    position_eci: np.ndarray = None      # ECI坐标系位置 [x, y, z] (km)
-    velocity_eci: np.ndarray = None      # ECI坐标系速度 [vx, vy, vz] (km/s)
-    position_ecef: np.ndarray = None     # ECEF坐标系位置 (km)
-    position_lla: np.ndarray = None      # 经纬度高度 [lat, lon, alt]
-    
 
 class WalkerConstellation:
     """
@@ -98,7 +84,6 @@ class WalkerConstellation:
         
         # 初始化所有卫星的轨道根数
         self.orbital_elements: List[OrbitalElements] = []
-        self.satellite_states: List[SatelliteState] = []
         self._initialize_constellation()
         
         logger.info(
@@ -133,8 +118,6 @@ class WalkerConstellation:
         - 同一平面内卫星均匀分布
         - 不同平面间存在相位偏移
         """
-        sat_id = 0
-        
         for plane_idx in range(self.num_planes):
             # 升交点赤经 (RAAN) - 轨道平面均匀分布
             raan = (360.0 / self.num_planes) * plane_idx
@@ -157,138 +140,10 @@ class WalkerConstellation:
                 )
                 self.orbital_elements.append(orbital_elem)
                 
-                # 创建卫星状态
-                state = SatelliteState(
-                    sat_id=sat_id,
-                    plane_id=plane_idx
-                )
-                self.satellite_states.append(state)
-                
-                sat_id += 1
-        
         # 预计算向量化数组（必须在_update_all_positions之前）
         self._init_vectorized_arrays()
         # 计算初始位置
         self._update_all_positions(self.start_time)
-    
-    def _orbital_to_eci(self, elem: OrbitalElements) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        将轨道根数转换为ECI坐标系下的位置和速度
-        
-        ECI (Earth-Centered Inertial): 地心惯性坐标系
-        - 原点在地心
-        - X轴指向春分点
-        - Z轴指向北极
-        - Y轴与X、Z构成右手系
-        
-        Args:
-            elem: 轨道六根数
-            
-        Returns:
-            position: 位置向量 [x, y, z] (km)
-            velocity: 速度向量 [vx, vy, vz] (km/s)
-        """
-        # 轨道参数
-        a = elem.semi_major_axis  # km
-        e = elem.eccentricity
-        i = np.radians(elem.inclination)
-        Omega = np.radians(elem.raan)  # 升交点赤经
-        omega = np.radians(elem.arg_periapsis)  # 近地点幅角
-        nu = np.radians(elem.true_anomaly)  # 真近点角
-        
-        # 圆轨道情况 (e ≈ 0)
-        # 轨道面内位置
-        r = a * (1 - e**2) / (1 + e * np.cos(nu))  # 距离
-        
-        # 轨道面内坐标 (PQW系)
-        x_pqw = r * np.cos(nu)
-        y_pqw = r * np.sin(nu)
-        z_pqw = 0.0
-        
-        # 轨道面内速度
-        p = a * (1 - e**2)  # 半通径
-        h = np.sqrt(EARTH_MU * p)  # 角动量
-        
-        vx_pqw = -EARTH_MU / h * np.sin(nu)
-        vy_pqw = EARTH_MU / h * (e + np.cos(nu))
-        vz_pqw = 0.0
-        
-        # 旋转矩阵：PQW -> ECI
-        # R = Rz(-Ω) * Rx(-i) * Rz(-ω)
-        cos_O, sin_O = np.cos(Omega), np.sin(Omega)
-        cos_i, sin_i = np.cos(i), np.sin(i)
-        cos_w, sin_w = np.cos(omega), np.sin(omega)
-        
-        # 组合旋转矩阵
-        R = np.array([
-            [cos_O*cos_w - sin_O*sin_w*cos_i, -cos_O*sin_w - sin_O*cos_w*cos_i, sin_O*sin_i],
-            [sin_O*cos_w + cos_O*sin_w*cos_i, -sin_O*sin_w + cos_O*cos_w*cos_i, -cos_O*sin_i],
-            [sin_w*sin_i, cos_w*sin_i, cos_i]
-        ])
-        
-        # 转换到ECI
-        position = R @ np.array([x_pqw, y_pqw, z_pqw])
-        velocity = R @ np.array([vx_pqw, vy_pqw, vz_pqw])
-        
-        return position, velocity
-    
-    def _eci_to_ecef(self, position_eci: np.ndarray, time: datetime) -> np.ndarray:
-        """
-        将ECI坐标转换为ECEF坐标
-        
-        ECEF (Earth-Centered Earth-Fixed): 地心地固坐标系
-        - 原点在地心
-        - X轴指向本初子午线与赤道交点
-        - Z轴指向北极
-        - 随地球自转
-        
-        Args:
-            position_eci: ECI位置 [x, y, z] (km)
-            time: 当前时间
-            
-        Returns:
-            position_ecef: ECEF位置 (km)
-        """
-        # 计算格林威治恒星时角 (GMST)
-        # 简化计算：假设J2000.0为参考历元
-        j2000 = datetime(2000, 1, 1, 12, 0, 0)
-        days_since_j2000 = (time - j2000).total_seconds() / 86400.0
-        
-        # GMST近似计算 (度)
-        gmst_deg = 280.46061837 + 360.98564736629 * days_since_j2000
-        gmst_rad = np.radians(gmst_deg % 360.0)
-        
-        # 绕Z轴旋转
-        cos_g, sin_g = np.cos(gmst_rad), np.sin(gmst_rad)
-        R = np.array([
-            [cos_g, sin_g, 0],
-            [-sin_g, cos_g, 0],
-            [0, 0, 1]
-        ])
-        
-        return R @ position_eci
-    
-    def _ecef_to_lla(self, position_ecef: np.ndarray) -> np.ndarray:
-        """
-        将ECEF坐标转换为经纬度高度 (LLA)
-        
-        Args:
-            position_ecef: ECEF位置 [x, y, z] (km)
-            
-        Returns:
-            lla: [纬度(度), 经度(度), 高度(km)]
-        """
-        x, y, z = position_ecef
-        
-        # 经度
-        lon = np.degrees(np.arctan2(y, x))
-        
-        # 纬度和高度 (球面近似)
-        r = np.linalg.norm(position_ecef)
-        lat = np.degrees(np.arcsin(z / r))
-        alt = r - EARTH_RADIUS_KM
-        
-        return np.array([lat, lon, alt])
     
     def _init_vectorized_arrays(self):
         """预计算向量化所需的常量数组，避免每步重复创建"""
@@ -362,13 +217,6 @@ class WalkerConstellation:
         self._all_pos_lla[:, 1] = np.degrees(np.arctan2(self._all_pos_ecef[:, 1], self._all_pos_ecef[:, 0]))  # lon
         self._all_pos_lla[:, 2] = r - EARTH_RADIUS_KM  # alt
         
-        # 写回 satellite_states（保持兼容性）
-        for idx, state in enumerate(self.satellite_states):
-            state.position_eci = self._all_pos_eci[idx]
-            state.velocity_eci = self._all_vel_eci[idx]
-            state.position_ecef = self._all_pos_ecef[idx]
-            state.position_lla = self._all_pos_lla[idx]
-        
         self.current_time = time
     
     def reset(self, time_offset_sec: float = 0.0):
@@ -390,33 +238,51 @@ class WalkerConstellation:
         """
         new_time = self.current_time + timedelta(seconds=delta_seconds)
         self._update_all_positions(new_time)
-    
-    def get_satellite_position(self, sat_id: int) -> Dict:
-        """
-        获取指定卫星的位置信息
-        
-        Args:
-            sat_id: 卫星ID
-            
+
+    def get_all_positions_ecef_at_offsets(
+        self,
+        offsets_seconds: np.ndarray,
+    ) -> np.ndarray:
+        """返回当前时刻之后多个偏移量对应的全部卫星 ECEF 位置。
+
+        该方法只做纯计算，不修改星座当前状态，供 RVT 预测使用。
+
         Returns:
-            包含各坐标系位置的字典
+            形状为 ``(num_offsets, total_sats, 3)`` 的 ECEF 位置数组。
         """
-        state = self.satellite_states[sat_id]
-        return {
-            'sat_id': sat_id,
-            'plane_id': state.plane_id,
-            'position_eci': state.position_eci,
-            'velocity_eci': state.velocity_eci,
-            'position_ecef': state.position_ecef,
-            'latitude': state.position_lla[0],
-            'longitude': state.position_lla[1],
-            'altitude': state.position_lla[2]
-        }
-    
-    def get_all_positions(self) -> List[Dict]:
-        """获取所有卫星的位置信息"""
-        return [self.get_satellite_position(i) for i in range(self.total_sats)]
-    
-    def get_satellite_positions_array(self) -> np.ndarray:
-        """获取所有卫星的ECEF位置矩阵，直接返回内部数组的拷贝"""
-        return self._all_pos_ecef.copy()
+        offsets = np.asarray(offsets_seconds, dtype=np.float64).reshape(-1)
+        absolute_dt = (
+            (self.current_time - self.start_time).total_seconds() + offsets
+        )
+        nu = (
+            np.radians(self._ta0)[None, :]
+            + self._mean_motion * absolute_dt[:, None]
+        )
+        cos_nu = np.cos(nu)
+        sin_nu = np.sin(nu)
+
+        positions_eci = (
+            (self._a * cos_nu)[:, :, None] * self._R0[None, :, :]
+            + (self._a * sin_nu)[:, :, None] * self._R1[None, :, :]
+        )
+
+        j2000 = datetime(2000, 1, 1, 12, 0, 0)
+        base_days = (self.current_time - j2000).total_seconds() / 86400.0
+        future_days = base_days + offsets / 86400.0
+        gmst_rad = np.radians(
+            (
+                280.46061837
+                + 360.98564736629 * future_days
+            )
+            % 360.0
+        )
+        cos_g = np.cos(gmst_rad)[:, None]
+        sin_g = np.sin(gmst_rad)[:, None]
+
+        positions_ecef = np.empty_like(positions_eci)
+        px = positions_eci[:, :, 0]
+        py = positions_eci[:, :, 1]
+        positions_ecef[:, :, 0] = cos_g * px + sin_g * py
+        positions_ecef[:, :, 1] = -sin_g * px + cos_g * py
+        positions_ecef[:, :, 2] = positions_eci[:, :, 2]
+        return positions_ecef

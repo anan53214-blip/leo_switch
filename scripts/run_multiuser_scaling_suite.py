@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import shlex
 import subprocess
@@ -28,8 +29,21 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.paper_metrics import (
+    COMBINED_SCALING_METRICS,
+    CORE_SCALING_METRICS,
+    RESOURCE_SCALING_METRICS,
+    SUCCESS_DEPENDENT_METRICS,
+    bootstrap_mean_ci,
+    derive_paper_metrics,
+)
+from scripts.train import ENVIRONMENT_SCHEMA_VERSION, TrainConfig
+
+
 DEFAULT_PYTHON = sys.executable
 DEFAULT_USER_COUNTS = (20, 25, 30, 35, 40)
 DEFAULT_BASELINES = (
@@ -67,23 +81,11 @@ LEARNED_REWARD_METHODS = (
     "han_maddpg",
     "han_pdqn",
 )
-CORE_SCALING_METRICS = (
-    ("avg_delay", "Average Delay", "Average Delay (s)", 1.0),
-    ("task_success_rate", "Task Success Rate", "Task Success Rate (%)", 100.0),
-    ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)", 100.0),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)", 100.0),
-)
-RESOURCE_SCALING_METRICS = (
-    ("avg_load_balance_score", "Average Load Balance", "Average Load Balance Score", 1.0),
-    ("total_energy", "Average Energy", "Average Energy (J)", 1.0),
-)
-COMBINED_SCALING_METRICS = (
-    ("avg_delay", "Average Delay", "Average Delay (s)", 1.0),
-    ("task_success_rate", "Task Success Rate", "Task Success Rate (%)", 100.0),
-    ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)", 100.0),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)", 100.0),
-    ("avg_load_balance_score", "Average Load Balance", "Average Load Balance Score", 1.0),
-    ("total_energy", "Average Energy", "Average Energy (J)", 1.0),
+REWARD_CONFIG_KEYS = (
+    "reward_delay_weight",
+    "reward_energy_weight",
+    "reward_interruption_weight",
+    "reward_failed_handover_penalty",
 )
 
 
@@ -101,6 +103,7 @@ class MultiUserConfig:
     user_counts: tuple[int, ...] = DEFAULT_USER_COUNTS
     python_executable: str = DEFAULT_PYTHON
     seed: int = 42
+    seeds: tuple[int, ...] = ()
     device: str = "auto"
     total_timesteps: int = 300_000
     max_steps: int = 600
@@ -132,13 +135,28 @@ def resolve_run_id(run_id: Optional[str] = None, now: Optional[datetime] = None)
     return (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
 
 
-def build_paths(project_root: Path, run_id: str, num_users: int) -> SuitePaths:
+def effective_seeds(config: MultiUserConfig) -> tuple[int, ...]:
+    return config.seeds or (config.seed,)
+
+
+def build_paths(
+    project_root: Path,
+    run_id: str,
+    num_users: int,
+    seed: Optional[int] = None,
+    multi_seed: bool = False,
+) -> SuitePaths:
     results_dir = project_root / "results"
     suite_dir = results_dir / "baseline_compare" / f"multiuser_scaling_{run_id}"
+    system_run_dir = results_dir / f"full_train_latency_priority_multiuser_u{num_users}_{run_id}"
+    compare_output_dir = suite_dir / f"u{num_users}"
+    if multi_seed and seed is not None:
+        system_run_dir = system_run_dir / f"seed_{seed}"
+        compare_output_dir = compare_output_dir / f"seed_{seed}"
     return SuitePaths(
         suite_dir=suite_dir,
-        system_run_dir=results_dir / f"full_train_latency_priority_multiuser_u{num_users}_{run_id}",
-        compare_output_dir=suite_dir / f"u{num_users}",
+        system_run_dir=system_run_dir,
+        compare_output_dir=compare_output_dir,
         log_dir=results_dir / "logs",
     )
 
@@ -147,7 +165,13 @@ def _path_arg(path: Path) -> str:
     return str(path)
 
 
-def build_train_command(paths: SuitePaths, config: MultiUserConfig, num_users: int) -> list[str]:
+def build_train_command(
+    paths: SuitePaths,
+    config: MultiUserConfig,
+    num_users: int,
+    seed: Optional[int] = None,
+) -> list[str]:
+    run_seed = config.seed if seed is None else seed
     return [
         config.python_executable,
         "scripts/train.py",
@@ -156,7 +180,7 @@ def build_train_command(paths: SuitePaths, config: MultiUserConfig, num_users: i
         "--algorithm",
         "mappo",
         "--seed",
-        str(config.seed),
+        str(run_seed),
         "--device",
         config.device,
         "--num_users",
@@ -186,7 +210,13 @@ def build_train_command(paths: SuitePaths, config: MultiUserConfig, num_users: i
     ]
 
 
-def build_compare_command(paths: SuitePaths, config: MultiUserConfig, num_users: int) -> list[str]:
+def build_compare_command(
+    paths: SuitePaths,
+    config: MultiUserConfig,
+    num_users: int,
+    seed: Optional[int] = None,
+) -> list[str]:
+    run_seed = config.seed if seed is None else seed
     command = [
         config.python_executable,
         "scripts/compare_system_baselines.py",
@@ -203,7 +233,7 @@ def build_compare_command(paths: SuitePaths, config: MultiUserConfig, num_users:
         "--total-timesteps",
         str(config.total_timesteps),
         "--seed",
-        str(config.seed),
+        str(run_seed),
         "--device",
         config.device,
         "--num-users",
@@ -224,8 +254,76 @@ def build_compare_command(paths: SuitePaths, config: MultiUserConfig, num_users:
     return command
 
 
-def has_training_artifacts(run_dir: Path) -> bool:
+def has_any_training_artifacts(run_dir: Path) -> bool:
     return any((run_dir / filename).exists() for filename in TRAIN_ARTIFACTS)
+
+
+def has_training_artifacts(
+    run_dir: Path,
+    *,
+    config: Optional[MultiUserConfig] = None,
+    num_users: Optional[int] = None,
+    seed: Optional[int] = None,
+) -> bool:
+    final_model = run_dir / "final_model.pt"
+    history_path = run_dir / "training_history.json"
+    if not final_model.exists() or not history_path.exists():
+        return False
+    try:
+        with history_path.open("r", encoding="utf-8") as handle:
+            history = json.load(handle)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if int(history.get("environment_schema_version", 0)) != ENVIRONMENT_SCHEMA_VERSION:
+        return False
+
+    history_config = history.get("config", {}) or {}
+    summary = history.get("summary", {}) or {}
+    actual_steps = int(summary.get("total_steps", 0))
+    if config is None:
+        return actual_steps > 0
+
+    defaults = TrainConfig()
+    expected = {
+        "total_timesteps": int(config.total_timesteps),
+        "max_steps": int(config.max_steps),
+        "n_steps": int(config.n_steps),
+        "eval_interval": int(config.eval_interval),
+        "eval_episodes": int(config.eval_episodes),
+        "save_interval": int(config.save_interval),
+        "early_stop_patience": int(config.early_stop_patience),
+        "graph_update_interval": int(config.graph_update_interval),
+        "best_model_metric": str(config.best_model_metric),
+        "num_users": int(num_users if num_users is not None else history_config.get("num_users", 0)),
+        "seed": int(seed if seed is not None else config.seed),
+        **{
+            key: float(getattr(defaults, key))
+            for key in REWARD_CONFIG_KEYS
+        },
+    }
+    if actual_steps <= 0:
+        return False
+    if (
+        expected["early_stop_patience"] <= 0
+        and actual_steps < expected["total_timesteps"]
+    ):
+        return False
+    for key, expected_value in expected.items():
+        actual_value = history_config.get(key)
+        if isinstance(expected_value, float):
+            try:
+                if not math.isclose(
+                    float(actual_value),
+                    expected_value,
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                ):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        elif actual_value != expected_value:
+            return False
+    return True
 
 
 def format_command(command: Sequence[str]) -> str:
@@ -302,17 +400,204 @@ def method_matches_include(row: dict[str, str], include_methods: Sequence[str]) 
     return bool(candidates & allowed)
 
 
-def _read_comparison_rows(summary_csv: Path, num_users: int) -> list[dict[str, str]]:
+def _validate_comparison_schema(compare_dir: Path) -> tuple[float, ...]:
+    summary_json = compare_dir / "comparison_summary.json"
+    if not summary_json.exists():
+        raise FileNotFoundError(f"Missing comparison summary metadata: {summary_json}")
+    with summary_json.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    schema_version = int(payload.get("environment_schema_version", 0))
+    if schema_version != 5:
+        raise ValueError(
+            f"{summary_json} uses environment schema {schema_version}; "
+            "paper figures require environment_schema_version=5. Re-run this comparison."
+        )
+    metric_schema_version = int(payload.get("metric_schema_version", 0))
+    if metric_schema_version != 2:
+        raise ValueError(
+            f"{summary_json} uses metric schema {metric_schema_version}; "
+            "paper figures require metric_schema_version=2. Re-run this comparison."
+        )
+    env_config = payload.get("env_config", {}) or {}
+    try:
+        return tuple(float(env_config[key]) for key in REWARD_CONFIG_KEYS)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{summary_json} is missing the unified reward configuration: "
+            f"{', '.join(REWARD_CONFIG_KEYS)}"
+        ) from exc
+
+
+def _read_comparison_rows(
+    summary_csv: Path,
+    num_users: int,
+    seed: int,
+) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     with summary_csv.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
             method = row.get("method", "")
-            normalized = dict(row)
+            normalized = {
+                key: str(value)
+                for key, value in derive_paper_metrics(row).items()
+            }
             normalized["num_users"] = str(num_users)
+            normalized["seed"] = str(seed)
             normalized["display_name"] = method_display_name(method, row.get("display_name", ""))
+            completed_tasks = _float_or_none(normalized.get("completed_tasks"))
+            if completed_tasks is None or completed_tasks <= 0.0:
+                for metric_key in SUCCESS_DEPENDENT_METRICS:
+                    normalized[metric_key] = ""
             rows.append(normalized)
     return rows
+
+
+def _write_csv(path: Path, rows: Sequence[dict[str, str]]) -> Path:
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def _aggregate_seed_rows(rows: Sequence[dict[str, str]]) -> list[dict[str, str]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+    for row in rows:
+        key = (
+            str(row.get("num_users", "")),
+            str(row.get("method", "")),
+            str(row.get("display_name", "")),
+        )
+        grouped.setdefault(key, []).append(row)
+
+    aggregated: list[dict[str, str]] = []
+    for (num_users, method, display_name), group in grouped.items():
+        result: dict[str, str] = {
+            "num_users": num_users,
+            "method": method,
+            "display_name": display_name,
+            "seed_count": str(len(group)),
+        }
+        fieldnames = {
+            key
+            for row in group
+            for key in row
+            if key not in {"num_users", "method", "display_name", "seed"}
+        }
+        for fieldname in sorted(fieldnames):
+            values = [
+                value
+                for row in group
+                if (value := _float_or_none(row.get(fieldname))) is not None
+            ]
+            if values:
+                mean, low, high = bootstrap_mean_ci(values)
+                result[fieldname] = str(mean)
+                result[f"{fieldname}_ci_low"] = str(low)
+                result[f"{fieldname}_ci_high"] = str(high)
+                if fieldname in SUCCESS_DEPENDENT_METRICS:
+                    result[f"{fieldname}_sample_count"] = str(len(values))
+            else:
+                result[fieldname] = str(group[0].get(fieldname, ""))
+                if fieldname in SUCCESS_DEPENDENT_METRICS:
+                    result[f"{fieldname}_sample_count"] = "0"
+        aggregated.append(result)
+    return aggregated
+
+
+def _fixed_user_methods(
+    seed_rows: Sequence[dict[str, str]],
+    aggregated_rows: Sequence[dict[str, str]],
+) -> list[dict[str, object]]:
+    methods: list[dict[str, object]] = []
+    for aggregated in aggregated_rows:
+        method_key = aggregated.get("method", "")
+        records = [
+            dict(row)
+            for row in seed_rows
+            if row.get("method", "") == method_key
+        ]
+        method: dict[str, object] = dict(aggregated)
+        method["is_system"] = str(method.get("is_system", "")).lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        method["seed_metrics"] = records
+        method["training_history_paths"] = [
+            str(row["training_history"])
+            for row in records
+            if row.get("training_history")
+        ]
+        methods.append(method)
+    return methods
+
+
+def _plot_fixed_user_seed_summary(
+    user_dir: Path,
+    seed_rows: Sequence[dict[str, str]],
+    aggregated_rows: Sequence[dict[str, str]],
+    output_suffix: str = "",
+) -> list[Path]:
+    from scripts.compare_system_baselines import (
+        plot_delay_energy_tradeoff,
+        plot_method_comparison,
+        plot_paper_dashboard,
+        plot_performance_radar,
+        plot_success_continuity_scatter,
+        plot_training_curve_vs_baselines,
+    )
+
+    methods = _fixed_user_methods(seed_rows, aggregated_rows)
+    generated: list[Path] = []
+    plotters = (
+        lambda: plot_method_comparison(
+            methods,
+            user_dir,
+            output_suffix=output_suffix,
+        ),
+        lambda: plot_training_curve_vs_baselines(
+            None,
+            methods,
+            user_dir,
+            window=5,
+            output_suffix=output_suffix,
+        ),
+        lambda: plot_paper_dashboard(
+            None,
+            methods,
+            user_dir,
+            window=5,
+            output_suffix=output_suffix,
+        ),
+        lambda: plot_delay_energy_tradeoff(
+            methods,
+            user_dir,
+            output_suffix=output_suffix,
+        ),
+        lambda: plot_success_continuity_scatter(
+            methods,
+            user_dir,
+            output_suffix=output_suffix,
+        ),
+        lambda: plot_performance_radar(
+            methods,
+            user_dir,
+            output_suffix=output_suffix,
+        ),
+    )
+    for plotter in plotters:
+        path = plotter()
+        if path is not None:
+            generated.append(path)
+    return generated
 
 
 def aggregate_user_summaries(
@@ -320,35 +605,65 @@ def aggregate_user_summaries(
     user_counts: Sequence[int],
     include_methods: Sequence[str] = (),
     output_suffix: str = "",
+    seeds: Sequence[int] = (),
 ) -> tuple[list[dict[str, str]], Path]:
-    rows: list[dict[str, str]] = []
+    seed_values = tuple(seeds) or (42,)
+    seed_rows: list[dict[str, str]] = []
+    expected_reward_config: Optional[tuple[float, ...]] = None
     for num_users in user_counts:
-        summary_csv = suite_dir / f"u{num_users}" / "comparison_summary.csv"
-        if not summary_csv.exists():
-            raise FileNotFoundError(f"Missing comparison summary: {summary_csv}")
-        rows.extend(
-            row
-            for row in _read_comparison_rows(summary_csv, num_users)
-            if method_matches_include(row, include_methods)
+        user_seed_rows: list[dict[str, str]] = []
+        for seed in seed_values:
+            user_dir = suite_dir / f"u{num_users}"
+            compare_dir = (
+                user_dir / f"seed_{seed}"
+                if len(seed_values) > 1
+                else user_dir
+            )
+            summary_csv = compare_dir / "comparison_summary.csv"
+            if not summary_csv.exists():
+                raise FileNotFoundError(f"Missing comparison summary: {summary_csv}")
+            reward_config = _validate_comparison_schema(compare_dir)
+            if expected_reward_config is None:
+                expected_reward_config = reward_config
+            elif reward_config != expected_reward_config:
+                raise ValueError(
+                    f"{compare_dir} uses reward configuration {reward_config}, "
+                    f"but the suite requires {expected_reward_config}."
+                )
+            user_seed_rows.extend(
+                row
+                for row in _read_comparison_rows(summary_csv, num_users, seed)
+                if method_matches_include(row, include_methods)
+            )
+        seed_rows.extend(user_seed_rows)
+        aggregated_user_rows = _aggregate_seed_rows(user_seed_rows)
+        _write_csv(
+            suite_dir / f"u{num_users}" / "comparison_seed_records.csv",
+            user_seed_rows,
         )
-    if include_methods and not rows:
+        _write_csv(
+            suite_dir / f"u{num_users}" / "comparison_summary.csv",
+            aggregated_user_rows,
+        )
+        _plot_fixed_user_seed_summary(
+            suite_dir / f"u{num_users}",
+            user_seed_rows,
+            aggregated_user_rows,
+            output_suffix=output_suffix,
+        )
+    if include_methods and not seed_rows:
         raise ValueError(
             "No methods matched --include-methods: "
             f"{', '.join(include_methods)}"
         )
 
-    fieldnames: list[str] = ["num_users", "method", "display_name"]
-    for row in rows:
-        for key in row:
-            if key not in fieldnames:
-                fieldnames.append(key)
-
+    rows = _aggregate_seed_rows(seed_rows)
+    _write_csv(
+        suite_dir / suffixed_filename("multiuser_seed_records.csv", output_suffix),
+        seed_rows,
+    )
     output_csv = suite_dir / suffixed_filename("multiuser_summary.csv", output_suffix)
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    with output_csv.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    _write_csv(output_csv, rows)
     return rows, output_csv
 
 
@@ -518,12 +833,28 @@ def plot_scaling_metrics(
                 continue
             x_values = [int(row["num_users"]) for row in method_rows]
             y_values = [float(row[metric_key]) * scale for row in method_rows]
-            ax.plot(
+            ci_lows = [
+                _float_or_none(row.get(f"{metric_key}_ci_low"))
+                for row in method_rows
+            ]
+            ci_highs = [
+                _float_or_none(row.get(f"{metric_key}_ci_high"))
+                for row in method_rows
+            ]
+            line = ax.plot(
                 x_values,
                 y_values,
                 marker=markers[index % len(markers)],
                 label=display_name,
-            )
+            )[0]
+            if all(value is not None for value in ci_lows + ci_highs):
+                ax.fill_between(
+                    x_values,
+                    [float(value) * scale for value in ci_lows],
+                    [float(value) * scale for value in ci_highs],
+                    color=line.get_color(),
+                    alpha=0.14,
+                )
         ax.set_title(title)
         ax.set_xlabel("Number of Users")
         ax.set_ylabel(ylabel)
@@ -577,11 +908,44 @@ def training_history_path(paths: SuitePaths, method: str) -> Path:
     return paths.compare_output_dir / "learned_baselines" / method / "training_history.json"
 
 
+def _aggregate_training_curves(
+    history_paths: Sequence[Path],
+) -> tuple[list[float], list[float], list[float], list[float]]:
+    curves: list[tuple[list[float], list[float]]] = []
+    for path in history_paths:
+        steps, rewards = _load_training_curve(path)
+        if steps:
+            curves.append((steps, rewards))
+    if not curves:
+        return [], [], [], []
+
+    common_steps = sorted(
+        set(curves[0][0]).intersection(*(set(steps) for steps, _ in curves[1:]))
+    )
+    if not common_steps:
+        return [], [], [], []
+    reward_maps = [
+        {step: reward for step, reward in zip(steps, rewards)}
+        for steps, rewards in curves
+    ]
+    means: list[float] = []
+    lows: list[float] = []
+    highs: list[float] = []
+    for step in common_steps:
+        values = [reward_map[step] for reward_map in reward_maps]
+        mean, low, high = bootstrap_mean_ci(values)
+        means.append(mean)
+        lows.append(low)
+        highs.append(high)
+    return common_steps, means, lows, highs
+
+
 def plot_reward_convergence(
     project_root: Path,
     run_id: str,
     user_counts: Sequence[int],
     suite_dir: Path,
+    seeds: Sequence[int] = (42,),
     include_methods: Sequence[str] = (),
     output_suffix: str = "",
 ) -> Optional[Path]:
@@ -592,7 +956,6 @@ def plot_reward_convergence(
 
     for axis_index, num_users in enumerate(user_counts):
         ax = axes.flat[axis_index]
-        paths = build_paths(project_root, run_id, num_users)
         reward_methods = [
             method
             for method in LEARNED_REWARD_METHODS
@@ -602,18 +965,40 @@ def plot_reward_convergence(
             )
         ]
         for method_index, method in enumerate(reward_methods):
-            history_path = training_history_path(paths, method)
-            steps, rewards = _load_training_curve(history_path)
+            history_paths = [
+                training_history_path(
+                    build_paths(
+                        project_root,
+                        run_id,
+                        num_users,
+                        seed=seed,
+                        multi_seed=len(seeds) > 1,
+                    ),
+                    method,
+                )
+                for seed in seeds
+            ]
+            steps, rewards, ci_lows, ci_highs = _aggregate_training_curves(
+                history_paths
+            )
             if not steps:
                 continue
             plotted_any = True
-            ax.plot(
+            line = ax.plot(
                 steps,
                 rewards,
                 marker=markers[method_index % len(markers)],
                 markevery=max(len(steps) // 8, 1),
                 label=method_display_name(method),
-            )
+            )[0]
+            if len(history_paths) > 1:
+                ax.fill_between(
+                    steps,
+                    ci_lows,
+                    ci_highs,
+                    color=line.get_color(),
+                    alpha=0.14,
+                )
         ax.set_title(f"U{num_users}")
         ax.set_xlabel("Training Steps")
         ax.set_ylabel("Mean Episode Reward")
@@ -660,6 +1045,7 @@ def generate_aggregate_artifacts(
         config.user_counts,
         include_methods=config.include_methods,
         output_suffix=config.output_suffix,
+        seeds=effective_seeds(config),
     )
     generated: list[Path] = [summary_csv]
 
@@ -668,6 +1054,7 @@ def generate_aggregate_artifacts(
         config.run_id,
         config.user_counts,
         suite_dir,
+        seeds=effective_seeds(config),
         include_methods=config.include_methods,
         output_suffix=config.output_suffix,
     )
@@ -713,6 +1100,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--user-counts", type=int, nargs="+", default=list(DEFAULT_USER_COUNTS))
     parser.add_argument("--python-executable", type=str, default=DEFAULT_PYTHON)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=[],
+        help="Independent training seeds. When omitted, --seed is used for backward compatibility.",
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--total-timesteps", type=int, default=300_000)
     parser.add_argument("--max-steps", type=int, default=600)
@@ -770,6 +1164,7 @@ def config_from_args(args: argparse.Namespace) -> MultiUserConfig:
         user_counts=tuple(args.user_counts),
         python_executable=args.python_executable,
         seed=args.seed,
+        seeds=tuple(args.seeds),
         device=args.device,
         total_timesteps=args.total_timesteps,
         max_steps=args.max_steps,
@@ -795,44 +1190,80 @@ def config_from_args(args: argparse.Namespace) -> MultiUserConfig:
     )
 
 
-def run_user_count(config: MultiUserConfig, num_users: int) -> SuitePaths:
-    paths = build_paths(PROJECT_ROOT, config.run_id, num_users)
+def run_user_count(
+    config: MultiUserConfig,
+    num_users: int,
+    seed: Optional[int] = None,
+) -> SuitePaths:
+    seeds = effective_seeds(config)
+    run_seed = config.seed if seed is None else seed
+    paths = build_paths(
+        PROJECT_ROOT,
+        config.run_id,
+        num_users,
+        seed=run_seed,
+        multi_seed=len(seeds) > 1,
+    )
     if not config.dry_run:
         paths.log_dir.mkdir(parents=True, exist_ok=True)
         paths.suite_dir.mkdir(parents=True, exist_ok=True)
         paths.compare_output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n=== Multi-user scaling: U{num_users} ===")
+    print(f"\n=== Multi-user scaling: U{num_users}, seed {run_seed} ===")
     print(f"System run dir: {paths.system_run_dir}")
     print(f"Compare output dir: {paths.compare_output_dir}")
 
     train_needed = not config.skip_system_train
-    if train_needed and has_training_artifacts(paths.system_run_dir) and not config.force_system_train:
+    complete_training = has_training_artifacts(
+        paths.system_run_dir,
+        config=config,
+        num_users=num_users,
+        seed=run_seed,
+    )
+    if train_needed and complete_training and not config.force_system_train:
         train_needed = False
-        print("Existing HAN+MAPPO artifacts found; reusing system training.")
+        print("Complete HAN+MAPPO artifacts found; reusing system training.")
+    elif (
+        train_needed
+        and has_any_training_artifacts(paths.system_run_dir)
+        and not config.force_system_train
+    ):
+        raise RuntimeError(
+            f"Incomplete or configuration-mismatched training artifacts found in "
+            f"{paths.system_run_dir}. Use a new --run-id, or explicitly pass "
+            "--force-system-train to restart this run."
+        )
 
     if train_needed:
         if not config.dry_run:
             paths.system_run_dir.mkdir(parents=True, exist_ok=True)
         run_command(
-            build_train_command(paths, config, num_users),
+            build_train_command(paths, config, num_users, seed=run_seed),
             PROJECT_ROOT,
-            paths.suite_dir / f"u{num_users}_system_train.log",
+            paths.suite_dir / f"u{num_users}_seed{run_seed}_system_train.log",
             config.dry_run,
         )
     else:
         print("System training step skipped.")
 
     if not config.skip_compare:
-        if not config.dry_run and not has_training_artifacts(paths.system_run_dir):
+        if (
+            not config.dry_run
+            and not has_training_artifacts(
+                paths.system_run_dir,
+                config=config,
+                num_users=num_users,
+                seed=run_seed,
+            )
+        ):
             raise FileNotFoundError(
-                f"No HAN+MAPPO artifacts found in {paths.system_run_dir}. "
-                "Run without --skip-system-train first, or reuse an existing run id."
+                f"No complete, configuration-matched HAN+MAPPO training found in "
+                f"{paths.system_run_dir}. Run without --skip-system-train first."
             )
         run_command(
-            build_compare_command(paths, config, num_users),
+            build_compare_command(paths, config, num_users, seed=run_seed),
             PROJECT_ROOT,
-            paths.suite_dir / f"u{num_users}_compare.log",
+            paths.suite_dir / f"u{num_users}_seed{run_seed}_compare.log",
             config.dry_run,
         )
     else:
@@ -844,6 +1275,7 @@ def main() -> None:
     config = config_from_args(parse_args())
     print(f"Run id: {config.run_id}")
     print(f"User counts: {', '.join(str(count) for count in config.user_counts)}")
+    print(f"Seeds: {', '.join(str(seed) for seed in effective_seeds(config))}")
     print(f"Baselines: {', '.join(config.baselines)}")
     if config.include_methods:
         print(f"Included methods: {', '.join(config.include_methods)}")
@@ -861,8 +1293,9 @@ def main() -> None:
 
     first_paths: Optional[SuitePaths] = None
     for num_users in config.user_counts:
-        paths = run_user_count(config, num_users)
-        first_paths = first_paths or paths
+        for seed in effective_seeds(config):
+            paths = run_user_count(config, num_users, seed=seed)
+            first_paths = first_paths or paths
 
     if config.dry_run or config.skip_compare:
         print("Aggregation skipped.")

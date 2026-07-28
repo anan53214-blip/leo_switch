@@ -2,7 +2,14 @@ import numpy as np
 import pytest
 
 from scripts.train import TrainConfig, compute_model_selection_score
-from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
+from src.environment.gym_env import (
+    EnvConfig,
+    LEOSatelliteEnv,
+    REWARD_BREAKDOWN_KEYS,
+    REWARD_ENERGY_REFERENCE_J,
+    TASK_FAILURE_PENALTY,
+    TASK_SUCCESS_REWARD,
+)
 from src.environment.mec import MECConfig
 
 
@@ -37,33 +44,19 @@ def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
     return LEOSatelliteEnv(config)
 
 
-class _DeterministicRng:
-    def random(self):
-        return 0.0
-
-
-def test_handover_weight_changes_reward_signal():
-    env_low = _build_single_user_env(reward_handover_weight=0.0)
-    env_high = _build_single_user_env(reward_handover_weight=1.0)
+def test_interruption_weight_changes_successful_handover_reward():
+    env_low = _build_single_user_env(reward_interruption_weight=0.0)
+    env_high = _build_single_user_env(reward_interruption_weight=1.0)
 
     try:
         env_low.reset(seed=7)
         env_high.reset(seed=7)
 
         user_low = env_low.user_manager.users[0]
-        visible_low = env_low._get_visible_satellites(user_low)
-        action_index = next(
-            (
-                i + 1
-                for i, sat in enumerate(visible_low)
-                if sat.sat_id != user_low.serving_satellite
-            ),
-            None,
-        )
-        assert action_index is not None
+        handover_candidates = env_low._get_handover_candidates(user_low)
+        assert handover_candidates
+        action_index = 1
 
-        env_low.rng = _DeterministicRng()
-        env_high.rng = _DeterministicRng()
         actions = np.array([[float(action_index), 0.0]], dtype=np.float32)
         _, reward_low, *_ = env_low.step(actions)
         _, reward_high, *_ = env_high.step(actions)
@@ -114,43 +107,54 @@ def test_info_contains_reward_breakdown_and_load_balance():
 
         assert isinstance(reward, float)
         assert 'load_balance_score' in info
-        for key in [
-            'reward_delay',
-            'reward_energy',
-            'reward_qos',
-            'reward_task_success',
-            'reward_deadline_slack',
-            'reward_service_continuity',
-            'reward_handover',
-            'reward_load_balance',
-            'reward_enqueue',
-            'penalty_deadline',
-            'penalty_task_failure',
-            'penalty_queue_full',
-        ]:
+        for key in REWARD_BREAKDOWN_KEYS:
             assert key in info['stats']
     finally:
         env.close()
 
 
-def test_service_continuity_reward_penalizes_only_interruptions():
-    env = _build_single_user_env(reward_service_continuity_weight=0.15)
+def test_reward_breakdown_uses_same_user_mean_scale_as_global_reward():
+    env = _build_single_user_env(num_users=2)
 
     try:
-        assert env._compute_service_continuity_reward(10.0, 0.0) == pytest.approx(0.0)
-        assert env._compute_service_continuity_reward(10.0, 2.0) == pytest.approx(-0.03)
-        assert env._compute_service_continuity_reward(10.0, 10.0) == pytest.approx(-0.15)
+        env._record_reward_terms(reward_task_success=1.0, penalty_delay=-0.4)
+        env._record_reward_terms(
+            average_over_users=False,
+            penalty_service_interruption=-0.2,
+        )
+
+        assert env.stats["reward_task_success"] == pytest.approx(0.5)
+        assert env.stats["penalty_delay"] == pytest.approx(-0.2)
+        assert env.stats["penalty_service_interruption"] == pytest.approx(-0.2)
     finally:
         env.close()
 
 
-def test_service_continuity_term_stays_bounded_over_long_episodes():
-    env = _build_single_user_env(reward_service_continuity_weight=0.15, max_steps=2000)
+def test_service_interruption_penalty_is_computed_per_user():
+    env = _build_single_user_env(
+        num_users=3,
+        reward_interruption_weight=0.3,
+    )
 
     try:
-        per_step = env._compute_service_continuity_reward(20.0, 0.24)
-        assert per_step == pytest.approx(-0.0018)
-        assert per_step * 2000 == pytest.approx(-3.6)
+        penalties = env._compute_service_interruption_penalties(
+            np.asarray([0.0, 0.5, 1.0], dtype=np.float32)
+        )
+
+        assert penalties == pytest.approx([0.0, -0.15, -0.3])
+    finally:
+        env.close()
+
+
+def test_service_interruption_penalty_is_bounded_by_its_weight():
+    env = _build_single_user_env(reward_interruption_weight=0.3)
+
+    try:
+        penalties = env._compute_service_interruption_penalties(
+            np.asarray([10.0], dtype=np.float32)
+        )
+
+        assert penalties[0] == pytest.approx(-0.3)
     finally:
         env.close()
 
@@ -170,18 +174,19 @@ def test_task_reward_prioritizes_deadline_success_over_energy_savings():
             max_delay=2.0,
         )
 
-        assert success_terms["reward_task_success"] > 0.0
-        assert success_terms["reward_deadline_slack"] > 0.0
-        assert success_terms["reward_energy"] < 0.0
-        assert late_terms["penalty_task_failure"] < 0.0
-        assert late_terms["penalty_deadline"] < 0.0
-        assert late_reward < 0.0
+        assert success_terms["reward_task_success"] == pytest.approx(TASK_SUCCESS_REWARD)
+        assert success_terms["penalty_delay"] == pytest.approx(-0.3)
+        assert success_terms["penalty_energy"] == pytest.approx(-0.08)
+        assert late_terms["penalty_task_failure"] == pytest.approx(-TASK_FAILURE_PENALTY)
+        assert late_terms["penalty_delay"] == pytest.approx(0.0)
+        assert late_terms["penalty_energy"] == pytest.approx(0.0)
+        assert late_reward == pytest.approx(-TASK_FAILURE_PENALTY)
         assert success_reward > late_reward
     finally:
         env.close()
 
 
-def test_energy_penalty_only_applies_to_successful_tasks():
+def test_failed_task_does_not_receive_additional_delay_or_energy_penalties():
     env = _build_single_user_env()
 
     try:
@@ -191,8 +196,9 @@ def test_energy_penalty_only_applies_to_successful_tasks():
             max_delay=1.0,
         )
 
-        assert late_terms["reward_energy"] == pytest.approx(0.0)
-        assert late_terms["penalty_task_failure"] < 0.0
+        assert late_terms["penalty_delay"] == pytest.approx(0.0)
+        assert late_terms["penalty_energy"] == pytest.approx(0.0)
+        assert late_terms["penalty_task_failure"] == pytest.approx(-1.0)
     finally:
         env.close()
 
@@ -203,7 +209,8 @@ def test_training_defaults_use_balanced_update_budget():
     assert config.n_epochs == 6
     assert config.batch_size == 256
     assert config.entropy_schedule == "constant"
-    assert config.reward_failed_handover_penalty == pytest.approx(0.3)
+    assert config.reward_failed_handover_penalty == pytest.approx(0.2)
+    assert REWARD_ENERGY_REFERENCE_J == pytest.approx(10.0)
 
 
 def test_reward_default_weights_are_balanced():
@@ -211,16 +218,10 @@ def test_reward_default_weights_are_balanced():
     train_config = TrainConfig()
 
     expected = {
-        "reward_delay_weight": 0.35,
-        "reward_energy_weight": 0.05,
-        "reward_handover_weight": 0.10,
-        "reward_load_balance_weight": 0.05,
-        "reward_qos_weight": 0.40,
-        "reward_service_continuity_weight": 0.15,
-        "reward_deadline_penalty": 1.00,
-        "reward_failed_task_penalty": 0.80,
-        "reward_deadline_slack_weight": 0.25,
-        "reward_enqueue_bonus": 0.0,
+        "reward_delay_weight": 0.60,
+        "reward_energy_weight": 0.10,
+        "reward_interruption_weight": 0.30,
+        "reward_failed_handover_penalty": 0.20,
     }
 
     for key, value in expected.items():
@@ -228,7 +229,7 @@ def test_reward_default_weights_are_balanced():
         assert getattr(train_config, key) == pytest.approx(value)
 
 
-def test_comparison_defaults_use_deadline_priority_reward_weights():
+def test_comparison_defaults_use_qos_gated_reward_weights():
     from scripts.compare_system_baselines import build_default_train_config
 
     config = build_default_train_config(
@@ -239,13 +240,7 @@ def test_comparison_defaults_use_deadline_priority_reward_weights():
         best_model_metric="avg_delay",
     )
 
-    assert config["reward_delay_weight"] == pytest.approx(0.35)
-    assert config["reward_energy_weight"] == pytest.approx(0.05)
-    assert config["reward_handover_weight"] == pytest.approx(0.10)
-    assert config["reward_load_balance_weight"] == pytest.approx(0.05)
-    assert config["reward_qos_weight"] == pytest.approx(0.40)
-    assert config["reward_service_continuity_weight"] == pytest.approx(0.15)
-    assert config["reward_deadline_penalty"] == pytest.approx(1.00)
-    assert config["reward_failed_task_penalty"] == pytest.approx(0.80)
-    assert config["reward_deadline_slack_weight"] == pytest.approx(0.25)
-    assert config["reward_enqueue_bonus"] == pytest.approx(0.0)
+    assert config["reward_delay_weight"] == pytest.approx(0.60)
+    assert config["reward_energy_weight"] == pytest.approx(0.10)
+    assert config["reward_interruption_weight"] == pytest.approx(0.30)
+    assert config["reward_failed_handover_penalty"] == pytest.approx(0.20)

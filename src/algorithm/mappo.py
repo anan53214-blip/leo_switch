@@ -42,14 +42,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 import sys
 sys.path.insert(0, 'src')
 
-from model.actor import HybridActor, MultiAgentActor, ActorConfig
-from model.critic import CentralizedCritic, CriticConfig, create_global_state
+from model.actor import MultiAgentActor, ActorConfig
+from model.critic import CentralizedCritic, CriticConfig
 from .buffer import MultiAgentRolloutBuffer
 
 
@@ -180,6 +180,11 @@ class MAPPO:
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(), lr=critic_lr, eps=1e-5
         )
+        self.representation_module: Optional[nn.Module] = None
+        self.representation_optimizer = None
+        self.representation_batch_fn: Optional[
+            Callable[[Dict[str, torch.Tensor]], Dict[str, torch.Tensor]]
+        ] = None
         
         # ---------- 经验缓冲区 ----------
         # 注意：缓冲区在Runner中创建，这里只保存引用
@@ -187,7 +192,6 @@ class MAPPO:
         
         # ---------- 训练统计 ----------
         self.train_step = 0
-        self._last_train_stats = {}
     
     def _current_entropy_coef(self) -> float:
         """Return the entropy coefficient for the current update."""
@@ -201,6 +205,27 @@ class MAPPO:
     def set_buffer(self, buffer: MultiAgentRolloutBuffer):
         """设置经验缓冲区"""
         self.buffer = buffer
+
+    def set_representation_module(
+        self,
+        module: nn.Module,
+        batch_fn: Callable[
+            [Dict[str, torch.Tensor]],
+            Dict[str, torch.Tensor],
+        ],
+        learning_rate: Optional[float] = None,
+    ) -> None:
+        """注册需要随 PPO 损失联合训练的图表示模块。"""
+        parameters = [parameter for parameter in module.parameters() if parameter.requires_grad]
+        if not parameters:
+            return
+        self.representation_module = module
+        self.representation_batch_fn = batch_fn
+        self.representation_optimizer = torch.optim.Adam(
+            parameters,
+            lr=float(learning_rate or self.config.learning_rate),
+            eps=1e-5,
+        )
     
     @torch.no_grad()
     def act(
@@ -385,6 +410,14 @@ class MAPPO:
         
         self.actor.train()
         self.critic.train()
+        representation_before = None
+        if self.representation_module is not None:
+            self.representation_module.train()
+            representation_before = [
+                parameter.detach().clone()
+                for parameter in self.representation_module.parameters()
+                if parameter.requires_grad
+            ]
         
         # 统计信息
         all_actor_losses = []
@@ -392,10 +425,13 @@ class MAPPO:
         all_entropy_losses = []
         all_kl_divs = []
         all_clip_fractions = []
+        all_representation_grad_norms = []
         
         for epoch in range(self.config.n_epochs):
             # 获取批次数据
             for batch in self.buffer.get_batches(self.config.batch_size):
+                if self.representation_batch_fn is not None:
+                    batch = self.representation_batch_fn(batch)
                 # 解包数据
                 obs = batch['observations']
                 actions_discrete = batch['actions_discrete']
@@ -495,6 +531,8 @@ class MAPPO:
                 # ---------- 反向传播 ----------
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
+                if self.representation_optimizer is not None:
+                    self.representation_optimizer.zero_grad()
                 loss.backward()
                 
                 # 梯度裁剪
@@ -504,9 +542,19 @@ class MAPPO:
                 nn.utils.clip_grad_norm_(
                     self.critic.parameters(), self.config.max_grad_norm
                 )
+                if self.representation_module is not None:
+                    representation_grad_norm = nn.utils.clip_grad_norm_(
+                        self.representation_module.parameters(),
+                        self.config.max_grad_norm,
+                    )
+                    all_representation_grad_norms.append(
+                        float(representation_grad_norm)
+                    )
                 
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
+                if self.representation_optimizer is not None:
+                    self.representation_optimizer.step()
                 
                 # ---------- 记录统计 ----------
                 with torch.no_grad():
@@ -532,50 +580,51 @@ class MAPPO:
                     break
         
         self.train_step += 1
+
+        representation_delta = 0.0
+        if (
+            self.representation_module is not None
+            and representation_before is not None
+        ):
+            delta_squared = 0.0
+            trainable_parameters = [
+                parameter
+                for parameter in self.representation_module.parameters()
+                if parameter.requires_grad
+            ]
+            for before, after in zip(
+                representation_before,
+                trainable_parameters,
+            ):
+                delta_squared += float(
+                    torch.sum((after.detach() - before) ** 2).item()
+                )
+            representation_delta = float(np.sqrt(delta_squared))
         
         # 汇总统计
+        executed_metapaths = 0
+        if self.representation_module is not None:
+            get_executed_count = getattr(
+                self.representation_module,
+                "get_last_executed_metapath_count",
+                None,
+            )
+            if callable(get_executed_count):
+                executed_metapaths = int(get_executed_count())
+
         stats = {
             'actor_loss': np.mean(all_actor_losses),
             'critic_loss': np.mean(all_critic_losses),
             'entropy': np.mean(all_entropy_losses),
             'kl_divergence': np.mean(all_kl_divs),
             'clip_fraction': np.mean(all_clip_fractions),
+            'han_grad_norm': (
+                float(np.mean(all_representation_grad_norms))
+                if all_representation_grad_norms else 0.0
+            ),
+            'han_parameter_delta': representation_delta,
+            'han_metapaths_executed': executed_metapaths,
             'train_step': self.train_step
         }
         
-        self._last_train_stats = stats
         return stats
-    
-    def save(self, path: str):
-        """
-        保存模型
-        
-        Args:
-            path: 保存路径
-        """
-        torch.save({
-            'actor_state_dict': self.actor.state_dict(),
-            'critic_state_dict': self.critic.state_dict(),
-            'actor_optimizer': self.actor_optimizer.state_dict(),
-            'critic_optimizer': self.critic_optimizer.state_dict(),
-            'train_step': self.train_step,
-            'config': self.config
-        }, path)
-    
-    def load(self, path: str):
-        """
-        加载模型
-        
-        Args:
-            path: 模型路径
-        """
-        checkpoint = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(checkpoint['actor_state_dict'])
-        self.critic.load_state_dict(checkpoint['critic_state_dict'])
-        self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
-        self.critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
-        self.train_step = checkpoint['train_step']
-    
-    def get_stats(self) -> Dict[str, float]:
-        """获取最近的训练统计"""
-        return self._last_train_stats

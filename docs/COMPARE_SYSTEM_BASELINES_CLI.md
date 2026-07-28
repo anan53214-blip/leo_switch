@@ -84,9 +84,9 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
 
 | 参数 | 默认值 | 用法 |
 | --- | --- | --- |
-| `--episodes` | `5` | 每个方法评估的 episode 数。 |
+| `--episodes` | `3` | 每个方法评估的 episode 数。 |
 | `--max-steps` | 默认不覆盖 | 覆盖训练、评估、基线测试时每个 episode 的最大步数。 |
-| `--total-timesteps` | `1200000` | 系统算法训练步数。学习型基线如果没有单独设置步数，也会使用这个值。 |
+| `--total-timesteps` | `300000` | 系统算法训练步数。学习型基线如果没有单独设置步数，也会使用这个值。 |
 | `--early-stop-patience` | `0` | MAPPO 类训练的早停耐心值，`0` 表示禁用早停。 |
 | `--seed` | `42` | 基线评估和默认配置使用的随机种子。 |
 | `--device` | `auto`，可选 `auto`、`cpu`、`cuda` | 训练和评估设备。本机快速验证建议用 `cpu`。 |
@@ -100,6 +100,8 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
 ```text
 reward
 avg_delay
+avg_success_delay
+p95_success_delay
 total_energy
 service_continuity_rate
 service_availability_rate
@@ -107,6 +109,7 @@ handover_failure_rate
 load_balance_coefficient
 load_balance_variance
 mec_load_fairness
+jain_mec_load_fairness
 avg_load_balance_score
 energy_per_successful_task
 task_completion_rate
@@ -120,8 +123,13 @@ task_settlement_rate
 | `--best-model-metric` | `avg_delay` | 系统训练时用于保存 `best_model.pt` 的指标，也用于从历史记录中选最好的一条。 |
 | `--compare-ranking-metric` | `avg_delay` | 用于选择启发式基线的最优卸载比例，并给对比结果排序或标注。 |
 
+`avg_delay` 仅为兼容旧实验保留。论文主结果推荐使用
+`avg_success_delay`，并同时报告 `p95_success_delay`；负载公平性正文使用
+`jain_mec_load_fairness`。
+
 脚本会自动处理指标方向。比如 `avg_delay`、`total_energy`、`handover_failure_rate`、
-`load_balance_variance`、`task_failure_rate` 和 `energy_per_successful_task`
+`avg_success_delay`、`p95_success_delay`、`load_balance_variance`、
+`task_failure_rate` 和 `energy_per_successful_task`
 都是越低越好。
 
 ## 基线算法选择
@@ -166,7 +174,6 @@ mappo_no_han
 han_mappo
 attn_mappo
 han_attn
-han_attn_cpq
 han_maddpg
 han_pdqn
 ```

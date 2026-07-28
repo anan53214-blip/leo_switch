@@ -49,7 +49,6 @@ from .actor import (
 
 from .critic import (
     CriticConfig,
-    SharedCritic,
     CentralizedCritic
 )
 
@@ -75,7 +74,6 @@ __all__ = [
     'MultiAgentActor',
     # Critic
     'CriticConfig',
-    'SharedCritic',
     'CentralizedCritic',
     # Candidate attention
     'CandidateAttentionConfig',

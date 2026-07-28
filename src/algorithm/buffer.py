@@ -1,7 +1,7 @@
 
 import torch
 import numpy as np
-from typing import Dict, Optional, Generator
+from typing import Any, Dict, Optional, Generator
 
 
 class MultiAgentRolloutBuffer:
@@ -87,8 +87,11 @@ class MultiAgentRolloutBuffer:
 
         self.advantages = np.zeros((buffer_size, num_agents), dtype=np.float32)
         self.returns = np.zeros((buffer_size, num_agents), dtype=np.float32)
+        self.graph_snapshots = [None] * buffer_size
     
     def reset(self):
+        for index in range(self.pos):
+            self.graph_snapshots[index] = None
         self.pos = 0
         self.full = False
     
@@ -104,7 +107,8 @@ class MultiAgentRolloutBuffer:
         value: float,
         log_probs: np.ndarray,
         candidate_masks: Optional[np.ndarray] = None,
-        candidate_sat_ids: Optional[np.ndarray] = None
+        candidate_sat_ids: Optional[np.ndarray] = None,
+        graph_snapshot: Optional[Any] = None,
     ):
         self.observations[self.pos] = obs
         self.global_states[self.pos] = global_state
@@ -137,6 +141,7 @@ class MultiAgentRolloutBuffer:
         if candidate_sat_ids is not None:
             self.candidate_sat_ids[self.pos] = candidate_sat_ids
 
+        self.graph_snapshots[self.pos] = graph_snapshot
         self.pos += 1
         if self.pos >= self.buffer_size:
             self.full = True
@@ -153,7 +158,9 @@ class MultiAgentRolloutBuffer:
                 next_non_terminal = 1.0 - float(last_done)
                 next_value = last_value
             else:
-                next_non_terminal = 1.0 - self.dones[step + 1]
+                # dones[step] belongs to transition (s_t, a_t, r_t).
+                # Using dones[step + 1] leaks advantages across episode resets.
+                next_non_terminal = 1.0 - self.dones[step]
                 next_value = self.values[step + 1]
             
 
@@ -214,6 +221,14 @@ class MultiAgentRolloutBuffer:
             -1,
             self.max_candidates,
         )
+        flat_time_indices = np.repeat(
+            np.arange(self.pos, dtype=np.int64),
+            self.num_agents,
+        )
+        flat_agent_indices = np.tile(
+            np.arange(self.num_agents, dtype=np.int64),
+            self.pos,
+        )
 
 
         if shuffle:
@@ -248,6 +263,12 @@ class MultiAgentRolloutBuffer:
                 'candidate_sat_ids': torch.tensor(
                     flat_candidate_sat_ids[batch_indices], device=self.device, dtype=torch.long
                 ),
+                'time_indices': torch.tensor(
+                    flat_time_indices[batch_indices], device=self.device, dtype=torch.long
+                ),
+                'agent_indices': torch.tensor(
+                    flat_agent_indices[batch_indices], device=self.device, dtype=torch.long
+                ),
                 'old_log_probs': torch.tensor(
                     flat_log_probs[batch_indices], device=self.device, dtype=torch.float32
                 ),
@@ -261,6 +282,3 @@ class MultiAgentRolloutBuffer:
                     flat_values[batch_indices], device=self.device, dtype=torch.float32
                 )
             }
-    
-    def get_all_data(self) -> Dict[str, torch.Tensor]:
-        return next(self.get_batches(self.pos * self.num_agents, shuffle=False))

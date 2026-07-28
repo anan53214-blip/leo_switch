@@ -5,25 +5,38 @@ Gymnasium强化学习环境
 主要功能：
 1. 多智能体环境（每个用户是一个智能体）
 2. 混合动作空间（离散切换 + 连续卸载比例）
-3. 综合奖励函数（时延、能耗、切换成功率）
+3. QoS 门控奖励函数（任务结果、时延、能耗和服务中断）
 
 参考论文：
 - 付一阳等《星地融合网络中基于异质图表征的多智能体协作切换方法》
 - 宋晓勤等《基于深度确定性策略梯度的星地融合网络可拆分任务卸载算法》
 """
 
-import math
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+from collections.abc import Mapping
 from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, fields
 from .constellation import WalkerConstellation
 from .visibility import VisibilityCalculator, VisibilityInfo
-from .user import User, UserPosition, UserState, UserGenerator, UserManager
-from .task import Task, TaskType, TaskGenerator, TaskManager, TaskConfig
-from .channel import SatelliteChannel, ChannelConfig, MultiUserChannel
-from .mec import MECServer, MECConfig, MECManager, OffloadingCalculator
+from .user import User, UserState, UserGenerator, UserManager
+from .task import Task, TaskGenerator, TaskManager
+from .channel import SatelliteChannel
+from .mec import MECManager, OffloadingCalculator
+
+
+TASK_SUCCESS_REWARD = 1.0
+TASK_FAILURE_PENALTY = 1.0
+REWARD_ENERGY_REFERENCE_J = 10.0
+REWARD_BREAKDOWN_KEYS = (
+    'reward_task_success',
+    'penalty_delay',
+    'penalty_energy',
+    'penalty_task_failure',
+    'penalty_service_interruption',
+    'penalty_failed_handover',
+)
 
 
 @dataclass
@@ -45,7 +58,7 @@ class EnvConfig:
     
     # 仿真参数
     time_step_sec: float = 1.0         # 时间步长 (秒)
-    max_steps: int = 3600              # 最大步数 (1小时)
+    max_steps: int = 600               # 每个 episode 的最大步数（10 分钟）
 
     # Episode 起始时间随机化
     randomize_episode_start: bool = True
@@ -58,31 +71,44 @@ class EnvConfig:
     handover_delay_sec: float = 0.6    # Moderate signaling cost
     rvt_threshold_sec: float = 60.0    # Encourage proactive switching
     pre_handover_rvt_sec: float = 30.0  # Pre-handover RVT 阈值
+    handover_min_snr_db: float = -5.0  # 目标链路硬准入阈值
     
     # 任务参数
     task_arrival_prob: float = 0.35    # Moderate competition without pathological saturation
     min_effective_offload_ratio: float = 0.05  # Treat tiny noisy offload actions as local execution
     task_arrival_seed_offset: int = 7919
     
-    # 奖励权重（按归一化项平衡，避免单个项主导总 reward）
-    reward_delay_weight: float = 0.35
-    reward_energy_weight: float = 0.05
-    reward_handover_weight: float = 0.10
-    reward_load_balance_weight: float = 0.05
-    reward_qos_weight: float = 0.40
-    reward_service_continuity_weight: float = 0.15
-    reward_deadline_slack_weight: float = 0.25
-    reward_enqueue_bonus: float = 0.0
-    reward_invalid_action_penalty: float = 0.5
-    reward_blocked_penalty: float = 1.0
-    reward_queue_full_penalty: float = 0.3
-    reward_failed_handover_penalty: float = 0.3
-    reward_deadline_penalty: float = 1.00
-    reward_failed_task_penalty: float = 0.80
-    reward_energy_reference: float = 10.0
+    # QoS 门控奖励：成功/失败固定为 +1/-1，仅保留四个可调系数
+    reward_delay_weight: float = 0.60
+    reward_energy_weight: float = 0.10
+    reward_interruption_weight: float = 0.30
+    reward_failed_handover_penalty: float = 0.20
     
     # 随机种子
     seed: Optional[int] = None
+
+
+def build_env_config(source: Any = None, **overrides: Any) -> EnvConfig:
+    """从配置对象或字典提取 EnvConfig 字段，避免各入口重复维护字段清单。"""
+    field_names = {item.name for item in fields(EnvConfig)}
+    values: Dict[str, Any] = {}
+    if isinstance(source, Mapping):
+        values.update({
+            name: source[name]
+            for name in field_names
+            if name in source
+        })
+    elif source is not None:
+        values.update({
+            name: getattr(source, name)
+            for name in field_names
+            if hasattr(source, name)
+        })
+    unknown = set(overrides) - field_names
+    if unknown:
+        raise TypeError(f"未知环境配置字段: {sorted(unknown)}")
+    values.update(overrides)
+    return EnvConfig(**values)
 
 
 def _finite_load_variance_samples(values) -> np.ndarray:
@@ -91,17 +117,34 @@ def _finite_load_variance_samples(values) -> np.ndarray:
     return np.clip(samples, 0.0, 0.25)
 
 
+def _finite_nonnegative_samples(values) -> np.ndarray:
+    samples = np.asarray(list(values or []), dtype=np.float64).reshape(-1)
+    samples = samples[np.isfinite(samples)]
+    return samples[samples >= 0.0]
+
+
 def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     """Derive reliability and QoS metrics from raw environment counters."""
-    resolved_tasks = int(stats.get('completed_tasks', 0) + stats.get('deadline_violations', 0))
+    failed_tasks = int(stats.get('failed_tasks', 0))
+    resolved_tasks = int(
+        stats.get('completed_tasks', 0)
+        + stats.get('deadline_violations', 0)
+        + failed_tasks
+    )
     total_tasks = int(stats.get('total_tasks', 0))
     pending_tasks = max(total_tasks - resolved_tasks, 0)
 
     total_handovers = int(stats.get('total_handovers', 0))
+    handover_attempts = int(stats.get('handover_attempts', total_handovers))
+    handover_committed = int(stats.get('handover_committed', total_handovers))
+    # 兼容旧日志以及只写入 total_handovers 的调用方。
+    if handover_attempts != total_handovers:
+        handover_attempts = total_handovers
+        handover_committed = total_handovers
     successful_handovers = int(stats.get('successful_handovers', 0))
     failed_handovers = int(stats.get('failed_handovers', 0))
     forced_disconnects = int(stats.get('forced_disconnects', 0))
-    continuity_events = total_handovers + forced_disconnects
+    continuity_events = handover_committed + forced_disconnects
 
     total_user_seconds = float(stats.get('total_user_seconds', 0.0))
     blocked_user_seconds = float(stats.get('blocked_user_seconds', 0.0))
@@ -135,15 +178,21 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     avg_delay = float(stats.get('total_delay', 0.0)) / max(resolved_tasks, 1)
     completed_count = float(stats.get('completed_tasks', 0))
     deadline_count = float(stats.get('deadline_violations', 0))
+    failed_count = deadline_count + float(failed_tasks)
     task_completion_rate = completed_count / max(resolved_tasks, 1)
     task_success_rate = completed_count / max(total_tasks, 1)
-    task_failure_rate = deadline_count / max(total_tasks, 1)
+    task_failure_rate = failed_count / max(total_tasks, 1)
     task_settlement_rate = float(resolved_tasks) / max(total_tasks, 1)
     task_resolution_rate = task_settlement_rate
     handover_frequency = (
-        float(total_handovers) / total_user_seconds
+        float(handover_committed) / total_user_seconds
         if total_user_seconds > 0.0 else 0.0
     )
+    blocked_time_ratio = (
+        blocked_user_seconds / total_user_seconds
+        if total_user_seconds > 0.0 else 0.0
+    )
+    handovers_per_user_minute = 60.0 * handover_frequency
 
     summary = stats.copy()
     mec_load_fairness = (
@@ -152,6 +201,23 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
     )
     total_energy = float(stats.get('total_energy', 0.0))
     energy_per_successful_task = total_energy / max(completed_count, 1.0)
+    successful_task_delay_samples = _finite_nonnegative_samples(
+        stats.get('successful_task_delay_samples', [])
+    )
+    avg_success_delay = (
+        float(np.mean(successful_task_delay_samples))
+        if successful_task_delay_samples.size > 0
+        else 0.0
+    )
+    p95_success_delay = (
+        float(np.percentile(successful_task_delay_samples, 95))
+        if successful_task_delay_samples.size > 0
+        else 0.0
+    )
+    jain_mec_load_fairness = (
+        float(stats.get('jain_load_fairness_sum', 0.0)) /
+        max(int(stats.get('jain_load_fairness_samples', 0)), 1)
+    )
     load_variance_samples = _finite_load_variance_samples(
         stats.get('load_variance_samples', [])
     )
@@ -175,10 +241,10 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         'resolved_tasks': resolved_tasks,
         'pending_tasks': pending_tasks,
         'handover_success_rate': (
-            float(successful_handovers) / max(total_handovers, 1)
+            float(successful_handovers) / max(handover_attempts, 1)
         ),
         'handover_failure_rate': (
-            float(failed_handovers) / max(total_handovers, 1)
+            float(failed_handovers) / max(handover_attempts, 1)
         ),
         'forced_termination_rate': (
             float(forced_disconnects) / max(continuity_events, 1)
@@ -199,7 +265,14 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
             float(stats.get('deadline_violations', 0)) / max(total_tasks, 1)
         ),
         'handover_frequency': handover_frequency,
+        'handovers_per_user_minute': handovers_per_user_minute,
+        'blocked_time_ratio': blocked_time_ratio,
         'avg_delay': avg_delay,
+        'avg_success_delay': avg_success_delay,
+        'p95_success_delay': p95_success_delay,
+        'successful_task_delay_samples': [
+            float(value) for value in successful_task_delay_samples
+        ],
         'energy_per_successful_task': energy_per_successful_task,
         'load_balance_variance': load_balance_variance,
         'load_balance_coefficient': load_balance_coefficient,
@@ -207,6 +280,7 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         'load_variance_samples': [float(value) for value in load_variance_samples],
         'load_variance_cdf': load_variance_cdf,
         'mec_load_fairness': mec_load_fairness,
+        'jain_mec_load_fairness': jain_mec_load_fairness,
         'active_load_balance_score': mec_load_fairness,
         'avg_load_balance_score': mec_load_fairness,
     })
@@ -273,14 +347,23 @@ class LEOSatelliteEnv(gym.Env):
         self.episode_rewards = []
         self.pending_rewards: Dict[int, float] = {}
         self.last_user_rewards = np.zeros(self.config.num_users, dtype=np.float32)
+        self._step_handover_interruption_seconds = np.zeros(
+            self.config.num_users,
+            dtype=np.float32,
+        )
         self._offload_task_meta: Dict[Tuple[int, int], Dict[str, float]] = {}
         
-        # RVT估算用的仰角历史
-        self._prev_elevations: Dict[tuple, float] = {}
-        
-        # 每步可见性缓存（step开始时清空，避免重复计算）
-        self._visibility_cache_step = -1
+        # 可见性和 RVT 缓存绑定明确的几何版本。
+        self.geometry_version = 0
+        self._visibility_cache_version = self.geometry_version
         self._visibility_cache: Dict[int, List[VisibilityInfo]] = {}
+        self._rvt_prediction_version = -1
+        self._rvt_prediction_time = None
+        self._rvt_prediction_offsets = np.zeros(0, dtype=np.float64)
+        self._rvt_future_positions = np.zeros(
+            (0, self.num_satellites, 3),
+            dtype=np.float64,
+        )
         
         # 预计算用户ECEF位置和ENU基向量（用户不移动，只需算一次）
         self._precompute_user_geometry()
@@ -325,7 +408,6 @@ class LEOSatelliteEnv(gym.Env):
     def _init_channel(self):
         """初始化信道"""
         self.channel = SatelliteChannel()
-        self.multi_user_channel = MultiUserChannel()
     
     def _init_mec(self):
         """初始化MEC"""
@@ -364,14 +446,22 @@ class LEOSatelliteEnv(gym.Env):
             self._user_e_up[i] = [cos_lat * cos_lon, cos_lat * sin_lon, sin_lat]
 
     def _invalidate_visibility_cache(self):
-        """使可见性缓存失效（每步调用一次）"""
+        """使可见性缓存失效，并将缓存绑定到当前几何版本。"""
         self._visibility_cache.clear()
+        self._visibility_cache_version = self.geometry_version
 
     @staticmethod
     def _build_stats() -> Dict[str, float]:
         """Initialize environment statistics and reward breakdown terms."""
         return {
             'total_handovers': 0,
+            'handover_attempts': 0,
+            'handover_committed': 0,
+            'handover_aborted': 0,
+            'handover_radio_failures': 0,
+            'migration_rejections': 0,
+            'reconnection_attempts': 0,
+            'reconnections': 0,
             'successful_handovers': 0,
             'failed_handovers': 0,
             'forced_disconnects': 0,
@@ -382,54 +472,136 @@ class LEOSatelliteEnv(gym.Env):
             'total_tasks': 0,
             'completed_tasks': 0,
             'deadline_violations': 0,
+            'failed_tasks': 0,
             'total_delay': 0.0,
+            'successful_task_delay_samples': [],
             'total_energy': 0.0,
-            'reward_delay': 0.0,
-            'reward_energy': 0.0,
-            'reward_qos': 0.0,
             'reward_task_success': 0.0,
-            'reward_deadline_slack': 0.0,
-            'reward_service_continuity': 0.0,
-            'reward_handover': 0.0,
-            'reward_load_balance': 0.0,
-            'reward_enqueue': 0.0,
-            'penalty_deadline': 0.0,
+            'penalty_delay': 0.0,
+            'penalty_energy': 0.0,
             'penalty_task_failure': 0.0,
-            'penalty_queue_full': 0.0,
-            'penalty_invalid_action': 0.0,
-            'penalty_blocked': 0.0,
+            'penalty_service_interruption': 0.0,
             'penalty_failed_handover': 0.0,
-            'penalty_handover_cost': 0.0,
             'load_balance_sum': 0.0,
             'load_balance_samples': 0,
+            'jain_load_fairness_sum': 0.0,
+            'jain_load_fairness_samples': 0,
             'load_variance_samples': [],
         }
 
-    def _record_reward_terms(self, **terms: float) -> None:
-        """Accumulate signed reward terms into the environment statistics."""
+    def _record_reward_terms(
+        self,
+        *,
+        average_over_users: bool = True,
+        **terms: float,
+    ) -> None:
+        """累计各项对环境全局平均 reward 的实际贡献。"""
+        scale = 1.0 / max(self.num_users, 1) if average_over_users else 1.0
         for key, value in terms.items():
             if key in self.stats:
-                self.stats[key] += float(value)
+                self.stats[key] += float(value) * scale
 
-    def _compute_service_continuity_reward(
+    def _compute_service_interruption_penalties(
         self,
-        step_user_seconds: float,
-        interruption_seconds: float,
-    ) -> float:
-        """Penalize interrupted service time without rewarding ordinary uptime."""
-        if step_user_seconds <= 0.0:
-            return 0.0
+        interruption_seconds: np.ndarray,
+    ) -> np.ndarray:
+        """按用户计算本时隙服务中断惩罚。"""
+        slot_duration = max(float(self.config.time_step_sec), 1e-6)
         interruption_ratio = np.clip(
-            float(interruption_seconds) / float(step_user_seconds),
+            np.asarray(interruption_seconds, dtype=np.float32) / slot_duration,
             0.0,
             1.0,
         )
-        return float(-self.config.reward_service_continuity_weight * interruption_ratio)
+        return (
+            -float(self.config.reward_interruption_weight) * interruption_ratio
+        ).astype(np.float32)
 
     @staticmethod
     def _summarize_stats(stats: Dict[str, float]) -> Dict[str, float]:
         """Add derived QoS and reliability metrics on top of raw counters."""
         return summarize_env_stats(stats)
+
+    def _get_rvt_prediction_grid(self) -> Tuple[np.ndarray, np.ndarray]:
+        """返回绑定当前几何版本的未来卫星位置预测网格。"""
+        if (
+            self._rvt_prediction_version != self.geometry_version
+            or self._rvt_prediction_time != self.constellation.current_time
+        ):
+            prediction_step = 5.0
+            max_prediction = max(
+                float(self.constellation.orbital_period) / 2.0,
+                prediction_step,
+            )
+            offsets = np.arange(
+                0.0,
+                max_prediction + prediction_step,
+                prediction_step,
+                dtype=np.float64,
+            )
+            self._rvt_prediction_offsets = offsets
+            self._rvt_future_positions = (
+                self.constellation.get_all_positions_ecef_at_offsets(offsets)
+            )
+            self._rvt_prediction_version = self.geometry_version
+            self._rvt_prediction_time = self.constellation.current_time
+        return self._rvt_prediction_offsets, self._rvt_future_positions
+
+    def _estimate_rvt_batch(
+        self,
+        user_id: int,
+        satellite_ids: np.ndarray,
+        current_elevations: np.ndarray,
+    ) -> np.ndarray:
+        """批量预测可见卫星首次下降穿过最低仰角的时间。"""
+        sat_ids = np.asarray(satellite_ids, dtype=np.int64).reshape(-1)
+        current = np.asarray(current_elevations, dtype=np.float64).reshape(-1)
+        if sat_ids.size == 0:
+            return np.zeros(0, dtype=np.float64)
+
+        offsets, future_positions = self._get_rvt_prediction_grid()
+        vectors = (
+            future_positions[:, sat_ids, :]
+            - self._user_pos_ecef[user_id][None, None, :]
+        )
+        up = vectors @ self._user_e_up[user_id]
+        east = vectors @ self._user_e_east[user_id]
+        north = vectors @ self._user_e_north[user_id]
+        elevations = np.degrees(
+            np.arctan2(up, np.sqrt(east**2 + north**2))
+        )
+
+        min_elevation = float(self.config.min_elevation_deg)
+        below = elevations[1:] < min_elevation
+        has_crossing = np.any(below, axis=0)
+        first_below = np.argmax(below, axis=0) + 1
+        rvt = np.full(
+            sat_ids.shape,
+            float(offsets[-1]),
+            dtype=np.float64,
+        )
+
+        for column in np.where(has_crossing)[0]:
+            upper_index = int(first_below[column])
+            lower_index = upper_index - 1
+            lower_elevation = float(elevations[lower_index, column])
+            upper_elevation = float(elevations[upper_index, column])
+            denominator = lower_elevation - upper_elevation
+            if abs(denominator) <= 1e-9:
+                fraction = 1.0
+            else:
+                fraction = np.clip(
+                    (lower_elevation - min_elevation) / denominator,
+                    0.0,
+                    1.0,
+                )
+            rvt[column] = (
+                float(offsets[lower_index])
+                + fraction
+                * float(offsets[upper_index] - offsets[lower_index])
+            )
+
+        rvt[current < min_elevation] = 0.0
+        return np.maximum(rvt, 0.0)
 
     def _compute_visibility_batch(self, user_id: int) -> List[VisibilityInfo]:
         """向量化计算单个用户对所有卫星的可见性"""
@@ -467,16 +639,21 @@ class LEOSatelliteEnv(gym.Env):
         azimuths = np.degrees(np.arctan2(east_comp[visible_ids], north_comp[visible_ids]))
         azimuths[azimuths < 0] += 360.0
         
+        rvts = self._estimate_rvt_batch(
+            user_id,
+            visible_ids,
+            elevations[visible_ids],
+        )
+
         # 构建结果
-        user = self.user_manager.users[user_id]
         visible_sats = []
         for j, sat_id in enumerate(visible_ids):
             elev = float(elevations[sat_id])
-            rvt = self._estimate_rvt(user, int(sat_id), elev)
             visible_sats.append(VisibilityInfo(
                 sat_id=int(sat_id), is_visible=True,
                 elevation_deg=elev, azimuth_deg=float(azimuths[j]),
-                distance_km=float(distances[sat_id]), rvt_seconds=rvt
+                distance_km=float(distances[sat_id]),
+                rvt_seconds=float(rvts[j]),
             ))
         
         visible_sats.sort(key=lambda x: (-x.rvt_seconds, -x.elevation_deg, x.distance_km))
@@ -562,6 +739,8 @@ class LEOSatelliteEnv(gym.Env):
             max_offset = max(float(self.config.episode_start_time_jitter_sec), 0.0)
             offset_sec = float(self.rng.uniform(0.0, max_offset)) if max_offset > 0 else 0.0
         self.constellation.reset(time_offset_sec=offset_sec)
+        self.geometry_version = 0
+        self._rvt_prediction_version = -1
         
         # 重置用户状态
         for user in self.user_manager.users:
@@ -585,8 +764,11 @@ class LEOSatelliteEnv(gym.Env):
         self.episode_rewards = []
         self.pending_rewards: Dict[int, float] = {}  # 待发放奖励池（用户ID -> 累积奖励）
         self.last_user_rewards = np.zeros(self.config.num_users, dtype=np.float32)
+        self._step_handover_interruption_seconds = np.zeros(
+            self.config.num_users,
+            dtype=np.float32,
+        )
         self._offload_task_meta = {}
-        self._prev_elevations = {}  # 重置RVT仰角历史
         self._invalidate_visibility_cache()
         self.stats = self._build_stats()
         self._last_load_balance_score = 1.0
@@ -636,13 +818,13 @@ class LEOSatelliteEnv(gym.Env):
         Returns:
             (观测, 奖励, terminated, truncated, 信息)
         """
-        # 0. 使可见性缓存失效
-        self._invalidate_visibility_cache()
+        # 当前动作继续使用生成该动作观测时的同一份候选卫星映射。
+        # 可见性缓存只在几何状态推进后失效。
         self._expire_pending_user_tasks()
         
         # 1. 生成新任务
         self._generate_tasks()
-        previous_total_handovers = int(self.stats.get('total_handovers', 0))
+        self._step_handover_interruption_seconds.fill(0.0)
         
         # 2. 执行每个用户的动作
         user_rewards = []
@@ -657,40 +839,53 @@ class LEOSatelliteEnv(gym.Env):
             # 执行动作并计算奖励
             reward = self._execute_user_action(user, handover_action, offload_ratio)
             
-            # 加入待发放奖励（来自上一步完成的卸载任务）
-            if user_id in self.pending_rewards:
-                reward += self.pending_rewards[user_id]
-                self.pending_rewards[user_id] = 0.0
-            
             user_rewards.append(reward)
         
-        # 3. 更新环境状态（处理 MEC 队列，累积新的 pending_rewards）
+        # 3. 更新环境状态（处理 MEC 队列，产生本步任务结算奖励）
         self._update_environment()
+
+        # 本步产生的任务奖励在本步发放，避免 terminal/truncated 后丢失。
+        for user_id in range(self.num_users):
+            pending_reward = float(self.pending_rewards.get(user_id, 0.0))
+            if pending_reward != 0.0:
+                user_rewards[user_id] += pending_reward
+                self.pending_rewards[user_id] = 0.0
         
-        # 4. 计算全局奖励
-        total_reward = np.mean(user_rewards)
+        # 4. 计算用户级服务中断惩罚和全局平均奖励
         self._record_load_balance_metrics()
 
-        step_user_seconds = float(self.num_users) * float(self.config.time_step_sec)
-        blocked_users = sum(1 for user in self.user_manager.users if user.state == UserState.BLOCKED)
-        handovers_this_step = max(int(self.stats.get('total_handovers', 0)) - previous_total_handovers, 0)
-        blocked_seconds = float(blocked_users) * float(self.config.time_step_sec)
-        handover_seconds = float(handovers_this_step) * float(self.config.handover_delay_sec)
-        interruption_seconds = min(step_user_seconds, blocked_seconds + handover_seconds)
+        slot_duration = float(self.config.time_step_sec)
+        blocked_seconds_by_user = np.asarray(
+            [
+                slot_duration if user.state == UserState.BLOCKED else 0.0
+                for user in self.user_manager.users
+            ],
+            dtype=np.float32,
+        )
+        interruption_seconds_by_user = np.minimum(
+            blocked_seconds_by_user + self._step_handover_interruption_seconds,
+            slot_duration,
+        )
+        interruption_penalties = self._compute_service_interruption_penalties(
+            interruption_seconds_by_user
+        )
+        self.last_user_rewards = (
+            np.asarray(user_rewards, dtype=np.float32) + interruption_penalties
+        )
+        total_reward = float(np.mean(self.last_user_rewards))
 
+        step_user_seconds = float(self.num_users) * slot_duration
+        blocked_seconds = float(np.sum(blocked_seconds_by_user))
+        handover_seconds = float(np.sum(self._step_handover_interruption_seconds))
+        interruption_seconds = float(np.sum(interruption_seconds_by_user))
         self.stats['total_user_seconds'] += step_user_seconds
         self.stats['blocked_user_seconds'] += blocked_seconds
         self.stats['handover_interruption_seconds'] += handover_seconds
         self.stats['service_interruption_seconds'] += interruption_seconds
-        reward_service_continuity = self._compute_service_continuity_reward(
-            step_user_seconds=step_user_seconds,
-            interruption_seconds=interruption_seconds,
+        self._record_reward_terms(
+            average_over_users=False,
+            penalty_service_interruption=float(np.mean(interruption_penalties))
         )
-        total_reward += reward_service_continuity
-        self.last_user_rewards = (
-            np.asarray(user_rewards, dtype=np.float32) + float(reward_service_continuity)
-        )
-        self._record_reward_terms(reward_service_continuity=reward_service_continuity)
         self.episode_rewards.append(total_reward)
         
         # 5. 检查终止条件
@@ -714,23 +909,15 @@ class LEOSatelliteEnv(gym.Env):
         self._refresh_user_task_head(user_id)
         return task
 
-    def _compute_unserved_deadline_penalty(
-        self,
-        elapsed: float,
-        max_delay: float,
-    ) -> Tuple[float, Dict[str, float]]:
-        """Penalty for a generated task that misses its deadline unserved."""
-        max_delay = max(float(max_delay), 1e-6)
-        delay_ratio = float(elapsed) / max_delay
-        reward_qos = -self.config.reward_failed_task_penalty
-        penalty_deadline = -self.config.reward_deadline_penalty * min(
-            max(delay_ratio - 1.0, 0.0),
-            2.0,
-        )
-        return reward_qos + penalty_deadline, {
-            'reward_qos': reward_qos,
-            'penalty_deadline': penalty_deadline,
-            'penalty_task_failure': reward_qos,
+    @staticmethod
+    def _compute_task_failure_reward() -> Tuple[float, Dict[str, float]]:
+        """所有终态任务失败统一记为 -1，避免重复处罚 deadline。"""
+        penalty = -TASK_FAILURE_PENALTY
+        return penalty, {
+            'reward_task_success': 0.0,
+            'penalty_delay': 0.0,
+            'penalty_energy': 0.0,
+            'penalty_task_failure': penalty,
         }
 
     def _expire_pending_user_tasks(self) -> None:
@@ -745,10 +932,7 @@ class LEOSatelliteEnv(gym.Env):
                 queue.pop(0)
                 self.stats['deadline_violations'] += 1
                 self.stats['total_delay'] += elapsed
-                task_reward, reward_terms = self._compute_unserved_deadline_penalty(
-                    elapsed=elapsed,
-                    max_delay=task.max_delay,
-                )
+                task_reward, reward_terms = self._compute_task_failure_reward()
                 self._record_reward_terms(**reward_terms)
                 if user_id not in self.pending_rewards:
                     self.pending_rewards[user_id] = 0.0
@@ -789,37 +973,22 @@ class LEOSatelliteEnv(gym.Env):
         reward = 0.0
         
         # ========== 处理切换 ==========
-        visible_sats = self._get_visible_satellites(user)
+        visible_sats = self._get_handover_candidates(user)
         
         if handover_action > 0:
-            # 执行切换
             if len(visible_sats) >= handover_action:
                 target_sat = visible_sats[handover_action - 1]
                 reward += self._execute_handover(user, target_sat)
             else:
-                self.stats['total_handovers'] += 1
-                self.stats['failed_handovers'] += 1
-                invalid_penalty = -self.config.reward_invalid_action_penalty
-                reward += invalid_penalty
-                self._record_reward_terms(penalty_invalid_action=invalid_penalty)
-        else:
-            # 不切换，检查当前连接是否有效
+                # 策略入口已有 action mask；防御性地将越界动作退化为 stay。
+                handover_action = 0
+
+        if handover_action == 0:
             if user.serving_satellite >= 0:
                 current_visible = self._is_satellite_visible(user, user.serving_satellite)
                 if not current_visible:
-                    # 当前卫星不可见，强制切换
-                    if visible_sats:
-                        best_sat = max(visible_sats, key=lambda x: x.elevation_deg)
-                        reward += self._execute_handover(user, best_sat)
-                    else:
-                        stale_server = self.mec_manager.get_server(user.serving_satellite)
-                        if stale_server:
-                            stale_server.remove_user(user.user_id)
-                        user.serving_satellite = -1
-                        user.state = UserState.BLOCKED
-                        blocked_penalty = -self.config.reward_blocked_penalty
-                        reward += blocked_penalty
-                        self._record_reward_terms(penalty_blocked=blocked_penalty)
+                    # stay 动作不替策略自动选择目标；旧链路失效后进入阻塞。
+                    self._block_user(user, user.serving_satellite)
         
         # ========== 处理任务卸载 ==========
         task = self.user_tasks[user.user_id]
@@ -862,6 +1031,27 @@ class LEOSatelliteEnv(gym.Env):
         )
         return float(np.clip(fairness, 0.0, 1.0))
 
+    @staticmethod
+    def _jain_fairness(loads: np.ndarray) -> Optional[float]:
+        """Compute Jain fairness over all available MEC nodes with nonzero total load."""
+        load_array = np.asarray(loads, dtype=np.float64).reshape(-1)
+        load_array = load_array[np.isfinite(load_array)]
+        if load_array.size == 0:
+            return None
+        load_array = np.clip(load_array, 0.0, None)
+        total_load = float(np.sum(load_array))
+        if total_load <= 1e-9:
+            return None
+        squared_load = float(np.sum(np.square(load_array)))
+        fairness = (total_load * total_load) / (
+            float(load_array.size) * max(squared_load, 1e-9)
+        )
+        return float(np.clip(fairness, 0.0, 1.0))
+
+    def _compute_systemwide_jain_mec_load_fairness(self) -> Optional[float]:
+        """Return paper metric Jain fairness, including idle available MEC nodes."""
+        return self._jain_fairness(self._compute_mec_loads())
+
     def _compute_load_balance_score(self) -> float:
         """Backward-compatible reward hook for MEC load fairness."""
         return self._compute_mec_load_fairness()
@@ -886,6 +1076,10 @@ class LEOSatelliteEnv(gym.Env):
         self._last_load_balance_score = load_balance_score
         self.stats['load_balance_sum'] += load_balance_score
         self.stats['load_balance_samples'] += 1
+        jain_fairness = self._jain_fairness(loads)
+        if jain_fairness is not None:
+            self.stats['jain_load_fairness_sum'] += jain_fairness
+            self.stats['jain_load_fairness_samples'] += 1
         if np.any(loads > 1e-6):
             self.stats['load_variance_samples'].append(
                 self._load_variance_from_loads(loads)
@@ -898,103 +1092,93 @@ class LEOSatelliteEnv(gym.Env):
         max_delay: float,
     ) -> Tuple[float, Dict[str, float]]:
         """
-        Convert optimization targets into a reward signal.
+        QoS 门控任务奖励。
 
-        Song Xiaoqin et al. optimize end-to-end service delay under constraints,
-        while Fu Yiyang et al. emphasize service continuity and collaboration.
-        This helper keeps delay/QoS dominant and adds energy as a secondary term.
+        按 deadline 完成时，以 +1 为基础奖励，再扣归一化时延和能耗；
+        未按 deadline 完成时统一返回 -1，不再叠加时延、裕量和超时惩罚。
         """
         max_delay = max(float(max_delay), 1e-6)
-        delay_ratio = max(float(total_delay) / max_delay, 0.0)
-        deadline_met = delay_ratio <= 1.0
-        deadline_slack = max(1.0 - delay_ratio, 0.0)
-        deadline_excess = max(delay_ratio - 1.0, 0.0)
+        delay_ratio = np.clip(float(total_delay) / max_delay, 0.0, 1.0)
 
-        energy_ref = max(float(self.config.reward_energy_reference), 1e-6)
-        energy_ratio = min(max(float(total_energy) / energy_ref, 0.0), 1.0)
+        if float(total_delay) > max_delay:
+            return self._compute_task_failure_reward()
 
-        reward_delay = -self.config.reward_delay_weight * min(delay_ratio, 2.0)
-        reward_task_success = self.config.reward_qos_weight if deadline_met else 0.0
-        reward_deadline_slack = (
-            self.config.reward_deadline_slack_weight * deadline_slack
-            if deadline_met else 0.0
+        energy_ratio = np.clip(
+            float(total_energy) / REWARD_ENERGY_REFERENCE_J,
+            0.0,
+            1.0,
         )
-        # Energy is a secondary objective: only successful tasks get to trade
-        # off energy after satisfying the deadline.
-        reward_energy = (
-            -self.config.reward_energy_weight * energy_ratio
-            if deadline_met else 0.0
-        )
-        penalty_task_failure = (
-            -self.config.reward_failed_task_penalty
-            if not deadline_met else 0.0
-        )
-        penalty_deadline = (
-            -self.config.reward_deadline_penalty * min(deadline_excess, 2.0)
-            if not deadline_met else 0.0
-        )
-        reward_qos = reward_task_success + penalty_task_failure
-
-        reward = (
-            reward_delay
-            + reward_energy
-            + reward_qos
-            + reward_deadline_slack
-            + penalty_deadline
-        )
+        penalty_delay = -float(self.config.reward_delay_weight) * float(delay_ratio)
+        penalty_energy = -float(self.config.reward_energy_weight) * float(energy_ratio)
+        reward = TASK_SUCCESS_REWARD + penalty_delay + penalty_energy
 
         return reward, {
-            'reward_delay': reward_delay,
-            'reward_energy': reward_energy,
-            'reward_qos': reward_qos,
-            'reward_task_success': reward_task_success,
-            'reward_deadline_slack': reward_deadline_slack,
-            'penalty_deadline': penalty_deadline,
-            'penalty_task_failure': penalty_task_failure,
+            'reward_task_success': TASK_SUCCESS_REWARD,
+            'penalty_delay': penalty_delay,
+            'penalty_energy': penalty_energy,
+            'penalty_task_failure': 0.0,
         }
 
-    def _compute_handover_success_probability(
+    def _check_handover_link_feasibility(
         self,
-        elevation_deg: float,
-        rvt_seconds: float,
-        snr_db: float,
-        utilization: float,
-        queue_ratio: float,
-        migration_load: int = 0,
-    ) -> float:
-        """
-        Estimate handover success from channel quality and target load.
+        target_sat: VisibilityInfo,
+    ) -> Tuple[bool, Optional[str]]:
+        """Apply deterministic radio admission checks before any state change."""
+        if not target_sat.is_visible:
+            return False, 'target_not_visible'
+        if target_sat.elevation_deg < self.config.min_elevation_deg:
+            return False, 'elevation_below_threshold'
+        if target_sat.rvt_seconds < self.config.pre_handover_rvt_sec:
+            return False, 'rvt_below_threshold'
+        if self.mec_manager.get_server(target_sat.sat_id) is None:
+            return False, 'target_server_unavailable'
+        snr_db = self.channel.compute_snr_db(
+            target_sat.distance_km,
+            target_sat.elevation_deg,
+        )
+        if snr_db < self.config.handover_min_snr_db:
+            return False, 'snr_below_threshold'
+        return True, None
 
-        This makes the success signal sensitive to the chosen target satellite,
-        which is closer to the cooperative handover setting in the reference
-        papers than using a fixed success probability.
-        """
-        elevation_score = np.clip(
-            (elevation_deg - self.config.min_elevation_deg) /
-            max(90.0 - self.config.min_elevation_deg, 1.0),
-            0.0,
-            1.0,
-        )
-        rvt_score = np.clip(
-            rvt_seconds / max(2.0 * self.config.rvt_threshold_sec, 1.0),
-            0.0,
-            1.0,
-        )
-        snr_score = np.clip((snr_db + 5.0) / 30.0, 0.0, 1.0)
-        load_headroom = 1.0 - np.clip(utilization, 0.0, 1.0)
-        queue_headroom = 1.0 - np.clip(queue_ratio, 0.0, 1.0)
-        migration_penalty = np.clip(migration_load / 5.0, 0.0, 1.0)
+    def _settle_stranded_tasks(self, user_id: int, sat_id: int) -> None:
+        """Fail tasks that can no longer be reached after a forced disconnect."""
+        removed_tasks = self.mec_manager.remove_user_tasks(sat_id, user_id)
+        for task_info in removed_tasks:
+            task_id = int(task_info['task_id'])
+            self._offload_task_meta.pop((user_id, task_id), None)
+            elapsed = max(
+                float(self.current_time) - float(task_info['arrival_time'])
+                + float(task_info.get('upload_delay', 0.0)),
+                0.0,
+            )
+            task_reward, reward_terms = self._compute_task_failure_reward()
+            self.stats['failed_tasks'] += 1
+            self.stats['total_delay'] += elapsed
+            self._record_reward_terms(**reward_terms)
+            self.pending_rewards[user_id] = (
+                self.pending_rewards.get(user_id, 0.0) + task_reward
+            )
+            self.task_manager.fail_task(task_id, self.current_time)
 
-        success_prob = (
-            0.35
-            + 0.20 * elevation_score
-            + 0.15 * rvt_score
-            + 0.15 * snr_score
-            + 0.10 * load_headroom
-            + 0.10 * queue_headroom
-            - 0.10 * migration_penalty
-        )
-        return float(np.clip(success_prob, 0.1, 0.995))
+    def _block_user(self, user: User, old_sat_id: int) -> None:
+        """Enter BLOCKED only after the old service link is no longer usable."""
+        was_attached = old_sat_id >= 0
+        if was_attached:
+            old_server = self.mec_manager.get_server(old_sat_id)
+            if old_server is not None:
+                old_server.remove_user(user.user_id)
+            self._settle_stranded_tasks(user.user_id, old_sat_id)
+        if user.state != UserState.BLOCKED or user.serving_satellite >= 0:
+            self.stats['forced_disconnects'] += 1
+        user.serving_satellite = -1
+        user.state = UserState.BLOCKED
+        user.handover_start_time = -1.0
+        user.last_update_time = self.current_time
+
+    def _handover_failure_reward(self) -> float:
+        failed_penalty = -self.config.reward_failed_handover_penalty
+        self._record_reward_terms(penalty_failed_handover=failed_penalty)
+        return failed_penalty
     
     def _execute_handover(self, user: User, target_sat: VisibilityInfo) -> float:
         """
@@ -1007,101 +1191,96 @@ class LEOSatelliteEnv(gym.Env):
         Returns:
             切换奖励
         """
-        reward = 0.0
-        self.stats['total_handovers'] += 1
-        balance_before = self._compute_load_balance_score()
-        
-        old_sat_id = user.serving_satellite
-        old_server = self.mec_manager.get_server(old_sat_id) if old_sat_id >= 0 else None
-        new_server = self.mec_manager.get_server(target_sat.sat_id)
-        migration_load = 0
-        if old_server is not None:
-            migration_load = sum(
-                1 for task in old_server.task_queue if task['user_id'] == user.user_id
-            )
-        
-        # 从旧卫星断开
-        if old_sat_id >= 0:
-            if old_server:
-                old_server.remove_user(user.user_id)
-        
-        # 切换时延惩罚（信令开销、链路重建等）
-        delay_penalty = min(self.config.handover_delay_sec / 2.0, 1.0)
-        
-        # 模拟切换过程
-        user.start_handover(target_sat.sat_id, self.current_time)
-        
-        snr_db = self.channel.compute_snr_db(
-            target_sat.distance_km,
-            target_sat.elevation_deg,
-        )
-        queue_ratio = 1.0
-        utilization = 1.0
-        if new_server is not None:
-            queue_ratio = new_server.queue_length / max(new_server.config.max_queue_size, 1)
-            utilization = new_server.utilization
-        success_prob = self._compute_handover_success_probability(
-            elevation_deg=target_sat.elevation_deg,
-            rvt_seconds=target_sat.rvt_seconds,
-            snr_db=snr_db,
-            utilization=utilization,
-            queue_ratio=queue_ratio,
-            migration_load=migration_load,
-        )
-        handover_success = self.rng.random() < success_prob
-        
-        if handover_success:
-            user.complete_handover(target_sat.sat_id, self.current_time, success=True)
-            
-            # 连接到新卫星的MEC
-            if new_server:
-                new_server.add_user(user.user_id)
-            
-            # 迁移旧卫星上该用户的排队任务到新卫星
-            if old_sat_id >= 0:
-                migration_result = self.mec_manager.migrate_user_tasks(
-                    user_id=user.user_id,
-                    old_sat_id=old_sat_id,
-                    new_sat_id=target_sat.sat_id,
-                    handover_delay=self.config.handover_delay_sec
-                )
-                migration_penalty = 0.05 * migration_result['migrated']
-                migration_penalty += 0.1 * migration_result['failed']
-            else:
-                migration_penalty = 0.0
-            
-            self.stats['successful_handovers'] += 1
-            
-            elevation_score = np.clip(target_sat.elevation_deg / 90.0, 0.0, 1.0)
-            rvt_score = np.clip(
-                target_sat.rvt_seconds / max(self.config.rvt_threshold_sec, 1.0),
-                0.0,
-                1.0,
-            )
-            balance_after = self._compute_load_balance_score()
-            balance_gain = balance_after - balance_before
+        # 防御性语义：目标就是当前服务卫星时等价于 stay，不计切换事件。
+        if target_sat.sat_id == user.serving_satellite:
+            return 0.0
 
-            handover_score = 0.5 * elevation_score + 0.5 * rvt_score
-            reward_handover = self.config.reward_handover_weight * handover_score
-            penalty_handover_cost = -self.config.reward_handover_weight * (
-                delay_penalty + migration_penalty
-            )
-            reward_load_balance = self.config.reward_load_balance_weight * balance_gain
-
-            reward += reward_handover + penalty_handover_cost + reward_load_balance
-            self._record_reward_terms(
-                reward_handover=reward_handover,
-                penalty_handover_cost=penalty_handover_cost,
-                reward_load_balance=reward_load_balance,
-            )
+        old_sat_id = int(user.serving_satellite)
+        is_reconnection = old_sat_id < 0 or user.state == UserState.BLOCKED
+        old_link_valid = (
+            not is_reconnection
+            and self._is_satellite_visible(user, old_sat_id)
+        )
+        if is_reconnection:
+            self.stats['reconnection_attempts'] += 1
         else:
-            user.complete_handover(-1, self.current_time, success=False)
-            self.stats['failed_handovers'] += 1
-            failed_penalty = -self.config.reward_failed_handover_penalty
-            reward += failed_penalty
-            self._record_reward_terms(penalty_failed_handover=failed_penalty)
-        
-        return reward
+            self.stats['total_handovers'] += 1
+            self.stats['handover_attempts'] += 1
+
+        link_feasible, failure_reason = self._check_handover_link_feasibility(
+            target_sat
+        )
+        if not link_feasible:
+            if is_reconnection:
+                self.stats['handover_radio_failures'] += 1
+            else:
+                self.stats['failed_handovers'] += 1
+                self.stats['handover_aborted'] += 1
+                self.stats['handover_radio_failures'] += 1
+                user.handover_count += 1
+                user.failed_handovers += 1
+            if not old_link_valid and old_sat_id >= 0:
+                self._block_user(user, old_sat_id)
+            return self._handover_failure_reward()
+
+        migration_plan = self.mec_manager.prepare_user_task_migration(
+            user_id=user.user_id,
+            old_sat_id=old_sat_id,
+            new_sat_id=target_sat.sat_id,
+        )
+        if not migration_plan.feasible:
+            self.stats['migration_rejections'] += 1
+            if not is_reconnection:
+                self.stats['failed_handovers'] += 1
+                self.stats['handover_aborted'] += 1
+                user.handover_count += 1
+                user.failed_handovers += 1
+            if not old_link_valid and old_sat_id >= 0:
+                self._block_user(user, old_sat_id)
+            return self._handover_failure_reward()
+
+        migration_result = self.mec_manager.commit_user_task_migration(
+            migration_plan,
+            handover_delay=self.config.handover_delay_sec,
+        )
+        if migration_result['failed'] > 0 or migration_result['failure_reason']:
+            self.stats['migration_rejections'] += 1
+            if not is_reconnection:
+                self.stats['failed_handovers'] += 1
+                self.stats['handover_aborted'] += 1
+                user.handover_count += 1
+                user.failed_handovers += 1
+            if not old_link_valid and old_sat_id >= 0:
+                self._block_user(user, old_sat_id)
+            return self._handover_failure_reward()
+
+        old_server = (
+            self.mec_manager.get_server(old_sat_id)
+            if old_sat_id >= 0 else None
+        )
+        new_server = self.mec_manager.get_server(target_sat.sat_id)
+        if old_server is not None:
+            old_server.remove_user(user.user_id)
+        if new_server is not None:
+            new_server.add_user(user.user_id)
+
+        if is_reconnection:
+            user.connect_to_satellite(target_sat.sat_id, self.current_time)
+            self.stats['reconnections'] += 1
+        else:
+            user.start_handover(target_sat.sat_id, self.current_time)
+            user.complete_handover(
+                target_sat.sat_id,
+                self.current_time,
+                success=True,
+            )
+            self.stats['successful_handovers'] += 1
+            self.stats['handover_committed'] += 1
+
+        self._step_handover_interruption_seconds[user.user_id] += float(
+            self.config.handover_delay_sec
+        )
+        return 0.0
     
     def _execute_offloading(
         self,
@@ -1123,7 +1302,7 @@ class LEOSatelliteEnv(gym.Env):
             offload_ratio: 卸载比例
             
         Returns:
-            本步可立即发放的奖励（本地计算部分 + 入队状态）
+            本步可立即发放的任务结算奖励；MEC 入队任务完成后延迟发放
         """
         reward = 0.0
         offload_ratio = float(np.clip(offload_ratio, 0.0, 1.0))
@@ -1134,16 +1313,16 @@ class LEOSatelliteEnv(gym.Env):
         # 获取卫星信息
         sat_id = user.serving_satellite
         if sat_id < 0:
-            return -0.5  # 无连接惩罚
+            raise RuntimeError("已连接用户缺少服务卫星")
         
         # 获取链路信息
         vis_info = self._get_satellite_visibility(user, sat_id)
         if vis_info is None or not vis_info.is_visible:
-            return -0.5
+            raise RuntimeError("任务卸载前服务链路已失效")
         
         server = self.mec_manager.get_server(sat_id)
         if server is None:
-            return -0.5
+            raise RuntimeError(f"服务卫星 {sat_id} 缺少 MEC 服务器")
         
         # ========== 本地计算部分（立即处理） ==========
         local_ratio = 1.0 - offload_ratio
@@ -1196,12 +1375,6 @@ class LEOSatelliteEnv(gym.Env):
                     'local_delay': wait_delay + local_delay,
                     'local_energy': local_energy,
                 }
-                queue_margin = 1.0 - (
-                    server.queue_length / max(server.config.max_queue_size, 1)
-                )
-                enqueue_bonus = self.config.reward_enqueue_bonus * max(queue_margin, 0.0)
-                reward += enqueue_bonus
-                self._record_reward_terms(reward_enqueue=enqueue_bonus)
             else:
                 # 队列已满，任务被拒绝 -> 强制本地执行或丢弃
                 # 这里选择：退化为完全本地执行
@@ -1215,13 +1388,9 @@ class LEOSatelliteEnv(gym.Env):
                 self.stats['total_delay'] += total_delay
                 self.stats['total_energy'] += fallback_energy
                 
-                # 惩罚：队列满导致无法卸载
-                queue_penalty = -self.config.reward_queue_full_penalty
-                reward += queue_penalty
-                self._record_reward_terms(penalty_queue_full=queue_penalty)
-
                 if total_delay <= task.max_delay:
                     self.stats['completed_tasks'] += 1
+                    self.stats['successful_task_delay_samples'].append(total_delay)
                 else:
                     self.stats['deadline_violations'] += 1
                 task_reward, reward_terms = self._compute_task_reward(
@@ -1245,6 +1414,7 @@ class LEOSatelliteEnv(gym.Env):
             
             if total_delay <= task.max_delay:
                 self.stats['completed_tasks'] += 1
+                self.stats['successful_task_delay_samples'].append(total_delay)
             else:
                 self.stats['deadline_violations'] += 1
             task_reward, reward_terms = self._compute_task_reward(
@@ -1259,17 +1429,22 @@ class LEOSatelliteEnv(gym.Env):
     
     def _update_environment(self):
         """更新环境状态（包含 MEC 队列处理）"""
-        # 更新时间
-        self.current_time += self.config.time_step_sec
-        self._expire_pending_user_tasks()
+        slot_start = float(self.current_time)
+        slot_duration = float(self.config.time_step_sec)
         
         # 传播星座
-        self.constellation.propagate(self.config.time_step_sec)
+        self.constellation.propagate(slot_duration)
+        self.geometry_version += 1
+        self._invalidate_visibility_cache()
         
         # ========== 处理所有卫星的任务队列 ==========
         completed_tasks = self.mec_manager.process_all_queues(
-            self.current_time, self.config.time_step_sec
+            slot_start, slot_duration
         )
+
+        # 当前状态在本 slot 结束时刻。
+        self.current_time = slot_start + slot_duration
+        self._expire_pending_user_tasks()
         
         # 累积完成任务的奖励到 pending_rewards
         for task_info in completed_tasks:
@@ -1288,6 +1463,7 @@ class LEOSatelliteEnv(gym.Env):
 
             if deadline_met:
                 self.stats['completed_tasks'] += 1
+                self.stats['successful_task_delay_samples'].append(total_delay)
             else:
                 self.stats['deadline_violations'] += 1
             task_reward, reward_terms = self._compute_task_reward(
@@ -1311,22 +1487,27 @@ class LEOSatelliteEnv(gym.Env):
                 # 检查当前卫星是否仍可见
                 if not self._is_satellite_visible(user, user.serving_satellite):
                     stale_sat_id = user.serving_satellite
-                    if stale_sat_id >= 0:
-                        stale_server = self.mec_manager.get_server(stale_sat_id)
-                        if stale_server:
-                            stale_server.remove_user(user.user_id)
-                    user.serving_satellite = -1
-                    user.state = UserState.BLOCKED
-                    self.stats['forced_disconnects'] += 1
+                    self._block_user(user, stale_sat_id)
     
     def _get_visible_satellites(self, user: User) -> List[VisibilityInfo]:
         """获取用户可见的卫星列表（带缓存）"""
+        if self._visibility_cache_version != self.geometry_version:
+            self._invalidate_visibility_cache()
         uid = user.user_id
         if uid in self._visibility_cache:
             return self._visibility_cache[uid]
         result = self._compute_visibility_batch(uid)
         self._visibility_cache[uid] = result
         return result
+
+    def _get_handover_candidates(self, user: User) -> List[VisibilityInfo]:
+        """返回可切换目标，明确排除当前服务卫星。"""
+        current_satellite = int(user.serving_satellite)
+        return [
+            item
+            for item in self._get_visible_satellites(user)
+            if item.sat_id != current_satellite
+        ]
     
     def _is_satellite_visible(self, user: User, sat_id: int) -> bool:
         """检查卫星是否对用户可见（利用缓存）"""
@@ -1360,50 +1541,14 @@ class LEOSatelliteEnv(gym.Env):
                               distance_km=dist, rvt_seconds=rvt)
     
     def _estimate_rvt(self, user: User, sat_id: int, current_elevation: float) -> float:
-        """
-        估算剩余可见时间 (RVT)
-        
-        改进模型：利用仰角变化率判断上升/下降阶段，
-        结合正弦近似过境曲线估算剩余可见时间
-        """
-        orbital_period = self.constellation.orbital_period
-        max_visible_time = orbital_period / 5  # ~1146s for 550km
-        min_elev = self.config.min_elevation_deg
-        
-        # 跟踪仰角变化以判断升降阶段
-        key = (user.user_id, sat_id)
-        prev_elev = self._prev_elevations.get(key, None)
-        self._prev_elevations[key] = current_elevation
-        
-        # 判断是否在下降阶段
-        if prev_elev is not None:
-            is_descending = current_elevation < prev_elev - 0.1  # 0.1度容差
-        else:
-            # 首次观测，根据仰角高低猜测
-            is_descending = current_elevation > 45.0
-        
-        # 正弦近似：elevation(t) ≈ max_elev * sin(π * t / T_visible)
-        # 归一化仰角到 [0, 1] 范围 (min_elev ~ 90)
-        norm_elev = max((current_elevation - min_elev) / (90.0 - min_elev), 0.01)
-        norm_elev = min(norm_elev, 1.0)
-        
-        # 反正弦求当前在过境弧上的相位
-        phase = math.asin(math.sqrt(norm_elev))  # [0, π/2]
-        
-        if is_descending:
-            # 下降阶段：已过顶点，phase 映射到 [π/2, π]
-            remaining_fraction = (math.pi / 2 - phase) / math.pi
-        else:
-            # 上升阶段：还未过顶，剩余包含上升+下降
-            remaining_fraction = (math.pi - phase) / math.pi
-        
-        rvt = max_visible_time * remaining_fraction
-        
-        # 安全边界：至少留 5 秒余量
-        safety_margin = 5.0
-        rvt = max(rvt - safety_margin, 0.0)
-
-        return rvt
+        """估算当前几何状态下指定卫星的剩余可见时间。"""
+        return float(
+            self._estimate_rvt_batch(
+                user.user_id,
+                np.asarray([sat_id], dtype=np.int64),
+                np.asarray([current_elevation], dtype=np.float64),
+            )[0]
+        )
 
     def get_pre_handover_mask(self) -> np.ndarray:
         """
@@ -1549,66 +1694,6 @@ class LEOSatelliteEnv(gym.Env):
         """关闭环境"""
         pass
     
-    def get_state_for_graph(self) -> Dict:
-        """
-        获取用于构建异质图的状态信息
-        
-        Returns:
-            包含卫星、用户、边信息的字典
-        """
-        state = {
-            'satellites': [],
-            'users': [],
-            'edges': []
-        }
-        
-        # 卫星状态
-        for sat_id in range(self.num_satellites):
-            sat_pos = self.constellation.get_satellite_position(sat_id)
-            server = self.mec_manager.get_server(sat_id)
-            
-            state['satellites'].append({
-                'id': sat_id,
-                'position': sat_pos,
-                'utilization': server.utilization if server else 0.0,
-                'queue_length': server.queue_length if server else 0,
-                'connected_users': len(server.connected_users) if server else 0,
-            })
-        
-        # 用户状态
-        for user in self.user_manager.users:
-            task = self.user_tasks[user.user_id]
-            state['users'].append({
-                'id': user.user_id,
-                'position': {
-                    'latitude': user.position.latitude,
-                    'longitude': user.position.longitude,
-                },
-                'state': user.state.value,
-                'serving_satellite': user.serving_satellite,
-                'task': {
-                    'data_size': task.data_size if task else 0,
-                    'computation': task.computation if task else 0,
-                    'max_delay': task.max_delay if task else 0,
-                } if task else None,
-            })
-        
-        # 用户-卫星边
-        for user in self.user_manager.users:
-            visible_sats = self._get_visible_satellites(user)
-            for sat in visible_sats:
-                state['edges'].append({
-                    'type': 'user_satellite',
-                    'user_id': user.user_id,
-                    'satellite_id': sat.sat_id,
-                    'distance': sat.distance_km,
-                    'elevation': sat.elevation_deg,
-                    'rvt': sat.rvt_seconds,
-                })
-        
-        return state
-
-
 # ==================== 便捷函数 ====================
 
 def make_env(config: Optional[EnvConfig] = None, **kwargs) -> LEOSatelliteEnv:
@@ -1616,17 +1701,3 @@ def make_env(config: Optional[EnvConfig] = None, **kwargs) -> LEOSatelliteEnv:
     if config is None:
         config = EnvConfig(**kwargs)
     return LEOSatelliteEnv(config)
-
-
-def make_vec_env(
-    num_envs: int,
-    config: Optional[EnvConfig] = None,
-    **kwargs
-) -> List[LEOSatelliteEnv]:
-    """创建多个并行环境"""
-    envs = []
-    for i in range(num_envs):
-        env_config = config or EnvConfig(**kwargs)
-        env_config.seed = (config.seed or 0) + i if config else i
-        envs.append(LEOSatelliteEnv(env_config))
-    return envs

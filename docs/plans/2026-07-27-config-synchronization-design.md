@@ -1,86 +1,33 @@
-# Configuration Synchronization Design
+# 配置统一设计
 
-**Date:** 2026-07-27
+日期：2026-07-27
 
-## Goal
+## 目标
 
-Synchronize the repository's behavioral defaults with the completed training
-suite at
-`results/baseline_compare/multiuser_scaling_multiuser_6_7`, while preserving
-portable and run-specific settings such as device selection, experiment names,
-output paths, and user counts.
+以 `results/baseline_compare/multiuser_scaling_multiuser_6_7` 的原始训练
+配置为准，统一环境、训练 CLI 和基线比较入口的行为参数。
 
-## Evidence and Root Cause
+## 方案
 
-The five source training histories referenced by the suite, for 20, 25, 30,
-35, and 40 users, use the same behavioral configuration:
+- `EnvConfig` 统一维护环境时长和奖励参数。
+- `TrainConfig` 继承环境参数，并统一维护训练、评估、保存和选优参数。
+- 训练 CLI 与基线比较入口直接读取配置类默认值，避免重复维护数字。
+- 套件脚本保留显式参数，用测试保证与默认配置一致。
 
-- `max_steps=600`
-- `total_timesteps=300000`
-- `n_steps=1024`
-- `eval_interval=50000`
-- `eval_episodes=3`
-- `save_interval=100000`
-- `graph_update_interval=1`
-- `log_interval=1`
-- `best_model_metric=avg_delay`
-- delay-priority reward weights:
-  `0.35/0.05/0.10/0.05/0.40/0.15/0.25`
-- `reward_enqueue_bonus=0.0`
-- `reward_failed_handover_penalty=0.3`
-- `reward_deadline_penalty=1.0`
-- `reward_failed_task_penalty=0.8`
+不写死设备、实验名、输出目录和用户数量；不修改历史实验记录和基线算法的
+专属超参数。
 
-The repository currently duplicates these defaults in `EnvConfig`,
-`TrainConfig`, the training CLI, the baseline comparison script, suite
-runners, tests, and documentation. A 2026-07-06 multi-objective reward change
-updated only part of those locations, leaving incompatible defaults.
+## 目标默认值
 
-## Design
+- 训练步数 `300000`
+- episode 步数 `600`
+- 评估间隔 `50000`
+- 保存间隔 `100000`
+- 图更新间隔 `1`
+- 最优模型指标 `avg_delay`
+- 奖励权重见 `docs/REWARD_WEIGHT_CONFIG.md`
 
-Use the existing configuration classes as the sources of truth instead of
-adding another configuration layer:
+## 验证
 
-1. `EnvConfig` owns environment-duration and reward defaults.
-2. `TrainConfig` reuses the relevant `EnvConfig` defaults and owns the
-   training, evaluation, checkpoint, graph-refresh, and model-selection
-   defaults.
-3. Training CLI argument defaults are derived from one `TrainConfig` instance.
-4. Baseline comparison defaults are derived from `TrainConfig`; the comparison
-   builder must not overwrite reward values with separate literals.
-5. Suite runners retain their explicit reproducibility settings and are
-   covered by consistency tests against the canonical defaults.
-
-## Scope
-
-Update:
-
-- environment and reward defaults;
-- training duration and cadence defaults;
-- CLI defaults and help text;
-- baseline comparison defaults;
-- current configuration documentation;
-- regression tests and a new experiment-log entry.
-
-Do not update:
-
-- `device=auto`, because hardware availability is runtime-specific;
-- experiment names and output paths, because they identify runs rather than
-  model behavior;
-- default user count, because the reference suite intentionally varies it;
-- historical experiment-log records;
-- algorithm-specific baseline parameters that are intentionally different.
-
-## Verification
-
-Add tests that compare the canonical expected configuration with:
-
-- `EnvConfig`;
-- `TrainConfig`;
-- training CLI defaults;
-- baseline comparison configuration;
-- both latency-priority suite configuration classes.
-
-Run those tests first in the failing state, implement the synchronization, then
-run the focused configuration/reward tests followed by the complete test suite.
+增加配置一致性测试，并运行奖励、训练、比较入口相关测试及完整测试集。
 

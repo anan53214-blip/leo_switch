@@ -43,10 +43,8 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 from torch.distributions import Categorical, Beta
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from .layers import MLP
@@ -312,21 +310,6 @@ class HybridActor(nn.Module):
         
         return log_prob, entropy
     
-    def get_action_probs(
-        self,
-        user_embedding: torch.Tensor,
-        candidate_mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """
-        获取切换动作的概率分布（用于可视化）
-        
-        Returns:
-            概率分布, (batch_size, max_candidates+1)
-        """
-        handover_dist, _ = self.forward(user_embedding, candidate_mask)
-        return handover_dist.probs
-
-
 class MultiAgentActor(nn.Module):
     """
     多智能体Actor（参数共享版本）

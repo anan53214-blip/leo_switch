@@ -68,10 +68,14 @@ LEO_switch/
 | 卸载比例 | 连续 | Normal(μ, σ) | λ ∈ [0,1]，0 = 全本地，1 = 全卸载 |
 
 ### 奖励函数
-- **切换奖励**：成功切换 → 正奖励（与仰角、RVT 正相关）；失败 → 惩罚
-- **卸载奖励**：MEC 完成 → 根据时延/能耗计算；超时 → 惩罚
+- **任务奖励**：deadline 内完成时为 `1 - 0.60×时延比例 - 0.10×能耗比例`；超时或最终失败固定为 `-1`
+- **连接惩罚**：按每个用户在时隙内的实际服务中断比例处罚，完整中断一时隙最多 `-0.30`
+- **切换失败**：固定 `-0.20`；成功切换不额外奖励，只计算实际切换中断
 - **延迟发放**：MEC 任务完成后通过 `pending_rewards` 在后续步发放
 - **全局奖励** = mean(所有用户奖励)
+
+负载均衡、队列占用和切换次数只作为评价指标，不再重复进入 reward。完整公式和论文依据见
+[Reward 函数设计](docs/REWARD_WEIGHT_CONFIG.md)。
 
 ### 竞争机制
 - 多用户共享卫星 MEC 队列 → CPU 时间片均分 → 用户越多每人分到越少
@@ -90,8 +94,8 @@ pip install numpy scipy matplotlib gymnasium pyyaml
 # 快速验证
 python scripts/train.py --total_timesteps 100000 --max_steps 600 --eval_episodes 1
 
-# 标准训练
-python scripts/train.py --total_timesteps 1000000 --max_steps 600
+# 标准训练（不传参数时也采用这组训练规模）
+python scripts/train.py --total_timesteps 300000 --max_steps 600
 
 # 生成图表
 python scripts/plot_training_artifacts.py --comparison-summary results/baseline_compare/<run_id> --output-dir results/baseline_compare/<run_id>/replot

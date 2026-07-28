@@ -53,11 +53,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field, replace
 
-from .layers import MLP, HeterogeneousAttentionLayer, SemanticAttention
+from .layers import HeterogeneousAttentionLayer, SemanticAttention
 
 
 @dataclass
@@ -84,6 +83,8 @@ class HANConfig:
     # 边特征
     use_edge_features: bool = True     # 是否使用边特征
     user_sat_edge_dim: int = 5         # 用户-卫星边特征维度
+    serving_edge_dim: int = 2          # 服务关系边特征维度
+    nearby_user_edge_dim: int = 1      # 用户邻接边特征维度
     isl_edge_dim: int = 3              # 星间链路边特征维度
     
     # 正则化
@@ -124,7 +125,7 @@ class MetapathEncoder(nn.Module):
         num_heads: int,
         dropout: float,
         use_edge_features: bool,
-        edge_dims: Dict[str, int]
+        edge_dims: Dict[Tuple[str, str, str], int]
     ):
         """
         初始化元路径编码器
@@ -142,33 +143,32 @@ class MetapathEncoder(nn.Module):
         
         self.metapath = metapath
         self.num_hops = len(metapath)
+        if hidden_dim % num_heads != 0:
+            raise ValueError(
+                f"hidden_dim ({hidden_dim}) 必须能被 num_heads ({num_heads}) 整除"
+            )
+        head_dim = hidden_dim // num_heads
         
         # 为元路径中的每一跳创建注意力层
         self.layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
         
-        for i, (src_type, edge_type, dst_type) in enumerate(metapath):
-            # 确定输入维度
-            if i == 0:
-                src_dim = node_dims[src_type]
-            else:
-                src_dim = hidden_dim * num_heads
-            
-            dst_dim = node_dims[dst_type] if i == 0 else hidden_dim * num_heads
-            
+        for src_type, edge_type, dst_type in metapath:
             # 边特征维度
-            edge_key = f"{src_type}-{dst_type}"
+            edge_key = (src_type, edge_type, dst_type)
             edge_dim = edge_dims.get(edge_key, 0) if use_edge_features else 0
-            
+
             layer = HeterogeneousAttentionLayer(
-                src_dim=src_dim,
-                dst_dim=dst_dim,
-                out_dim=hidden_dim,
+                src_dim=node_dims[src_type],
+                dst_dim=node_dims[dst_type],
+                out_dim=head_dim,
                 num_heads=num_heads,
                 dropout=dropout,
                 use_edge_features=use_edge_features and edge_dim > 0,
                 edge_dim=edge_dim
             )
             self.layers.append(layer)
+            self.norms.append(nn.LayerNorm(hidden_dim))
         
         # 确定输出节点类型
         self.output_node_type = metapath[-1][2]
@@ -224,7 +224,9 @@ class MetapathEncoder(nn.Module):
             )
             
             # 更新目标节点特征
-            current_features[dst_type] = F.elu(new_dst_feat)
+            current_features[dst_type] = self.norms[i](
+                dst_feat + F.elu(new_dst_feat)
+            )
         
         return current_features[self.output_node_type]
 
@@ -293,10 +295,12 @@ class HeterogeneousAttentionNetwork(nn.Module):
 
         # 边维度映射
         edge_dims = {
-            'user-satellite': config.user_sat_edge_dim,
-            'satellite-user': config.user_sat_edge_dim,
-            'user-user': 1,  # nearby user edge dim
-            'satellite-satellite': config.isl_edge_dim
+            ('user', 'visible', 'satellite'): config.user_sat_edge_dim,
+            ('satellite', 'visible_rev', 'user'): config.user_sat_edge_dim,
+            ('user', 'serving', 'satellite'): config.serving_edge_dim,
+            ('satellite', 'serving_rev', 'user'): config.serving_edge_dim,
+            ('user', 'nearby', 'user'): config.nearby_user_edge_dim,
+            ('satellite', 'isl', 'satellite'): config.isl_edge_dim,
         }
         
         # 为每条元路径创建编码器
@@ -317,23 +321,24 @@ class HeterogeneousAttentionNetwork(nn.Module):
         # ---------- 语义注意力 ----------
         # 用户节点的语义注意力
         self.user_semantic_attn = SemanticAttention(
-            in_dim=config.hidden_dim * config.num_heads,
+            in_dim=config.hidden_dim,
             hidden_dim=config.hidden_dim
         )
         
         # 卫星节点的语义注意力
         self.sat_semantic_attn = SemanticAttention(
-            in_dim=config.hidden_dim * config.num_heads,
+            in_dim=config.hidden_dim,
             hidden_dim=config.hidden_dim
         )
         
         # ---------- 输出投影 ----------
         self.output_proj = nn.ModuleDict({
-            'satellite': nn.Linear(config.hidden_dim * config.num_heads, config.out_dim),
-            'user': nn.Linear(config.hidden_dim * config.num_heads, config.out_dim)
+            'satellite': nn.Linear(config.hidden_dim, config.out_dim),
+            'user': nn.Linear(config.hidden_dim, config.out_dim)
         })
         
         self.dropout = nn.Dropout(config.dropout)
+        self.last_executed_metapaths: Tuple[str, ...] = ()
     
     def forward(
         self,
@@ -369,19 +374,33 @@ class HeterogeneousAttentionNetwork(nn.Module):
         # 2. 元路径编码
         user_embeddings = []
         sat_embeddings = []
+        executed_metapaths = []
         
         for mp_name, encoder in self.metapath_encoders.items():
             try:
                 mp_embed = encoder(projected, edge_index, edge_features)
-                
-                # 根据输出节点类型分类
-                if encoder.output_node_type == 'user':
-                    user_embeddings.append(mp_embed)
-                else:
-                    sat_embeddings.append(mp_embed)
-            except Exception as e:
-                # 如果某条元路径失败（如缺少边），跳过
-                continue
+            except Exception as exc:
+                node_shapes = {
+                    key: tuple(value.shape)
+                    for key, value in projected.items()
+                }
+                relation_shapes = {
+                    str(key): tuple(value.shape)
+                    for key, value in (edge_features or {}).items()
+                }
+                raise RuntimeError(
+                    f"元路径 {mp_name} 前向失败；"
+                    f"node_shapes={node_shapes}, "
+                    f"edge_feature_shapes={relation_shapes}"
+                ) from exc
+            executed_metapaths.append(mp_name)
+
+            # 根据输出节点类型分类
+            if encoder.output_node_type == 'user':
+                user_embeddings.append(mp_embed)
+            else:
+                sat_embeddings.append(mp_embed)
+        self.last_executed_metapaths = tuple(executed_metapaths)
         
         # 3. 语义注意力聚合
         output = {}
@@ -398,7 +417,7 @@ class HeterogeneousAttentionNetwork(nn.Module):
         else:
             # 如果没有用户相关元路径，使用投影后的特征
             output['user'] = self.output_proj['user'](
-                projected['user'].repeat(1, self.config.num_heads)
+                projected['user']
             )
         
         # 卫星嵌入
@@ -411,7 +430,7 @@ class HeterogeneousAttentionNetwork(nn.Module):
                 attention_weights['satellite'] = sat_attn
         else:
             output['satellite'] = self.output_proj['satellite'](
-                projected['satellite'].repeat(1, self.config.num_heads)
+                projected['satellite']
             )
         
         if return_attention:
@@ -423,20 +442,7 @@ class HANEncoder(nn.Module):
     """
     HAN编码器（简化接口）
     
-    将异质图数据转换为节点嵌入，提供更简洁的接口。
-    
-    【使用方式】
-    ```python
-    encoder = HANEncoder(config)
-    
-    # 从环境获取图数据
-    graph = builder.build(env)
-    
-    # 编码
-    embeddings = encoder.encode(graph)
-    # embeddings['satellite']: (66, 64)
-    # embeddings['user']: (5, 64)
-    ```
+    将张量化异质图转换为卫星与用户节点嵌入。
     """
     
     def __init__(self, config: HANConfig = None):
@@ -449,56 +455,20 @@ class HANEncoder(nn.Module):
         super().__init__()
         
         self.config = config or HANConfig()
-        self.han = HeterogeneousAttentionNetwork(self.config)
-    
-    def encode(
-        self,
-        graph_data,
-        return_attention: bool = False
-    ) -> Dict[str, torch.Tensor]:
-        """
-        编码异质图
-        
-        Args:
-            graph_data: HeteroGraphData 实例或包含以下键的字典:
-                - node_features: Dict[str, np.ndarray]
-                - edge_index: Dict[Tuple, Tuple[np.ndarray, np.ndarray]]
-                - edge_features: Dict[Tuple, np.ndarray]
-            return_attention: 是否返回注意力权重
-            
-        Returns:
-            节点嵌入字典
-        """
-        # 转换为PyTorch张量
-        node_features = {}
-        for node_type, feat in graph_data.node_features.items():
-            if isinstance(feat, np.ndarray):
-                node_features[node_type] = torch.from_numpy(feat).float()
-            else:
-                node_features[node_type] = feat
-        
-        edge_index = {}
-        for edge_type, (src, dst) in graph_data.edge_index.items():
-            if isinstance(src, np.ndarray):
-                src = torch.from_numpy(src).long()
-                dst = torch.from_numpy(dst).long()
-            edge_index[edge_type] = (src, dst)
-        
-        edge_features = {}
-        if hasattr(graph_data, 'edge_features') and graph_data.edge_features:
-            for edge_type, feat in graph_data.edge_features.items():
-                if isinstance(feat, np.ndarray):
-                    edge_features[edge_type] = torch.from_numpy(feat).float()
-                else:
-                    edge_features[edge_type] = feat
-        
-        # 前向传播
-        return self.han(
-            node_features=node_features,
-            edge_index=edge_index,
-            edge_features=edge_features,
-            return_attention=return_attention
-        )
+        if self.config.num_layers < 1:
+            raise ValueError("HANConfig.num_layers 必须至少为 1")
+        layers = []
+        for layer_index in range(self.config.num_layers):
+            layer_config = self.config
+            if layer_index > 0:
+                layer_config = replace(
+                    self.config,
+                    satellite_in_dim=self.config.out_dim,
+                    user_in_dim=self.config.out_dim,
+                    num_layers=1,
+                )
+            layers.append(HeterogeneousAttentionNetwork(layer_config))
+        self.han_layers = nn.ModuleList(layers)
 
     def forward(
         self,
@@ -507,14 +477,28 @@ class HANEncoder(nn.Module):
         edge_features: Optional[Dict[Tuple[str, str, str], torch.Tensor]] = None,
         return_attention: bool = False
     ) -> Dict[str, torch.Tensor]:
-        """兼容直接传入张量化图数据的前向接口。"""
-        return self.han(
-            node_features=node_features,
-            edge_index=edge_index,
-            edge_features=edge_features,
-            return_attention=return_attention
-        )
+        """编码张量化异质图数据。"""
+        current_features = node_features
+        layer_attention = {}
+        for layer_index, layer in enumerate(self.han_layers):
+            result = layer(
+                node_features=current_features,
+                edge_index=edge_index,
+                edge_features=edge_features,
+                return_attention=return_attention,
+            )
+            if return_attention:
+                current_features, attention = result
+                layer_attention[f"layer_{layer_index}"] = attention
+            else:
+                current_features = result
+        if return_attention:
+            return current_features, layer_attention
+        return current_features
     
-    def get_output_dim(self) -> int:
-        """获取输出嵌入维度"""
-        return self.config.out_dim
+    def get_last_executed_metapath_count(self) -> int:
+        """返回最近一次前向中全部 HAN 层成功执行的元路径数量。"""
+        return sum(
+            len(layer.last_executed_metapaths)
+            for layer in self.han_layers
+        )

@@ -198,7 +198,12 @@ def compute_handover_frequency(record: Dict[str, Any]) -> float:
     total_user_seconds = _float(record, "total_user_seconds")
     if total_user_seconds <= 0.0:
         return 0.0
-    return _float(record, "total_handovers") / total_user_seconds
+    committed = (
+        _float(record, "handover_committed")
+        if "handover_committed" in record
+        else _float(record, "total_handovers")
+    )
+    return committed / total_user_seconds
 
 
 def energy_per_successful_task(record: Dict[str, Any]) -> float:
@@ -571,15 +576,17 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
             "reward_components_vs_steps.png",
             "Reward Components vs. Steps",
             [
-                ("mean_reward", "Mean Reward", 1.0),
-                ("reward_delay", "Delay Reward", 1.0),
-                ("reward_energy", "Energy Reward", 1.0),
-                ("reward_service_continuity", "Service Term", 1.0),
+                ("reward_task_success", "Task Success Reward", 1.0),
+                ("penalty_delay", "Delay Penalty", 1.0),
+                ("penalty_energy", "Energy Penalty", 1.0),
+                ("penalty_task_failure", "Task Failure Penalty", 1.0),
+                ("penalty_service_interruption", "Service Interruption Penalty", 1.0),
+                ("penalty_failed_handover", "Failed Handover Penalty", 1.0),
             ],
         ),
     ]
     for filename, title, specs in groups:
-        fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+        fig, axes = plt.subplots(2, 3, figsize=(15, 7))
         plotted = False
         for ax, (key, label, scale) in zip(axes.flat, specs):
             steps, values = _training_xy(history_path, key)
@@ -592,6 +599,8 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
             ax.set_xlabel("Training Steps")
             ax.set_ylabel(label)
             _format_steps(ax)
+        for ax in axes.flat[len(specs):]:
+            ax.axis("off")
         if not plotted:
             plt.close(fig)
             continue

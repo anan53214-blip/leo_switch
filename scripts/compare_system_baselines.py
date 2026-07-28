@@ -43,16 +43,18 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
+from src.environment.gym_env import (
+    EnvConfig,
+    LEOSatelliteEnv,
+    REWARD_BREAKDOWN_KEYS,
+    build_env_config,
+    summarize_env_stats,
+)
 from src.environment.user import UserState
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
 from src.algorithm.maddpg import (
-    HANCentralizedCritic as MADDPGCritic,
     MADDPGAlgorithm,
     MADDPGConfig,
-    maddpg_actor_action_features,
-    maddpg_one_hot_action_features,
-    soft_update,
 )
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
@@ -61,16 +63,26 @@ from scripts.load_balance_metrics import (
     normalize_load_balance_metrics,
     summarize_load_variance_samples,
 )
+from scripts.paper_metrics import (
+    ADDITIONAL_METRICS as PAPER_ADDITIONAL_METRICS,
+    FIXED_CORE_METRICS as PAPER_FIXED_CORE_METRICS,
+    PRIMARY_COMPARE_METRICS as PAPER_PRIMARY_COMPARE_METRICS,
+    SUCCESS_DEPENDENT_METRICS,
+    bootstrap_mean_ci,
+    derive_paper_metrics,
+    metric_scale as unified_metric_scale,
+)
 
 try:
     from scripts.train import (
         BEST_MODEL_METRIC_CHOICES,
         AttentionMAPPOTrainer,
-        CPQHANCandidateAttentionMAPPOTrainer,
+        HANCandidateAttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
         TrainConfig,
+        ENVIRONMENT_SCHEMA_VERSION,
         compute_model_selection_score,
         energy_per_resolved_task,
         energy_per_successful_task,
@@ -80,11 +92,12 @@ except ModuleNotFoundError:
     from train import (
         BEST_MODEL_METRIC_CHOICES,
         AttentionMAPPOTrainer,
-        CPQHANCandidateAttentionMAPPOTrainer,
+        HANCandidateAttentionMAPPOTrainer,
         HANMADDPGTrainer,
         HANMAPPOTrainer,
         HANPDQNTrainer,
         TrainConfig,
+        ENVIRONMENT_SCHEMA_VERSION,
         compute_model_selection_score,
         energy_per_resolved_task,
         energy_per_successful_task,
@@ -107,24 +120,17 @@ DEFAULT_BASELINES = [
 
 DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority"
 DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
-DEFAULT_TOTAL_TIMESTEPS = 1_200_000
+DEFAULT_TOTAL_TIMESTEPS = TrainConfig.total_timesteps
+DEFAULT_EVAL_EPISODES = TrainConfig.eval_episodes
 DEFAULT_PLOT_WINDOW = 5
-DEFAULT_SELECTION_METRIC = "avg_delay"
+DEFAULT_SELECTION_METRIC = TrainConfig.best_model_metric
 TRAIN_ARTIFACT_FILENAMES = (
     "training_history.json",
     "best_model.pt",
     "final_model.pt",
 )
 
-PRIMARY_COMPARE_METRICS = [
-    ("avg_delay", "Average Delay"),
-    ("task_success_rate", "Task Success"),
-    ("deadline_violation_rate", "Deadline Violation"),
-    ("service_continuity_rate", "Service Continuity"),
-    ("handover_failure_rate", "Handover Failure"),
-    ("handover_frequency", "Handover Frequency"),
-    ("energy_per_successful_task", "Energy per Successful Task"),
-]
+PRIMARY_COMPARE_METRICS = list(PAPER_PRIMARY_COMPARE_METRICS)
 
 DISPLAY_NAME_MAP = {
     "random": "Random",
@@ -138,22 +144,31 @@ DISPLAY_NAME_MAP = {
     "mappo_no_han": "MAPPO",
     "attn_mappo": "Attn+MAPPO",
     "han_attn": "HAN+Attn",
-    "han_attn_cpq": "HAN+Attn",
     "han_maddpg": "HAN+MADDPG",
     "han_pdqn": "HAN+PDQN",
 }
 
 SUMMARY_METRIC_KEYS = [
     "avg_delay",
+    "avg_success_delay",
+    "p95_success_delay",
     "total_energy",
     "handover_success_rate",
     "handover_failure_rate",
     "forced_termination_rate",
     "total_user_seconds",
     "blocked_user_seconds",
+    "blocked_time_ratio",
     "handover_interruption_seconds",
     "service_interruption_seconds",
     "total_handovers",
+    "handover_attempts",
+    "handover_committed",
+    "handover_aborted",
+    "handover_radio_failures",
+    "migration_rejections",
+    "reconnection_attempts",
+    "reconnections",
     "failed_handovers",
     "service_continuity_rate",
     "service_availability_rate",
@@ -164,10 +179,12 @@ SUMMARY_METRIC_KEYS = [
     "task_resolution_rate",
     "pending_task_rate",
     "handover_frequency",
+    "handovers_per_user_minute",
     "load_balance_variance",
     "load_balance_coefficient",
     "load_variance_sample_count",
     "mec_load_fairness",
+    "jain_mec_load_fairness",
     "active_load_balance_score",
     "avg_load_balance_score",
     "resolved_tasks",
@@ -175,6 +192,7 @@ SUMMARY_METRIC_KEYS = [
     "total_tasks",
     "completed_tasks",
     "deadline_violations",
+    "failed_tasks",
     "deadline_violation_rate",
     "energy_per_successful_task",
 ]
@@ -183,25 +201,6 @@ ACTION_DIAGNOSTIC_KEYS = [
     "handover_action_rate",
     "local_compute_rate",
     "mean_offload_ratio",
-]
-
-REWARD_BREAKDOWN_KEYS = [
-    "reward_delay",
-    "reward_energy",
-    "reward_qos",
-    "reward_task_success",
-    "reward_deadline_slack",
-    "reward_service_continuity",
-    "reward_handover",
-    "reward_load_balance",
-    "reward_enqueue",
-    "penalty_deadline",
-    "penalty_task_failure",
-    "penalty_queue_full",
-    "penalty_invalid_action",
-    "penalty_blocked",
-    "penalty_failed_handover",
-    "penalty_handover_cost",
 ]
 
 HIGHER_IS_BETTER = {
@@ -218,89 +217,65 @@ HIGHER_IS_BETTER = {
     "load_balance_variance": False,
     "load_balance_coefficient": True,
     "mec_load_fairness": True,
+    "jain_mec_load_fairness": True,
     "active_load_balance_score": True,
     "avg_load_balance_score": True,
     "handover_failure_rate": False,
     "handover_frequency": False,
+    "handovers_per_user_minute": False,
     "forced_termination_rate": False,
     "avg_delay": False,
+    "avg_success_delay": False,
+    "p95_success_delay": False,
     "total_energy": False,
     "energy_per_resolved_task": False,
     "energy_per_successful_task": False,
     "pending_task_rate": False,
+    "blocked_time_ratio": False,
     "deadline_violation_rate": False,
 }
 
 PAPER_METRIC_PLOTS = [
-    ("avg_delay", "Average Delay", "Avg Delay (s)"),
+    ("avg_success_delay", "Successful-Task Delay", "Avg Delay (s)"),
+    ("p95_success_delay", "P95 Successful-Task Delay", "P95 Delay (s)"),
     ("task_success_rate", "Task Success", "Rate (%)"),
     ("deadline_violation_rate", "Deadline Violation", "Rate (%)"),
     ("service_continuity_rate", "Service Continuity", "Rate (%)"),
     ("energy_per_successful_task", "Energy per Successful Task", "Energy / Successful Task"),
-    ("handover_failure_rate", "Handover Failure", "Rate (%)"),
 ]
 
-CORE_BAR_METRICS = [
-    ("avg_delay", "Average Delay", "Average Delay (ms)"),
-    ("total_energy", "Average Energy", "Average Energy (J)"),
-    ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)"),
-    ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
-]
+CORE_BAR_METRICS = list(PAPER_FIXED_CORE_METRICS)
 
 TRAINING_QOS_STEP_METRICS = [
     ("mean_reward", "Reward", "Mean Episode Reward", 1.0),
-    ("avg_delay", "Average Delay", "Average Delay (ms)", 1000.0),
+    ("avg_success_delay", "Successful-Task Delay", "Average Delay (ms)", 1000.0),
+    ("p95_success_delay", "P95 Successful-Task Delay", "P95 Delay (ms)", 1000.0),
     ("service_continuity_rate", "Service Continuity", "Rate (%)", 100.0),
     ("task_success_rate", "Task Success", "Rate (%)", 100.0),
-    ("task_settlement_rate", "Task Settlement", "Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation", "Rate (%)", 100.0),
-    ("handover_frequency", "Handover Frequency", "Handovers / User-second", 1.0),
+    ("handovers_per_user_minute", "Handover Frequency", "Handovers / User-Minute", 1.0),
     ("energy_per_successful_task", "Energy per Successful Task", "Energy / Task", 1.0),
-    ("mec_load_fairness", "MEC Load Fairness", "Score", 1.0),
+    ("jain_mec_load_fairness", "MEC Load Jain Fairness", "Jain Index", 1.0),
 ]
 
 REWARD_COMPONENT_STEP_METRICS = [
     ("mean_reward", "Total Reward", "Reward", 1.0),
-    ("reward_delay", "Delay Reward", "Reward Term", 1.0),
-    ("reward_energy", "Energy Reward", "Reward Term", 1.0),
-    ("reward_qos", "QoS Reward", "Reward Term", 1.0),
     ("reward_task_success", "Task Success Reward", "Reward Term", 1.0),
-    ("reward_deadline_slack", "Deadline Slack Reward", "Reward Term", 1.0),
-    ("reward_service_continuity", "Service Interruption Penalty", "Penalty Term", 1.0),
-    ("reward_handover", "Handover Reward", "Reward Term", 1.0),
-    ("reward_load_balance", "Load Balance Reward", "Reward Term", 1.0),
-    ("reward_enqueue", "Enqueue Reward", "Reward Term", 1.0),
-    ("penalty_deadline", "Deadline Penalty", "Penalty Term", 1.0),
+    ("penalty_delay", "Delay Penalty", "Penalty Term", 1.0),
+    ("penalty_energy", "Energy Penalty", "Penalty Term", 1.0),
     ("penalty_task_failure", "Task Failure Penalty", "Penalty Term", 1.0),
+    ("penalty_service_interruption", "Service Interruption Penalty", "Penalty Term", 1.0),
     ("penalty_failed_handover", "Failed Handover Penalty", "Penalty Term", 1.0),
-    ("penalty_handover_cost", "Handover Cost Penalty", "Penalty Term", 1.0),
-    ("penalty_blocked", "Blocked-Service Penalty", "Penalty Term", 1.0),
-    ("penalty_queue_full", "Queue-Full Penalty", "Penalty Term", 1.0),
 ]
-
-LEGACY_SERVICE_CONTINUITY_REWARD_SPEC = (
-    "reward_service_continuity",
-    "Service Continuity Reward",
-    "Reward Term",
-    1.0,
-)
-
-SERVICE_INTERRUPTION_PENALTY_SPEC = (
-    "reward_service_continuity",
-    "Service Interruption Penalty",
-    "Penalty Term",
-    1.0,
-)
 
 RADAR_METRICS = [
     ("service_continuity_rate", "Continuity", True),
     ("task_success_rate", "Task\nSuccess", True),
-    ("task_completion_rate", "Completion", True),
-    ("avg_delay", "Low\nDelay", False),
+    ("avg_success_delay", "Low\nDelay", False),
+    ("p95_success_delay", "Low P95\nDelay", False),
     ("deadline_violation_rate", "Deadline\nReliability", False),
-    ("handover_failure_rate", "Handover\nReliability", False),
     ("energy_per_successful_task", "Energy\nEfficiency", False),
+    ("jain_mec_load_fairness", "MEC\nFairness", True),
 ]
 
 PAPER_DASHBOARD_LEFT_METRICS = [
@@ -310,9 +285,9 @@ PAPER_DASHBOARD_LEFT_METRICS = [
 ]
 
 PAPER_DASHBOARD_RIGHT_METRICS = [
-    ("avg_delay", "Delay"),
+    ("avg_success_delay", "Delay"),
     ("energy_per_successful_task", "Energy / Success"),
-    ("mec_load_fairness", "MEC Fairness"),
+    ("jain_mec_load_fairness", "MEC Fairness"),
 ]
 
 CORE_EPISODE_PLOTS = [
@@ -321,16 +296,7 @@ CORE_EPISODE_PLOTS = [
     ("total_energy", "Energy Comparison Across Evaluation Episodes", "Total Energy (J)", "energy_episode_comparison.png"),
 ]
 
-ADDITIONAL_EPISODE_METRICS = [
-    ("handover_success_rate", "Handover Success Rate"),
-    ("service_continuity_rate", "Service Continuity Rate"),
-    ("service_availability_rate", "Service Availability Rate"),
-    ("handover_failure_rate", "Handover Failure Rate"),
-    ("handover_frequency", "Handover Frequency"),
-    ("forced_termination_rate", "Forced Termination Rate"),
-    ("deadline_violation_rate", "Deadline Violation Rate"),
-    ("mec_load_fairness", "MEC Load Fairness"),
-]
+ADDITIONAL_EPISODE_METRICS = list(PAPER_ADDITIONAL_METRICS)
 
 SYSTEM_STYLE = {
     "color": "#B03A2E",
@@ -617,67 +583,10 @@ def load_training_metric_curve_from_path(history_path: Optional[Path], metric_ke
     return extract_training_metric_curve(evaluation_records, metric_key)
 
 
-def _collect_history_metric_values(payload: Dict, metric_key: str) -> List[float]:
-    values: List[float] = []
-    for section_name in ("training", "training_evaluation", "evaluation"):
-        for record in payload.get(section_name, []) or []:
-            if metric_key not in record:
-                continue
-            try:
-                value = float(record[metric_key])
-            except (TypeError, ValueError):
-                continue
-            if np.isfinite(value):
-                values.append(value)
-    return values
-
-
-def history_uses_service_interruption_penalty(payload: Dict) -> bool:
-    """Infer whether reward_service_continuity is the new interruption penalty."""
-    config = payload.get("config", {}) or {}
-    try:
-        service_weight = float(config.get("reward_service_continuity_weight", np.nan))
-        delay_weight = float(config.get("reward_delay_weight", np.nan))
-        deadline_weight = float(config.get("reward_deadline_penalty", np.nan))
-    except (TypeError, ValueError):
-        service_weight = delay_weight = deadline_weight = np.nan
-
-    if (
-        np.isfinite(service_weight)
-        and np.isfinite(delay_weight)
-        and np.isfinite(deadline_weight)
-        and service_weight <= 0.15 + 1e-9
-        and abs(delay_weight - 0.25) <= 1e-9
-    ):
-        return True
-
-    values = _collect_history_metric_values(payload, "reward_service_continuity")
-    if values:
-        if any(value < -1e-9 for value in values):
-            return True
-        if any(value > 1e-9 for value in values):
-            return False
-
-    return True
-
-
 def reward_component_step_metrics_for_history(history_path: Optional[Path]) -> List[tuple[str, str, str, float]]:
-    specs = list(REWARD_COMPONENT_STEP_METRICS)
-    if history_path is None or not history_path.exists():
-        return specs
-
-    try:
-        with history_path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return specs
-
-    service_spec = (
-        SERVICE_INTERRUPTION_PENALTY_SPEC
-        if history_uses_service_interruption_penalty(payload)
-        else LEGACY_SERVICE_CONTINUITY_REWARD_SPEC
-    )
-    return [service_spec if spec[0] == "reward_service_continuity" else spec for spec in specs]
+    """返回当前 reward 分项；旧环境结果不再与 schema v5 混合绘制。"""
+    del history_path
+    return list(REWARD_COMPONENT_STEP_METRICS)
 
 
 def load_training_history(history_path: Path) -> Dict:
@@ -750,17 +659,72 @@ def method_training_history_path(method: Dict, output_dir: Optional[Path] = None
     return None
 
 
-def compute_confidence_band(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    mean = smooth(values, window)
-    if len(values) == 0:
-        return mean, mean, mean
-    std = np.zeros(len(values), dtype=float)
-    half_window = max(window // 2, 1)
-    for index in range(len(values)):
-        lo = max(index - half_window, 0)
-        hi = min(index + half_window + 1, len(values))
-        std[index] = float(np.std(values[lo:hi]))
-    return mean, mean - std, mean + std
+def method_training_history_paths(
+    method: Dict,
+    output_dir: Optional[Path] = None,
+    primary_history_path: Optional[Path] = None,
+) -> List[Path]:
+    """Return de-duplicated histories for one learning method."""
+    candidates: List[Path] = []
+    if method.get("is_system") and primary_history_path is not None:
+        candidates.append(primary_history_path)
+    for value in method.get("training_history_paths", []) or []:
+        candidates.append(Path(str(value)))
+    single_path = method_training_history_path(method, output_dir=output_dir)
+    if single_path is not None:
+        candidates.append(single_path)
+
+    paths: List[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        resolved = str(path.resolve()) if path.exists() else str(path)
+        if path.exists() and resolved not in seen:
+            paths.append(path)
+            seen.add(resolved)
+    return paths
+
+
+def aggregate_reward_curves(
+    history_paths: Sequence[Path],
+    window: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Align seed curves on common steps and return mean with 95% CI."""
+    curves: List[tuple[np.ndarray, np.ndarray]] = []
+    for path in history_paths:
+        steps, rewards, _ = load_training_curve_from_path(path)
+        if len(steps) == 0:
+            continue
+        smoothed, _ = reward_smooth(rewards, window=max(window, 3))
+        curves.append((steps, smoothed))
+    if not curves:
+        empty = np.array([], dtype=float)
+        return empty, empty, empty, empty
+
+    common_steps = set(float(value) for value in curves[0][0])
+    for steps, _ in curves[1:]:
+        common_steps.intersection_update(float(value) for value in steps)
+    ordered_steps = np.array(sorted(common_steps), dtype=float)
+    if len(ordered_steps) == 0:
+        empty = np.array([], dtype=float)
+        return empty, empty, empty, empty
+
+    reward_rows = []
+    for steps, rewards in curves:
+        reward_by_step = {
+            float(step): float(reward)
+            for step, reward in zip(steps, rewards)
+        }
+        reward_rows.append([reward_by_step[float(step)] for step in ordered_steps])
+    reward_matrix = np.asarray(reward_rows, dtype=float)
+    means = np.mean(reward_matrix, axis=0)
+    lows = np.empty(len(ordered_steps), dtype=float)
+    highs = np.empty(len(ordered_steps), dtype=float)
+    for index in range(len(ordered_steps)):
+        _, lows[index], highs[index] = bootstrap_mean_ci(
+            reward_matrix[:, index],
+            seed=20260728 + index,
+        )
+    return ordered_steps, means, lows, highs
 
 
 def format_steps(value, _position) -> str:
@@ -785,45 +749,28 @@ def save_figure(fig, output_path: Path) -> Path:
     return output_path
 
 
-def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_steps: Optional[int]) -> EnvConfig:
-    return EnvConfig(
-        num_planes=int(config.get("num_planes", EnvConfig.num_planes)),
-        sats_per_plane=int(config.get("sats_per_plane", EnvConfig.sats_per_plane)),
-        altitude_km=float(config.get("altitude_km", EnvConfig.altitude_km)),
-        inclination_deg=float(config.get("inclination_deg", EnvConfig.inclination_deg)),
-        num_users=int(config.get("num_users", EnvConfig.num_users)),
-        max_steps=int(max_steps if max_steps is not None else config.get("max_steps", EnvConfig.max_steps)),
-        time_step_sec=float(config.get("time_step_sec", EnvConfig.time_step_sec)),
-        min_effective_offload_ratio=float(
-            config.get("min_effective_offload_ratio", EnvConfig.min_effective_offload_ratio)
-        ),
-        reward_delay_weight=float(config.get("reward_delay_weight", EnvConfig.reward_delay_weight)),
-        reward_energy_weight=float(config.get("reward_energy_weight", EnvConfig.reward_energy_weight)),
-        reward_handover_weight=float(config.get("reward_handover_weight", EnvConfig.reward_handover_weight)),
-        reward_load_balance_weight=float(
-            config.get("reward_load_balance_weight", EnvConfig.reward_load_balance_weight)
-        ),
-        reward_qos_weight=float(config.get("reward_qos_weight", EnvConfig.reward_qos_weight)),
-        reward_service_continuity_weight=float(
-            config.get("reward_service_continuity_weight", EnvConfig.reward_service_continuity_weight)
-        ),
-        reward_deadline_slack_weight=float(
-            config.get("reward_deadline_slack_weight", EnvConfig.reward_deadline_slack_weight)
-        ),
-        reward_enqueue_bonus=float(
-            config.get("reward_enqueue_bonus", EnvConfig.reward_enqueue_bonus)
-        ),
-        reward_failed_handover_penalty=float(
-            config.get("reward_failed_handover_penalty", EnvConfig.reward_failed_handover_penalty)
-        ),
-        reward_deadline_penalty=float(
-            config.get("reward_deadline_penalty", EnvConfig.reward_deadline_penalty)
-        ),
-        reward_failed_task_penalty=float(
-            config.get("reward_failed_task_penalty", EnvConfig.reward_failed_task_penalty)
-        ),
-        seed=seed if seed is not None else config.get("seed"),
+def figure_output_path(
+    output_dir: Path,
+    filename: str,
+    output_suffix: str = "",
+) -> Path:
+    suffix = "".join(
+        char if char.isalnum() or char == "_" else "_"
+        for char in output_suffix.strip().strip("_").replace("-", "_").replace(" ", "_")
     )
+    path = Path(filename)
+    if not suffix:
+        return output_dir / path.name
+    return output_dir / f"{path.stem}_{suffix}{path.suffix}"
+
+
+def build_env_config_from_train_config(config: Dict, seed: Optional[int], max_steps: Optional[int]) -> EnvConfig:
+    overrides = {}
+    if seed is not None:
+        overrides["seed"] = seed
+    if max_steps is not None:
+        overrides["max_steps"] = max_steps
+    return build_env_config(config, **overrides)
 
 
 def build_env_for_objective(
@@ -851,16 +798,6 @@ def build_default_train_config(
     config["save_path"] = str(DEFAULT_SYSTEM_RUN_DIR)
     config["best_model_metric"] = best_model_metric
     config["exp_name"] = DEFAULT_SYSTEM_EXP_NAME
-    config["reward_delay_weight"] = 0.25
-    config["reward_energy_weight"] = 0.30
-    config["reward_handover_weight"] = 0.10
-    config["reward_load_balance_weight"] = 0.05
-    config["reward_qos_weight"] = 0.25
-    config["reward_service_continuity_weight"] = 0.15
-    config["reward_deadline_slack_weight"] = 0.10
-    config["reward_enqueue_bonus"] = 0.0
-    config["reward_deadline_penalty"] = 0.70
-    config["reward_failed_task_penalty"] = 0.60
     return config
 
 
@@ -988,24 +925,17 @@ def normalize_baseline_name(name: str) -> str:
     return name.strip().lower().replace("-", "_")
 
 
-def canonical_algorithm_name(name: str) -> str:
-    normalized = normalize_baseline_name(name)
-    if normalized in {"han_attn", "han_attn_cpq"}:
-        return "han_attn"
-    return normalized
-
-
 def filter_duplicate_system_baselines(
     baselines: Sequence[str],
     config_data: Dict,
 ) -> List[str]:
-    system_algorithm = canonical_algorithm_name(str(config_data.get("algorithm", "")))
+    system_algorithm = normalize_baseline_name(str(config_data.get("algorithm", "")))
     if not system_algorithm:
         return list(baselines)
     return [
         baseline
         for baseline in baselines
-        if canonical_algorithm_name(baseline) != system_algorithm
+        if normalize_baseline_name(baseline) != system_algorithm
     ]
 
 
@@ -1018,20 +948,24 @@ def compute_handover_frequency(summary: Dict) -> float:
     total_user_seconds = float(summary.get("total_user_seconds", 0.0))
     if total_user_seconds <= 0.0:
         return 0.0
-    return float(summary.get("total_handovers", 0.0)) / total_user_seconds
+    committed = summary.get(
+        "handover_committed",
+        summary.get("total_handovers", 0.0),
+    )
+    return float(committed) / total_user_seconds
 
 
 def summarize_env_stats_with_load_balance(env_stats: Dict) -> Dict:
     summary = summarize_env_stats(env_stats)
     if "load_variance_samples" in env_stats:
         summary["load_variance_samples"] = env_stats.get("load_variance_samples", [])
-    return normalize_load_balance_metrics(summary)
+    return derive_paper_metrics(normalize_load_balance_metrics(summary))
 
 
 def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -> List[Dict]:
     episode_records: List[Dict] = []
     for episode_index, (reward, summary) in enumerate(zip(rewards, summaries), start=1):
-        summary = normalize_load_balance_metrics(summary)
+        summary = derive_paper_metrics(normalize_load_balance_metrics(summary))
         record = {
             "episode": episode_index,
             "reward": float(reward),
@@ -1056,6 +990,7 @@ def build_episode_records(rewards: Sequence[float], summaries: Sequence[Dict]) -
         record["avg_load_balance_score"] = record["mec_load_fairness"]
         record["load_balance_coefficient"] = record["mec_load_fairness"]
         record["energy_per_successful_task"] = float(energy_per_successful_task(record))
+        record = derive_paper_metrics(record)
         episode_records.append(record)
     return episode_records
 
@@ -1092,8 +1027,7 @@ def summarize_results(
         result.update(extra)
     if variance_samples:
         result.update(summarize_load_variance_samples(variance_samples))
-    result = normalize_load_balance_metrics(result)
-    return result
+    return derive_paper_metrics(normalize_load_balance_metrics(result))
 
 
 def action_diagnostics(
@@ -1133,6 +1067,18 @@ def selection_score(method: Dict, metric_name: str) -> float:
     return float(compute_model_selection_score(method, metric_name))
 
 
+def comparison_metric_value(method: Dict, metric_key: str) -> float:
+    if (
+        metric_key in SUCCESS_DEPENDENT_METRICS
+        and float(method.get("completed_tasks", 0.0) or 0.0) <= 0.0
+    ):
+        return float("nan")
+    try:
+        return float(method.get(metric_key, float("nan")))
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def annotate_priority_metrics(methods: Sequence[Dict], metric_name: str) -> List[Dict]:
     annotated = [ensure_action_diagnostic_fields(method) for method in methods]
     for method in annotated:
@@ -1143,16 +1089,25 @@ def annotate_priority_metrics(methods: Sequence[Dict], metric_name: str) -> List
         method["primary_metric_wins"] = []
 
     for metric_key, metric_label in PRIMARY_COMPARE_METRICS:
-        values = [float(method.get(metric_key, 0.0)) for method in annotated]
-        if not values:
+        values = [
+            comparison_metric_value(method, metric_key)
+            for method in annotated
+        ]
+        finite_values = [value for value in values if np.isfinite(value)]
+        if not finite_values:
             continue
         best_value = (
-            max(values)
+            max(finite_values)
             if HIGHER_IS_BETTER.get(metric_key, True)
-            else min(values)
+            else min(finite_values)
         )
         for method, value in zip(annotated, values):
-            if np.isclose(value, best_value, rtol=1e-9, atol=1e-9):
+            if np.isfinite(value) and np.isclose(
+                value,
+                best_value,
+                rtol=1e-9,
+                atol=1e-9,
+            ):
                 method["primary_metric_wins"].append(metric_label)
 
     for method in annotated:
@@ -1165,18 +1120,23 @@ def annotate_priority_metrics(methods: Sequence[Dict], metric_name: str) -> List
 def primary_metric_leaders(methods: Sequence[Dict]) -> Dict[str, List[str]]:
     leaders: Dict[str, List[str]] = {}
     for metric_key, metric_label in PRIMARY_COMPARE_METRICS:
-        values = [float(method.get(metric_key, 0.0)) for method in methods]
-        if not values:
+        values = [
+            comparison_metric_value(method, metric_key)
+            for method in methods
+        ]
+        finite_values = [value for value in values if np.isfinite(value)]
+        if not finite_values:
             continue
         best_value = (
-            max(values)
+            max(finite_values)
             if HIGHER_IS_BETTER.get(metric_key, True)
-            else min(values)
+            else min(finite_values)
         )
         leaders[metric_label] = [
             method.get("display_name", method.get("method", ""))
             for method, value in zip(methods, values)
-            if np.isclose(value, best_value, rtol=1e-9, atol=1e-9)
+            if np.isfinite(value)
+            and np.isclose(value, best_value, rtol=1e-9, atol=1e-9)
         ]
     return leaders
 
@@ -1225,8 +1185,13 @@ def order_methods(methods: Sequence[Dict]) -> List[Dict]:
 def choose_best_index(values: Sequence[float], higher_is_better: bool) -> int:
     if not values:
         return -1
+    array = np.asarray(values, dtype=float)
+    valid_indices = np.flatnonzero(np.isfinite(array))
+    if len(valid_indices) == 0:
+        return -1
     fn = np.argmax if higher_is_better else np.argmin
-    return int(fn(np.asarray(values, dtype=float)))
+    local_index = int(fn(array[valid_indices]))
+    return int(valid_indices[local_index])
 
 
 def current_visibility(env: LEOSatelliteEnv, user) -> Optional[object]:
@@ -1281,7 +1246,7 @@ class SimpleHeuristicPolicy(BasePolicy):
     def select_actions(self, env: LEOSatelliteEnv) -> np.ndarray:
         actions = np.zeros((env.num_users, 2), dtype=np.float32)
         for user_id, user in enumerate(env.user_manager.users):
-            visible_sats = env._get_visible_satellites(user)
+            visible_sats = env._get_handover_candidates(user)
             actions[user_id, 0] = self._select_handover(env, user, visible_sats)
             actions[user_id, 1] = self.offload_ratio
         return actions
@@ -1313,8 +1278,6 @@ class JointGreedyPolicy(BasePolicy):
         current_vis = current_visibility(env, user)
         if current_vis is not None:
             return current_vis
-        if visible_sats:
-            return max(visible_sats, key=lambda sat: sat.elevation_deg)
         return None
 
     def _expected_handover_value(
@@ -1336,42 +1299,20 @@ class JointGreedyPolicy(BasePolicy):
         if old_server is not None:
             migration_load = sum(1 for task in old_server.task_queue if task.get("user_id") == user.user_id)
 
-        queue_ratio = predicted_queue_len / max(target_server.config.max_queue_size, 1)
-        utilization = np.clip(
-            target_server.utilization + 0.15 * self._planned_queue_increments[target_vis.sat_id],
-            0.0,
+        link_feasible, _ = env._check_handover_link_feasibility(target_vis)
+        migration_feasible = (
+            predicted_queue_len + migration_load
+            <= target_server.config.max_queue_size
+        )
+        if not link_feasible or not migration_feasible:
+            return -float(env.config.reward_failed_handover_penalty)
+
+        interruption_ratio = min(
+            float(env.config.handover_delay_sec)
+            / max(float(env.config.time_step_sec), 1e-6),
             1.0,
         )
-        snr_db = env.channel.compute_snr_db(target_vis.distance_km, target_vis.elevation_deg)
-        success_prob = env._compute_handover_success_probability(
-            elevation_deg=target_vis.elevation_deg,
-            rvt_seconds=target_vis.rvt_seconds,
-            snr_db=snr_db,
-            utilization=utilization,
-            queue_ratio=queue_ratio,
-            migration_load=migration_load,
-        )
-
-        elevation_score = np.clip(target_vis.elevation_deg / 90.0, 0.0, 1.0)
-        rvt_score = np.clip(
-            target_vis.rvt_seconds / max(env.config.rvt_threshold_sec, 1.0),
-            0.0,
-            1.0,
-        )
-        handover_gain = env.config.reward_handover_weight * (0.5 * elevation_score + 0.5 * rvt_score)
-        migration_penalty = 0.05 * migration_load
-        delay_penalty = min(env.config.handover_delay_sec / 2.0, 1.0)
-
-        load_bonus = 0.0
-        if user.serving_satellite >= 0:
-            current_server = env.mec_manager.get_server(user.serving_satellite)
-            if current_server is not None:
-                current_queue_ratio = current_server.queue_length / max(current_server.config.max_queue_size, 1)
-                load_bonus = env.config.reward_load_balance_weight * np.clip(current_queue_ratio - queue_ratio, -1.0, 1.0)
-
-        success_value = handover_gain - env.config.reward_handover_weight * (delay_penalty + migration_penalty) + load_bonus
-        failure_value = -float(env.config.reward_failed_handover_penalty)
-        return float(success_prob * success_value + (1.0 - success_prob) * failure_value)
+        return -float(env.config.reward_interruption_weight) * interruption_ratio
 
     def _task_score(self, env: LEOSatelliteEnv, total_delay: float, total_energy: float, max_delay: float) -> float:
         reward_value, _ = env._compute_task_reward(total_delay, total_energy, max_delay)
@@ -1405,7 +1346,6 @@ class JointGreedyPolicy(BasePolicy):
             fallback_delay = env.offload_calc.compute_local_delay(task.computation)
             fallback_energy = env.offload_calc.compute_local_energy(task.computation)
             reward_value = self._task_score(env, fallback_delay, fallback_energy, task.max_delay)
-            reward_value -= float(env.config.reward_queue_full_penalty)
             return float(reward_value), 0.0
 
         offload_cycles = offload_ratio * task.computation
@@ -1431,10 +1371,6 @@ class JointGreedyPolicy(BasePolicy):
         total_energy = local_energy + upload_energy
 
         reward_value = self._task_score(env, total_delay, total_energy, task.max_delay)
-        reward_value += env.config.reward_enqueue_bonus * max(
-            1.0 - (predicted_queue_len / max(server.config.max_queue_size, 1)),
-            0.0,
-        )
         return float(reward_value), float(offload_cycles)
 
     def _score_candidate(
@@ -1457,7 +1393,7 @@ class JointGreedyPolicy(BasePolicy):
 
         score = 0.0
         if user.state == UserState.BLOCKED and target_vis is None:
-            score -= float(env.config.reward_blocked_penalty)
+            score -= float(env.config.reward_interruption_weight)
 
         score += self._expected_handover_value(env, user, target_vis, predicted_queue_len)
         task_value, extra_cycles = self._estimate_task_value(
@@ -1486,7 +1422,7 @@ class JointGreedyPolicy(BasePolicy):
 
         for user_id in order:
             user = env.user_manager.users[user_id]
-            visible_sats = env._get_visible_satellites(user)
+            visible_sats = env._get_handover_candidates(user)
             candidate_actions = [0] + [index + 1 for index in range(len(visible_sats))]
 
             best_score = -float("inf")
@@ -1543,7 +1479,7 @@ def dqn_action_mask(env: LEOSatelliteEnv, offload_bins: Sequence[float]) -> np.n
     action_dim = (env.max_visible_sats + 1) * len(offload_bins)
     masks = np.zeros((env.num_users, action_dim), dtype=bool)
     for user_id, user in enumerate(env.user_manager.users):
-        visible_sats = env._get_visible_satellites(user)
+        visible_sats = env._get_handover_candidates(user)
         valid_handover_count = min(len(visible_sats), env.max_visible_sats)
         for handover_action in range(valid_handover_count + 1):
             start = handover_action * len(offload_bins)
@@ -1810,7 +1746,7 @@ def maddpg_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
     masks = np.zeros((env.num_users, env.max_visible_sats + 1), dtype=bool)
     masks[:, 0] = True
     for user_id, user in enumerate(env.user_manager.users):
-        visible_sats = env._get_visible_satellites(user)
+        visible_sats = env._get_handover_candidates(user)
         valid_count = min(len(visible_sats), env.max_visible_sats)
         if valid_count > 0:
             masks[user_id, 1:valid_count + 1] = True
@@ -2166,7 +2102,7 @@ def pdqn_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
     masks = np.zeros((env.num_users, env.max_visible_sats + 1), dtype=bool)
     masks[:, 0] = True
     for user_id, user in enumerate(env.user_manager.users):
-        visible_sats = env._get_visible_satellites(user)
+        visible_sats = env._get_handover_candidates(user)
         valid_count = min(len(visible_sats), env.max_visible_sats)
         if valid_count > 0:
             masks[user_id, 1:valid_count + 1] = True
@@ -2202,7 +2138,7 @@ def pdqn_safe_heuristic_actions(
     rvt_threshold = float(getattr(env.config, "rvt_threshold_sec", 60.0))
 
     for user_id, user in enumerate(env.user_manager.users):
-        visible_sats = list(env._get_visible_satellites(user))[: env.max_visible_sats]
+        visible_sats = list(env._get_handover_candidates(user))[: env.max_visible_sats]
         keep_current = False
         if user.serving_satellite >= 0:
             vis = env._get_satellite_visibility(user, user.serving_satellite)
@@ -2385,11 +2321,16 @@ def train_and_evaluate_pdqn_baseline(
                     "param_loss": float(np.mean(recent_param_losses)) if recent_param_losses else 0.0,
                     "epsilon": algo.current_epsilon(),
                     "avg_delay": summary.get("avg_delay", 0.0),
+                    "avg_success_delay": summary.get("avg_success_delay", 0.0),
+                    "p95_success_delay": summary.get("p95_success_delay", 0.0),
                     "handover_frequency": summary.get("handover_frequency", 0.0),
+                    "handovers_per_user_minute": summary.get("handovers_per_user_minute", 0.0),
+                    "blocked_time_ratio": summary.get("blocked_time_ratio", 0.0),
                     "service_continuity_rate": summary.get("service_continuity_rate", 0.0),
                     "task_completion_rate": summary.get("task_completion_rate", 0.0),
                     "task_success_rate": summary.get("task_success_rate", 0.0),
                     "mec_load_fairness": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
+                    "jain_mec_load_fairness": summary.get("jain_mec_load_fairness", 0.0),
                     "avg_load_balance_score": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
                     "active_load_balance_score": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
                     "total_energy": env_stats.get("total_energy", 0.0),
@@ -2557,8 +2498,8 @@ def system_trainer_class_for_config(objective: str, config_data: Dict):
     algorithm = str(config_data.get("algorithm", "mappo"))
     if algorithm == "attn_mappo":
         return AttentionMAPPOTrainer
-    if algorithm in {"han_attn", "han_attn_cpq"}:
-        return CPQHANCandidateAttentionMAPPOTrainer
+    if algorithm == "han_attn":
+        return HANCandidateAttentionMAPPOTrainer
     return trainer_class_for_objective(objective)
 
 
@@ -2593,7 +2534,7 @@ class NoHANTrainerMixin:
             dtype=np.int64,
         )
         for uid, user in enumerate(self.env.user_manager.users):
-            visible_sats = self.env._get_visible_satellites(user)
+            visible_sats = self.env._get_handover_candidates(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
                 available_actions[uid, 1:valid_count + 1] = 1.0
@@ -3078,7 +3019,7 @@ def train_and_evaluate_han_attn_mappo(
                 episodes=episodes,
                 device=resolve_device(device),
                 max_steps=max_steps,
-                trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
+                trainer_cls=HANCandidateAttentionMAPPOTrainer,
                 method_name="han_attn",
                 is_system=False,
             )
@@ -3098,7 +3039,7 @@ def train_and_evaluate_han_attn_mappo(
         save_path=save_dir,
         exp_name="han_attn",
     )
-    trainer = CPQHANCandidateAttentionMAPPOTrainer(config)
+    trainer = HANCandidateAttentionMAPPOTrainer(config)
     trainer.train()
     checkpoint = save_dir / "best_model.pt"
     if not checkpoint.exists():
@@ -3109,81 +3050,8 @@ def train_and_evaluate_han_attn_mappo(
         episodes=episodes,
         device=resolve_device(device),
         max_steps=max_steps,
-        trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
+        trainer_cls=HANCandidateAttentionMAPPOTrainer,
         method_name="han_attn",
-        is_system=False,
-    )
-    result["trained_timesteps"] = int(total_timesteps)
-    result["checkpoint"] = str(checkpoint)
-    history_path = save_dir / "training_history.json"
-    if history_path.exists():
-        result["training_history"] = str(history_path)
-    return result
-
-
-def train_and_evaluate_cpq_han_attn_mappo(
-    config_data: Dict,
-    output_dir: Path,
-    device: str,
-    episodes: int,
-    max_steps: Optional[int],
-    total_timesteps: int,
-    early_stop_patience: int,
-    reuse_checkpoint_if_available: bool = False,
-) -> Dict:
-    config_data = baseline_config_data(config_data, "han_attn")
-    save_dir = output_dir / "learned_baselines" / "han_attn_cpq"
-    save_dir.mkdir(parents=True, exist_ok=True)
-    if reuse_checkpoint_if_available:
-        checkpoint = find_existing_checkpoint(save_dir)
-        if checkpoint is not None:
-            config = train_config_from_dict(
-                config_data,
-                device=device,
-                max_steps=max_steps,
-                episodes=episodes,
-                save_path=checkpoint.parent,
-                load_path=checkpoint,
-            )
-            result = evaluate_mappo_checkpoint_with_trainer(
-                checkpoint=checkpoint,
-                config_data=asdict(config),
-                episodes=episodes,
-                device=resolve_device(device),
-                max_steps=max_steps,
-                trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
-                method_name="han_attn_cpq",
-                is_system=False,
-            )
-            result["source"] = "han_attn_cpq_checkpoint_eval"
-            result["checkpoint"] = str(checkpoint)
-            history_path = save_dir / "training_history.json"
-            if history_path.exists():
-                result["training_history"] = str(history_path)
-            return result
-    config = train_config_from_dict(
-        config_data,
-        device=device,
-        max_steps=max_steps,
-        episodes=episodes,
-        total_timesteps=total_timesteps,
-        early_stop_patience=early_stop_patience,
-        save_path=save_dir,
-        exp_name="han_attn_cpq",
-    )
-    trainer = CPQHANCandidateAttentionMAPPOTrainer(config)
-    trainer.train()
-    checkpoint = save_dir / "best_model.pt"
-    if not checkpoint.exists():
-        checkpoint = save_dir / "final_model.pt"
-    result = evaluate_mappo_checkpoint_with_trainer(
-        checkpoint=checkpoint,
-        config_data=asdict(config),
-        episodes=episodes,
-        device=resolve_device(device),
-        max_steps=max_steps,
-        trainer_cls=CPQHANCandidateAttentionMAPPOTrainer,
-        method_name="han_attn_cpq",
         is_system=False,
     )
     result["trained_timesteps"] = int(total_timesteps)
@@ -3350,7 +3218,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         evaluation_records,
         key=lambda record: compute_model_selection_score(record, selection_metric_name),
     )
-    best_record = normalize_load_balance_metrics(best_record)
+    best_record = derive_paper_metrics(normalize_load_balance_metrics(best_record))
     handover_success_rate = float(best_record.get("handover_success_rate", 0.0))
     service_continuity_rate = float(best_record.get("service_continuity_rate", 0.0))
     result = {
@@ -3364,6 +3232,8 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "mean_reward": float(best_record.get("eval_mean_reward", 0.0)),
         "std_reward": float(best_record.get("eval_std_reward", 0.0)),
         "avg_delay": float(best_record.get("avg_delay", 0.0)),
+        "avg_success_delay": float(best_record.get("avg_success_delay", 0.0)),
+        "p95_success_delay": float(best_record.get("p95_success_delay", 0.0)),
         "total_energy": float(best_record.get("total_energy", 0.0)),
         "handover_success_rate": handover_success_rate,
         "handover_failure_rate": float(best_record.get("handover_failure_rate", max(0.0, 1.0 - handover_success_rate))),
@@ -3372,7 +3242,15 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "blocked_user_seconds": float(best_record.get("blocked_user_seconds", 0.0)),
         "handover_interruption_seconds": float(best_record.get("handover_interruption_seconds", 0.0)),
         "service_interruption_seconds": float(best_record.get("service_interruption_seconds", 0.0)),
+        "blocked_time_ratio": float(best_record.get("blocked_time_ratio", 0.0)),
         "total_handovers": float(best_record.get("total_handovers", 0.0)),
+        "handover_attempts": float(best_record.get("handover_attempts", best_record.get("total_handovers", 0.0))),
+        "handover_committed": float(best_record.get("handover_committed", best_record.get("successful_handovers", 0.0))),
+        "handover_aborted": float(best_record.get("handover_aborted", best_record.get("failed_handovers", 0.0))),
+        "handover_radio_failures": float(best_record.get("handover_radio_failures", 0.0)),
+        "migration_rejections": float(best_record.get("migration_rejections", 0.0)),
+        "reconnection_attempts": float(best_record.get("reconnection_attempts", 0.0)),
+        "reconnections": float(best_record.get("reconnections", 0.0)),
         "failed_handovers": float(best_record.get("failed_handovers", 0.0)),
         "service_continuity_rate": service_continuity_rate,
         "service_availability_rate": float(best_record.get("service_availability_rate", service_continuity_rate)),
@@ -3383,10 +3261,12 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "task_resolution_rate": float(best_record.get("task_resolution_rate", 0.0)),
         "pending_task_rate": float(best_record.get("pending_task_rate", 0.0)),
         "handover_frequency": float(best_record.get("handover_frequency", compute_handover_frequency(best_record))),
+        "handovers_per_user_minute": float(best_record.get("handovers_per_user_minute", 0.0)),
         "load_balance_variance": float(best_record.get("load_balance_variance", 0.0)),
         "load_balance_coefficient": float(best_record.get("load_balance_coefficient", best_record.get("mec_load_fairness", 0.0))),
         "load_variance_sample_count": float(best_record.get("load_variance_sample_count", 0.0)),
         "mec_load_fairness": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
+        "jain_mec_load_fairness": float(best_record.get("jain_mec_load_fairness", 0.0)),
         "active_load_balance_score": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
         "avg_load_balance_score": float(best_record.get("mec_load_fairness", best_record.get("active_load_balance_score", best_record.get("avg_load_balance_score", 0.0)))),
         "resolved_tasks": float(best_record.get("resolved_tasks", 0.0)),
@@ -3394,6 +3274,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "total_tasks": float(best_record.get("total_tasks", 0.0)),
         "completed_tasks": float(best_record.get("completed_tasks", 0.0)),
         "deadline_violations": float(best_record.get("deadline_violations", 0.0)),
+        "failed_tasks": float(best_record.get("failed_tasks", 0.0)),
         "deadline_violation_rate": compute_deadline_violation_rate(best_record),
         "energy_per_successful_task": float(energy_per_successful_task(best_record)),
         "energy_per_resolved_task": float(energy_per_resolved_task(best_record)),
@@ -3401,7 +3282,7 @@ def extract_history_method(history_path: Path) -> tuple[Dict, Optional[Dict]]:
         "training_history": str(history_path),
         "source": f"training_history_best_{selection_metric_name}",
     }
-    return config_data, result
+    return config_data, derive_paper_metrics(result)
 
 
 def save_results_json(output_dir: Path, payload: Dict) -> Path:
@@ -3427,15 +3308,25 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "mean_reward",
         "std_reward",
         "avg_delay",
+        "avg_success_delay",
+        "p95_success_delay",
         "total_energy",
         "handover_success_rate",
         "handover_failure_rate",
         "forced_termination_rate",
         "total_user_seconds",
         "blocked_user_seconds",
+        "blocked_time_ratio",
         "handover_interruption_seconds",
         "service_interruption_seconds",
         "total_handovers",
+        "handover_attempts",
+        "handover_committed",
+        "handover_aborted",
+        "handover_radio_failures",
+        "migration_rejections",
+        "reconnection_attempts",
+        "reconnections",
         "failed_handovers",
         "service_continuity_rate",
         "service_availability_rate",
@@ -3446,13 +3337,21 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "task_resolution_rate",
         "pending_task_rate",
         "deadline_violation_rate",
+        "failed_tasks",
         "handover_frequency",
+        "handovers_per_user_minute",
         "load_balance_variance",
         "load_balance_coefficient",
         "load_variance_sample_count",
         "mec_load_fairness",
+        "jain_mec_load_fairness",
         "active_load_balance_score",
         "avg_load_balance_score",
+        "resolved_tasks",
+        "pending_tasks",
+        "total_tasks",
+        "completed_tasks",
+        "deadline_violations",
         "energy_per_resolved_task",
         "energy_per_successful_task",
         *ACTION_DIAGNOSTIC_KEYS,
@@ -3485,12 +3384,15 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "episode": int(record.get("episode", 0)),
                 "reward": float(record.get("reward", 0.0)),
                 "avg_delay": float(record.get("avg_delay", 0.0)),
+                "avg_success_delay": float(record.get("avg_success_delay", 0.0)),
+                "p95_success_delay": float(record.get("p95_success_delay", 0.0)),
                 "total_energy": float(record.get("total_energy", 0.0)),
                 "handover_success_rate": float(record.get("handover_success_rate", 0.0)),
                 "handover_failure_rate": float(record.get("handover_failure_rate", 0.0)),
                 "forced_termination_rate": float(record.get("forced_termination_rate", 0.0)),
                 "total_user_seconds": float(record.get("total_user_seconds", 0.0)),
                 "blocked_user_seconds": float(record.get("blocked_user_seconds", 0.0)),
+                "blocked_time_ratio": float(record.get("blocked_time_ratio", 0.0)),
                 "handover_interruption_seconds": float(record.get("handover_interruption_seconds", 0.0)),
                 "service_interruption_seconds": float(record.get("service_interruption_seconds", 0.0)),
                 "total_handovers": float(record.get("total_handovers", 0.0)),
@@ -3504,10 +3406,12 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "task_resolution_rate": float(record.get("task_resolution_rate", 0.0)),
                 "pending_task_rate": float(record.get("pending_task_rate", 0.0)),
                 "handover_frequency": float(record.get("handover_frequency", compute_handover_frequency(record))),
+                "handovers_per_user_minute": float(record.get("handovers_per_user_minute", 0.0)),
                 "load_balance_variance": float(record.get("load_balance_variance", 0.0)),
                 "load_balance_coefficient": float(record.get("load_balance_coefficient", record.get("mec_load_fairness", 0.0))),
                 "load_variance_sample_count": float(record.get("load_variance_sample_count", 0.0)),
                 "mec_load_fairness": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
+                "jain_mec_load_fairness": float(record.get("jain_mec_load_fairness", 0.0)),
                 "active_load_balance_score": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
                 "avg_load_balance_score": float(record.get("mec_load_fairness", record.get("active_load_balance_score", record.get("avg_load_balance_score", 0.0)))),
                 "deadline_violation_rate": float(record.get("deadline_violation_rate", 0.0)),
@@ -3533,7 +3437,9 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
 
 
 def metric_scale(metric_key: str) -> float:
-    return 100.0 if metric_key.endswith("_rate") else 1.0
+    if metric_key.endswith("_rate") or metric_key == "blocked_time_ratio":
+        return 100.0
+    return 1.0
 
 
 def metric_display_value(value: float, metric_key: str) -> str:
@@ -3547,21 +3453,41 @@ def metric_display_value(value: float, metric_key: str) -> str:
 
 
 def paper_metric_scale(metric_key: str) -> float:
-    if metric_key == "avg_delay":
-        return 1000.0
-    return metric_scale(metric_key)
+    return unified_metric_scale(metric_key)
 
 
 def paper_metric_value(method: Dict, metric_key: str) -> float:
-    return float(method.get(metric_key, 0.0)) * paper_metric_scale(metric_key)
+    if (
+        metric_key in SUCCESS_DEPENDENT_METRICS
+        and float(method.get("completed_tasks", 0.0) or 0.0) <= 0.0
+    ):
+        return float("nan")
+    try:
+        value = float(method.get(metric_key, float("nan")))
+    except (TypeError, ValueError):
+        return float("nan")
+    return value * paper_metric_scale(metric_key)
 
 
 def paper_metric_samples(method: Dict, metric_key: str) -> np.ndarray:
-    records = method.get("episode_metrics", [])
+    records = method.get("seed_metrics", [])
     if not records:
         return np.array([], dtype=float)
     scale = paper_metric_scale(metric_key)
-    return np.array([float(record.get(metric_key, 0.0)) * scale for record in records], dtype=float)
+    values: List[float] = []
+    for record in records:
+        if (
+            metric_key in SUCCESS_DEPENDENT_METRICS
+            and float(record.get("completed_tasks", 0.0) or 0.0) <= 0.0
+        ):
+            continue
+        try:
+            value = float(record.get(metric_key, float("nan"))) * scale
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(value):
+            values.append(value)
+    return np.asarray(values, dtype=float)
 
 
 def method_tick_label(method: Dict) -> str:
@@ -3621,30 +3547,72 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
     ordered = order_methods(methods)
     styles = build_method_styles(ordered)
     labels = [method_tick_label(method) for method in ordered]
-    values = [paper_metric_value(method, metric_key) for method in ordered]
-    errors = []
+    values = []
+    lower_errors = []
+    upper_errors = []
     for method in ordered:
         samples = paper_metric_samples(method, metric_key)
-        errors.append(float(np.std(samples)) if len(samples) > 1 else 0.0)
+        if len(samples) > 0:
+            mean, low, high = bootstrap_mean_ci(samples)
+        else:
+            mean = paper_metric_value(method, metric_key)
+            low = high = mean
+        values.append(mean)
+        if np.isfinite(mean):
+            lower_errors.append(max(mean - low, 0.0))
+            upper_errors.append(max(high - mean, 0.0))
+        else:
+            lower_errors.append(0.0)
+            upper_errors.append(0.0)
 
     positions = np.arange(len(ordered), dtype=float)
-    colors = [styles[str(method.get("method", ""))].get("color", PAPER_COLORS["muted"]) for method in ordered]
+    plot_values = [value if np.isfinite(value) else 0.0 for value in values]
+    colors = [
+        (
+            styles[str(method.get("method", ""))].get("color", PAPER_COLORS["muted"])
+            if np.isfinite(value)
+            else "#D9D9D9"
+        )
+        for method, value in zip(ordered, values)
+    ]
     value_top = max(
-        [value + error for value, error in zip(values, errors)] + [0.0]
+        [
+            value + error
+            for value, error in zip(values, upper_errors)
+            if np.isfinite(value)
+        ]
+        + [0.0]
     )
     y_top = value_top * 1.24 if value_top > 0.0 else 1.0
     label_offset = y_top * 0.025
     bars = ax.bar(
         positions,
-        values,
-        yerr=errors if any(error > 0 for error in errors) else None,
+        plot_values,
         width=0.72,
         color=colors,
         edgecolor=PAPER_COLORS["dark"],
         linewidth=1.0,
         alpha=0.92,
-        error_kw={"elinewidth": 1.1, "capsize": 2.8, "capthick": 1.1},
     )
+    cap_half_width = 0.08
+    for position, value, lower_error, upper_error in zip(
+        positions,
+        values,
+        lower_errors,
+        upper_errors,
+    ):
+        if lower_error <= 0.0 and upper_error <= 0.0:
+            continue
+        low = value - lower_error
+        high = value + upper_error
+        ax.vlines(position, low, high, color=PAPER_COLORS["dark"], linewidth=1.1)
+        ax.hlines(
+            [low, high],
+            position - cap_half_width,
+            position + cap_half_width,
+            color=PAPER_COLORS["dark"],
+            linewidth=1.1,
+        )
 
     best_index = choose_best_index(values, HIGHER_IS_BETTER.get(metric_key, True))
     for index, (bar, value, method) in enumerate(zip(bars, values, ordered)):
@@ -3655,9 +3623,20 @@ def draw_metric_bar_panel(ax, methods: Sequence[Dict], metric_key: str, title: s
         if index == best_index:
             bar.set_edgecolor(PAPER_COLORS["dark"])
             bar.set_linewidth(2.1)
+        if not np.isfinite(value):
+            bar.set_hatch("//")
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                label_offset,
+                "N/A",
+                va="bottom",
+                ha="center",
+                fontsize=10 if compact else 10.5,
+            )
+            continue
         ax.text(
             bar.get_x() + bar.get_width() / 2.0,
-            min(value + errors[index] + label_offset, y_top * 0.98),
+            min(value + upper_errors[index] + label_offset, y_top * 0.98),
             metric_display_value(value, metric_key),
             va="bottom",
             ha="center",
@@ -3851,92 +3830,49 @@ def draw_reward_curve_panel(
     compact: bool = False,
     output_dir: Optional[Path] = None,
 ) -> bool:
-    steps, rewards, evaluation = load_training_curve_from_path(history_path)
-    if len(steps) == 0:
-        return False
-
-    mean_reward, _ = reward_smooth(rewards, window=max(window, 3))
-    system_color = SYSTEM_STYLE["color"]
-    draw_raw_reward_shadow(
-        ax,
-        steps,
-        rewards,
-        mean_reward,
-        system_color,
-        alpha=0.20,
-    )
-    ax.plot(
-        steps,
-        mean_reward,
-        color=system_color,
-        linewidth=3.0,
-        zorder=3,
-        label=system_display_name(methods),
-    )
-
-    if evaluation:
-        eval_steps = np.array([record.get("total_steps", 0) for record in evaluation], dtype=float)
-        eval_rewards = np.array([record.get("eval_mean_reward", 0.0) for record in evaluation], dtype=float)
-        ax.scatter(
-            eval_steps,
-            eval_rewards,
-            s=30 if compact else 36,
-            facecolors="white",
-            edgecolors=system_color,
-            linewidths=1.0,
-            zorder=4,
+    ordered = order_methods(methods)
+    styles = build_method_styles(ordered)
+    plotted = False
+    for method in ordered:
+        paths = method_training_history_paths(
+            method,
+            output_dir=output_dir,
+            primary_history_path=history_path,
         )
-
-    baseline_methods = [method for method in order_methods(methods) if not method.get("is_system")]
-    baseline_styles = build_method_styles(baseline_methods)
-    for method in baseline_methods:
-        style = baseline_styles[str(method.get("method", ""))]
-        baseline_history_path = method_training_history_path(method, output_dir=output_dir)
-        baseline_steps, baseline_rewards, _ = load_training_curve_from_path(baseline_history_path)
-        if len(baseline_steps) > 0:
-            baseline_mean, _ = reward_smooth(baseline_rewards, window=max(window, 3))
-            draw_raw_reward_shadow(
-                ax,
-                baseline_steps,
-                baseline_rewards,
-                baseline_mean,
-                style["color"],
-                alpha=0.13 if compact else 0.15,
-            )
-            ax.plot(
-                baseline_steps,
-                baseline_mean,
-                color=style["color"],
-                linestyle="-",
-                linewidth=2.2 if compact else 2.4,
-                alpha=0.97,
-                zorder=3,
-                label=method.get("display_name", method.get("method", "")),
-            )
+        steps, mean_reward, lower, upper = aggregate_reward_curves(paths, window)
+        if len(steps) == 0:
             continue
-
-        mean_value = float(method.get("mean_reward", 0.0))
-        std_value = float(method.get("std_reward", 0.0))
-        if std_value > 0.0:
-            ax.axhspan(
-                mean_value - std_value,
-                mean_value + std_value,
-                color=style["color"],
-                alpha=0.05,
-                linewidth=0,
-            )
-        ax.axhline(
-            y=mean_value,
-            color=style["color"],
-            linestyle=style["linestyle"],
-            linewidth=1.8,
-            alpha=0.95,
+        plotted = True
+        style = styles[str(method.get("method", ""))]
+        color = style.get("color", PAPER_COLORS["muted"])
+        linewidth = 3.0 if method.get("is_system") else (2.2 if compact else 2.4)
+        ax.plot(
+            steps,
+            mean_reward,
+            color=color,
+            linestyle="-",
+            linewidth=linewidth,
+            alpha=0.98,
+            zorder=3,
             label=method.get("display_name", method.get("method", "")),
         )
+        if len(paths) > 1:
+            ax.fill_between(
+                steps,
+                lower,
+                upper,
+                color=color,
+                alpha=0.16 if method.get("is_system") else 0.10,
+                linewidth=0,
+                zorder=2,
+            )
+
+    if not plotted:
+        return False
 
     ax.set_xlabel("Training Steps")
-    ax.set_ylabel("Mean Reward")
-    ax.set_title("Reward Convergence vs. Baseline Levels")
+    ax.set_ylabel("Mean Episode Reward")
+    ax.set_title("Learning Algorithm Reward Convergence")
     ax.xaxis.set_major_formatter(FuncFormatter(format_steps))
     ax.legend(
         loc="lower right" if compact else "best",
@@ -3947,7 +3883,11 @@ def draw_reward_curve_panel(
     return True
 
 
-def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+def plot_method_comparison(
+    methods: Sequence[Dict],
+    output_dir: Path,
+    output_suffix: str = "",
+) -> Optional[Path]:
     if not methods:
         return None
 
@@ -3964,7 +3904,10 @@ def plot_method_comparison(methods: Sequence[Dict], output_dir: Path) -> Optiona
         y=0.995,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return save_figure(fig, output_dir / "method_comparison.png")
+    return save_figure(
+        fig,
+        figure_output_path(output_dir, "method_comparison.png", output_suffix),
+    )
 
 
 def draw_training_metric_step_panel(
@@ -4225,7 +4168,13 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
 
         axis.set_title(title)
         axis.set_xlabel("Evaluation Episode")
-        axis.set_ylabel("Rate (%)" if metric_key.endswith("_rate") else "Score")
+        if metric_key.endswith("_rate") or metric_key == "blocked_time_ratio":
+            ylabel = "Rate (%)"
+        elif metric_key == "handovers_per_user_minute":
+            ylabel = "Handovers / User-Minute"
+        else:
+            ylabel = "Jain Index"
+        axis.set_ylabel(ylabel)
         style_axes_frame(axis)
 
     for axis in axes[len(ADDITIONAL_EPISODE_METRICS):]:
@@ -4239,16 +4188,32 @@ def plot_additional_metric_curves(methods: Sequence[Dict], output_dir: Path) -> 
     return save_figure(fig, output_dir / "additional_metrics_episode_comparison.png")
 
 
-def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+def plot_delay_energy_tradeoff(
+    methods: Sequence[Dict],
+    output_dir: Path,
+    output_suffix: str = "",
+) -> Optional[Path]:
     ordered = order_methods(methods)
-    if not ordered:
+    points = [
+        (
+            method,
+            paper_metric_value(method, "avg_success_delay"),
+            paper_metric_value(method, "energy_per_successful_task"),
+        )
+        for method in ordered
+    ]
+    points = [
+        (method, delay, energy)
+        for method, delay, energy in points
+        if np.isfinite(delay) and np.isfinite(energy)
+    ]
+    if not points:
         return None
 
+    ordered = [method for method, _delay, _energy in points]
     styles = build_method_styles(ordered)
-    x_values = np.array([paper_metric_value(method, "avg_delay") for method in ordered], dtype=float)
-    y_values = np.array([float(method.get("energy_per_successful_task", 0.0)) for method in ordered], dtype=float)
-    if len(x_values) == 0 or len(y_values) == 0:
-        return None
+    x_values = np.asarray([delay for _method, delay, _energy in points], dtype=float)
+    y_values = np.asarray([energy for _method, _delay, energy in points], dtype=float)
 
     fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=220)
     pareto_mask = is_pareto_efficient(x_values, y_values)
@@ -4322,14 +4287,21 @@ def plot_delay_energy_tradeoff(methods: Sequence[Dict], output_dir: Path) -> Opt
     )
 
     ax.set_xlabel("Average Delay (ms)")
-    ax.set_ylabel("Energy per Resolved Task")
+    ax.set_ylabel("Energy per Successful Task")
     ax.set_title("Delay-Energy Trade-off Across System and Heuristic Methods")
     style_axes_frame(ax)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "delay_energy_tradeoff.png")
+    return save_figure(
+        fig,
+        figure_output_path(output_dir, "delay_energy_tradeoff.png", output_suffix),
+    )
 
 
-def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+def plot_success_continuity_scatter(
+    methods: Sequence[Dict],
+    output_dir: Path,
+    output_suffix: str = "",
+) -> Optional[Path]:
     ordered = order_methods(methods)
     if not ordered:
         return None
@@ -4340,7 +4312,12 @@ def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -
         style = styles[str(method.get("method", ""))]
         x_value = float(method.get("task_success_rate", method.get("task_completion_rate", 0.0))) * 100.0
         y_value = float(method.get("service_continuity_rate", 0.0)) * 100.0
-        load_balance = float(method.get("mec_load_fairness", method.get("active_load_balance_score", method.get("avg_load_balance_score", 0.0))))
+        load_balance = float(
+            method.get(
+                "jain_mec_load_fairness",
+                method.get("mec_load_fairness", 0.0),
+            )
+        )
         size = 90.0 + 360.0 * np.clip(load_balance, 0.0, 1.0)
         if method.get("is_system"):
             size *= 1.20
@@ -4367,19 +4344,32 @@ def plot_success_continuity_scatter(methods: Sequence[Dict], output_dir: Path) -
         )
     ax.set_xlabel("Task Success Rate (%)")
     ax.set_ylabel("Service Continuity Rate (%)")
-    ax.set_title("Success-Continuity Trade-off (marker size: load balance)")
+    ax.set_title("Success-Continuity Trade-off (marker size: Jain fairness)")
     ax.set_xlim(left=0.0, right=max(100.0, ax.get_xlim()[1]))
     ax.set_ylim(bottom=0.0, top=max(100.0, ax.get_ylim()[1]))
     style_axes_frame(ax)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "success_continuity_tradeoff.png")
+    return save_figure(
+        fig,
+        figure_output_path(
+            output_dir,
+            "success_continuity_tradeoff.png",
+            output_suffix,
+        ),
+    )
 
 
 def normalized_metric_values(methods: Sequence[Dict], metric_key: str, higher_is_better: bool) -> np.ndarray:
     values = np.array([float(method.get(metric_key, 0.0)) for method in methods], dtype=float)
     if len(values) == 0:
         return values
-    if metric_key.endswith("_rate") or metric_key in {"mec_load_fairness", "active_load_balance_score", "avg_load_balance_score"}:
+    if metric_key.endswith("_rate") or metric_key in {
+        "blocked_time_ratio",
+        "jain_mec_load_fairness",
+        "mec_load_fairness",
+        "active_load_balance_score",
+        "avg_load_balance_score",
+    }:
         bounded = np.clip(values, 0.0, 1.0)
         return bounded if higher_is_better else 1.0 - bounded
 
@@ -4391,7 +4381,11 @@ def normalized_metric_values(methods: Sequence[Dict], metric_key: str, higher_is
     return normalized if higher_is_better else 1.0 - normalized
 
 
-def plot_performance_radar(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
+def plot_performance_radar(
+    methods: Sequence[Dict],
+    output_dir: Path,
+    output_suffix: str = "",
+) -> Optional[Path]:
     ordered = order_methods(methods)
     if not ordered:
         return None
@@ -4439,7 +4433,10 @@ def plot_performance_radar(methods: Sequence[Dict], output_dir: Path) -> Optiona
     ax.grid(True, linestyle="--", alpha=0.45)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2, fontsize=9)
     fig.tight_layout()
-    return save_figure(fig, output_dir / "performance_radar.png")
+    return save_figure(
+        fig,
+        figure_output_path(output_dir, "performance_radar.png", output_suffix),
+    )
 
 
 def plot_paper_dashboard(
@@ -4447,6 +4444,7 @@ def plot_paper_dashboard(
     methods: Sequence[Dict],
     output_dir: Path,
     window: int,
+    output_suffix: str = "",
 ) -> Optional[Path]:
     if not methods:
         return None
@@ -4480,9 +4478,9 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_delay,
         methods,
-        metric_key="avg_delay",
-        title="Average Delay",
-        ylabel="Average Delay (ms)",
+        metric_key="task_success_rate",
+        title="Task Success Rate",
+        ylabel="Task Success Rate (%)",
         compact=True,
     )
     add_panel_label(ax_delay, "(b)")
@@ -4491,24 +4489,34 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="total_energy",
-        title="Average Energy",
-        ylabel="Average Energy (J)",
+        metric_key="service_continuity_rate",
+        title="Service Continuity Rate",
+        ylabel="Service Continuity Rate (%)",
         compact=True,
     )
     add_panel_label(ax_energy, "(c)")
 
     ax_load_cdf = fig.add_subplot(grid[1, 2])
-    draw_load_variance_cdf_panel(
+    draw_metric_bar_panel(
         ax_load_cdf,
         methods,
+        metric_key="energy_per_successful_task",
+        title="Energy per Successful Task",
+        ylabel="Energy / Successful Task",
         compact=True,
     )
     add_panel_label(ax_load_cdf, "(d)")
 
     fig.suptitle("Publication-Style Baseline Comparison", fontsize=15, fontweight="bold", y=0.985)
     fig.subplots_adjust(left=0.07, right=0.97, bottom=0.07, top=0.92, wspace=0.26, hspace=0.32)
-    return save_figure(fig, output_dir / "paper_baseline_dashboard.png")
+    return save_figure(
+        fig,
+        figure_output_path(
+            output_dir,
+            "paper_baseline_dashboard.png",
+            output_suffix,
+        ),
+    )
 
 
 def plot_training_curve_vs_baselines(
@@ -4516,6 +4524,7 @@ def plot_training_curve_vs_baselines(
     methods: Sequence[Dict],
     output_dir: Path,
     window: int,
+    output_suffix: str = "",
 ) -> Optional[Path]:
     fig, ax = plt.subplots(figsize=(11, 6.4), dpi=220)
     has_curve = draw_reward_curve_panel(ax, history_path, methods, window=window, output_dir=output_dir)
@@ -4523,7 +4532,14 @@ def plot_training_curve_vs_baselines(
         plt.close(fig)
         return None
     fig.tight_layout()
-    return save_figure(fig, output_dir / "reward_curve_vs_baselines.png")
+    return save_figure(
+        fig,
+        figure_output_path(
+            output_dir,
+            "reward_curve_vs_baselines.png",
+            output_suffix,
+        ),
+    )
 
 
 def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optional[Path]:
@@ -4618,12 +4634,12 @@ def parse_args() -> argparse.Namespace:
                         help="Allow a fresh train_compare run to write into an existing --system-run-dir that already contains training artifacts.")
     parser.add_argument("--exp-name", type=str, default=DEFAULT_SYSTEM_EXP_NAME,
                         help="Experiment name used when training from this unified entry script.")
-    parser.add_argument("--episodes", type=int, default=5,
+    parser.add_argument("--episodes", type=int, default=DEFAULT_EVAL_EPISODES,
                         help="Number of evaluation episodes for each method.")
     parser.add_argument("--max-steps", type=int, default=None,
                         help="Override episode length for training/evaluation/baselines.")
     parser.add_argument("--total-timesteps", type=int, default=DEFAULT_TOTAL_TIMESTEPS,
-                        help="Total system training steps. Default is 1,200,000 steps.")
+                        help=f"Total system training steps. Default is {DEFAULT_TOTAL_TIMESTEPS:,} steps.")
     parser.add_argument("--early-stop-patience", type=int, default=0,
                         help="Early stopping patience for MAPPO training. Default 0 disables early stopping.")
     parser.add_argument("--seed", type=int, default=42,
@@ -4860,18 +4876,6 @@ def main() -> None:
                 reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
             )
             result.setdefault("source", "han_attn_train_eval")
-        elif baseline_name == "han_attn_cpq":
-            result = train_and_evaluate_cpq_han_attn_mappo(
-                config_data=config_data,
-                output_dir=output_dir,
-                device=args.device,
-                episodes=args.episodes,
-                max_steps=args.max_steps,
-                total_timesteps=args.total_timesteps,
-                early_stop_patience=args.early_stop_patience,
-                reuse_checkpoint_if_available=args.reuse_learned_checkpoints,
-            )
-            result.setdefault("source", "han_attn_cpq_train_eval")
         elif baseline_name == "han_maddpg":
             result = train_and_evaluate_han_maddpg_baseline(
                 config_data=config_data,
@@ -4919,6 +4923,8 @@ def main() -> None:
         output_dir,
         {
             "generated_at": timestamp,
+            "environment_schema_version": ENVIRONMENT_SCHEMA_VERSION,
+            "metric_schema_version": 2,
             "run_mode": args.run_mode,
             "objective": objective,
             "best_model_metric": args.best_model_metric,

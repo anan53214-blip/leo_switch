@@ -107,16 +107,16 @@ def test_han_mappo_observation_includes_raw_obs_han_and_light_features():
         shutil.rmtree(log_path, ignore_errors=True)
 
 
-def test_cpq_han_attn_trainer_appends_shared_constraints_and_context_features():
-    from scripts.train import CPQHANCandidateAttentionMAPPOTrainer
+def test_han_attn_trainer_appends_shared_constraints_and_context_features():
+    from scripts.train import HANCandidateAttentionMAPPOTrainer
     from src.features.satellite_load import (
         SATELLITE_CONTEXT_FEATURE_DIM,
         SHARED_CONSTRAINT_DIM,
     )
 
     run_id = uuid4().hex
-    save_path = f"results/cpq_han_attn_obs_{run_id}"
-    log_path = f"results/cpq_han_attn_obs_logs_{run_id}"
+    save_path = f"results/han_attn_obs_{run_id}"
+    log_path = f"results/han_attn_obs_logs_{run_id}"
     config = TrainConfig(
         num_users=2,
         max_steps=10,
@@ -127,9 +127,9 @@ def test_cpq_han_attn_trainer_appends_shared_constraints_and_context_features():
         device="cpu",
         save_path=save_path,
         log_path=log_path,
-        algorithm="han_attn_cpq",
+        algorithm="han_attn",
     )
-    trainer_obj = CPQHANCandidateAttentionMAPPOTrainer(config)
+    trainer_obj = HANCandidateAttentionMAPPOTrainer(config)
     try:
         trainer_obj.env.reset(seed=trainer_obj.config.seed)
         observations, satellite_tokens, available_actions, candidate_sat_ids = (
@@ -159,12 +159,12 @@ def test_cpq_han_attn_trainer_appends_shared_constraints_and_context_features():
         shutil.rmtree(log_path, ignore_errors=True)
 
 
-def test_cpq_han_attn_trainer_act_path_accepts_augmented_shapes():
-    from scripts.train import CPQHANCandidateAttentionMAPPOTrainer
+def test_han_attn_trainer_act_path_accepts_augmented_shapes():
+    from scripts.train import HANCandidateAttentionMAPPOTrainer
 
     run_id = uuid4().hex
-    save_path = f"results/cpq_han_attn_act_{run_id}"
-    log_path = f"results/cpq_han_attn_act_logs_{run_id}"
+    save_path = f"results/han_attn_act_{run_id}"
+    log_path = f"results/han_attn_act_logs_{run_id}"
     config = TrainConfig(
         num_users=2,
         max_steps=10,
@@ -175,9 +175,9 @@ def test_cpq_han_attn_trainer_act_path_accepts_augmented_shapes():
         device="cpu",
         save_path=save_path,
         log_path=log_path,
-        algorithm="han_attn_cpq",
+        algorithm="han_attn",
     )
-    trainer_obj = CPQHANCandidateAttentionMAPPOTrainer(config)
+    trainer_obj = HANCandidateAttentionMAPPOTrainer(config)
     try:
         trainer_obj.env.reset(seed=trainer_obj.config.seed)
         observations, satellite_tokens, available_actions, candidate_sat_ids = (

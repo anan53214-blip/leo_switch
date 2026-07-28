@@ -1,20 +1,204 @@
-# LEO_switch Experiment Log
+# LEO_switch 实验日志
 
-This file records experiment results, diagnosis, and code changes that affect
-training or evaluation behavior. Add a new entry for every experiment run,
-including failed or inconclusive runs.
+本文记录会影响训练或评估行为的实验结果、诊断和代码变更。每次实验都应新增记录，
+包括失败或结论不明确的实验。
 
-## Recording Checklist
+## 记录清单
 
-- Experiment directory and command
-- Code version or short description of local changes
-- Objective, selection metric, seed, timesteps, episodes, max steps, user count
-- Main comparison table: reward, effective latency score, delay, continuity,
-  task success, deadline violation, energy
-- Reward component diagnosis: delay, energy, QoS, continuity, handover,
-  enqueue, deadline, queue-full, failed-handover, handover-cost
-- Interpretation: what improved, what regressed, and likely root cause
-- Follow-up decision: keep, revert, tune, or rerun
+- 实验目录和命令
+- 代码版本或本地修改摘要
+- 目标、模型选择指标、随机种子、训练步数、每回合步数和用户数
+- 核心指标：reward、时延、服务连续率、任务成功率、deadline 违约率和能耗
+- Reward 分量：任务成功、时延、能耗、任务失败、服务中断和切换失败
+- 结果解释：改善项、退化项和可能原因
+- 后续决定：保留、回退、调参或重跑
+
+## 2026-07-28 - 论文评价指标与多种子统计协议
+
+**代码变更：**
+
+- 新增 `scripts/paper_metrics.py`，固定用户和多用户绘图共用同一组字段、单位、
+  指标优劣方向和 bootstrap 95% 置信区间实现。
+- 新增成功任务平均时延、成功任务 P95 时延、阻塞时间占比、单位用户分钟切换
+  次数、单位成功任务能耗和全 MEC 节点 Jain 公平指数。
+- 固定用户核心图改为成功任务时延、P95 时延、任务成功率、截止期违反率、
+  服务连续率和单位成功任务能耗；柱状图可读取 `seed_metrics` 绘制置信区间。
+- Reward 收敛图只绘制有真实训练历史的学习算法，并按共同训练步数对齐多个
+  种子后绘制均值和 95% 置信区间。
+- 多用户脚本增加 `--seeds` 和 `uXX/seed_XX` 目录，保存
+  `comparison_seed_records.csv` 与种子聚合后的 `comparison_summary.csv`；
+  扩展性图使用种子级均值和置信区间。
+- 聚合阶段拒绝环境版本不是 5、指标版本不是 2、缺少统一 Reward 配置或
+  Reward 权重不一致的结果。
+
+**统计口径：**
+
+- 评估回合先在各训练种子内部取均值，再对种子级均值做 bootstrap；
+- 正式论文实验建议至少 5 个训练种子，每个种子至少 10 个独立评估回合；
+- 历史版本结果必须重新评估或重训，不能与环境版本 5 的结果混合。
+
+**验证：**
+
+- 新增指标公式、Jain 公平性、schema 拒绝、多种子聚合、Reward 曲线步数对齐
+  和绘图冒烟测试。
+- Python 编译检查通过。
+- 固定用户柱状图和多用户置信区间曲线的合成数据绘图冒烟通过。
+- `compare_system_baselines.py --help` 与
+  `run_multiuser_scaling_suite.py --help` 均可直接运行。
+- 全量测试：128 项通过。
+
+详细设计、指标依据和正式运行命令见 `docs/论文图评价指标修改方案.md`。
+
+### 正式训练前复查修复
+
+**发现与修复：**
+
+- 训练器的跨 episode 统计容器原先没有累计
+  `successful_task_delay_samples`、`jain_load_fairness_sum` 和
+  `jain_load_fairness_samples`，导致训练历史中的成功任务平均/P95 时延和
+  Jain 公平指数错误为 0；现已补齐。
+- 使用成功任务时延或单位成功任务能耗选择 checkpoint 时，零成功任务记录
+  原先可能凭借数值 0 被误选；现统一返回负无穷选优分数。
+- 固定用户图不再使用同一模型的评估 episode 伪装训练种子计算置信区间；
+  只有存在 `seed_metrics` 时才绘制种子级 bootstrap 区间。
+- 多用户局部聚合现在会把 `output_suffix` 传递到固定用户图，`no_han`
+  等局部图不会覆盖完整算法图。
+
+**真实短训练验证：**
+
+- 临时目录：
+  `C:\Users\19704\AppData\Local\Temp\leo_switch_metrics_fix_54303a1d9edf4a40a407b056ab7a1c0a`
+- 配置：2 用户、8 总步数、每次 rollout 4 步、CPU、seed 42、
+  `graph_update_interval=1`、环境版本 5、最佳模型指标 `reward`。
+- 第一条训练记录包含 3 个成功任务，修复后
+  `avg_success_delay=1.008602849 s`、
+  `p95_success_delay=1.669737293 s`，不再错误为 0。
+- rollout、参数更新、独立评估、best/checkpoint/final 模型和
+  `training_history.json` 均正常生成。
+- 修复后专项测试：52 项通过；全量测试：134 项通过。
+
+### 第二轮 P0 数据完整性修复
+
+**训练完成判定：**
+
+- 多用户套件不再因为目录中存在任意一个 checkpoint 就认定训练完成。
+- 只有 `final_model.pt` 与可读取的 `training_history.json` 同时存在，
+  环境版本为 5，且 seed、用户数、训练步数、episode 长度、rollout 长度、
+  评估/保存间隔、图更新间隔、最佳模型指标和 Reward 配置与当前命令一致时，
+  才允许复用。
+- 禁用早停时，历史实际步数必须达到目标训练步数；启用早停且训练正常落盘时，
+  允许实际步数小于目标值。
+- 若发现部分产物或配置不一致，脚本直接报错，要求使用新 `run-id`，或显式使用
+  `--force-system-train` 重新训练，避免静默比较未完成模型。
+
+**零成功任务处理：**
+
+- `comparison_summary.csv` 新增总任务数、成功任务数、已结算任务数、待处理任务数
+  和 deadline 违反次数，保证多种子聚合可以判断指标分母。
+- 当某个种子 `completed_tasks=0` 时，成功任务平均/P95 时延和单位成功任务能耗
+  作为无有效样本处理，不参与均值、bootstrap 区间、最佳指标或 Pareto 图。
+- 聚合 CSV 为三项成功依赖指标增加有效样本数，全部种子均无成功任务时图中显示
+  `N/A`，不再把数值 0 解释为最优。
+
+**验证：**
+
+- P0 专项及相关配置测试：33 项通过。
+- 完整训练、仅有 `best_model.pt`、训练步数不足、seed 不匹配和合法早停均有
+  独立回归测试。
+- 多用户两用户规模、两 seed 正式参数 dry-run 通过。
+- 全量测试：139 项通过。
+
+## 2026-07-28 - Reward 方案二（环境版本 5）
+
+**代码变更：**
+
+- 任务 reward 改为 QoS 门控结构：deadline 内完成时为
+  `1 - 0.60×时延比例 - 0.10×能耗比例`，超时或最终失败固定为 `-1`。
+- 服务连接只保留两个惩罚：实际中断比例最高 `-0.30`，切换失败固定 `-0.20`。
+- 成功切换不再获得额外奖励；入队、队列满、负载均衡、deadline 裕量和非法动作等
+  相关项从 reward 中删除。
+- 负载公平性、切换行为、任务可靠性和队列状态继续作为独立指标报告。
+- Reward 分解统一为任务成功、时延、能耗、任务失败、服务中断和切换失败 6 项。
+- 6 个分量统一采用全局用户平均尺度，相加可还原同一周期的累计全局 reward。
+- `environment_schema_version` 升级为 `5`。
+
+**论文依据：**
+
+- Zhu et al. (2021)：卫星边缘卸载中的时延—能耗加权代价。
+- Lee et al. (2023)：LEO 切换中的接入时延与失败事件代价。
+- He et al. (GLOBECOM 2020)：按服务可行性分段的切换 reward。
+- Huang et al. (2024)：SAGIN 卸载的简单目标与不可行动作辅助。
+
+详细公式和文献链接见 `docs/REWARD_WEIGHT_CONFIG.md`。
+
+**兼容性：** 版本 5 之前的 checkpoint 不能直接恢复；新旧平均 reward 不可直接比较，
+正式实验需要在版本 5 下重新训练所有方法。
+
+**验证：**
+
+- Reward 专项测试：14 项通过。
+- 全量测试：119 项通过。
+- 2 用户、8 step、CPU MAPPO 短训练通过。
+- checkpoint 和训练历史均为环境版本 5，只包含 4 个当前 reward 配置字段和 6 个
+  当前 reward 分量；各分量之和与累计全局 reward 的误差小于 `5×10^-8`。
+- 临时训练产物在验证后清理。
+
+## 2026-07-28 - 原子切换与阻塞语义修复
+
+**代码变更：**
+
+- 切换取消随机成功判定，改为目标卫星可见性、仰角、RVT、SNR 和 MEC
+  容量的确定性准入检查。
+- MEC 迁移改为“预检查 + 原子提交”。只有全部未完成任务都能进入目标队列，
+  才迁移任务并修改用户服务卫星；任一任务无法迁移时两个队列均不变。
+- 旧链路仍有效时，切换失败只回滚并处罚，用户继续连接原卫星；旧链路已经
+  失效时才进入 `BLOCKED`，并将无法继续服务的旧卫星任务显式结算为失败。
+- 阻塞用户重新接入单独记录，不再混入普通切换成功率。
+- 新增 `handover_attempts`、`handover_committed`、`handover_aborted`、
+  `handover_radio_failures`、`migration_rejections`、
+  `reconnection_attempts`、`reconnections` 和 `failed_tasks`。
+  切换频率只使用已提交切换计数。
+- checkpoint 和训练历史的 `environment_schema_version` 升级为 4。
+
+**验证：**
+
+- 原子迁移、失败回滚、阻塞和重新接入专项测试：6 passed
+- 受影响模块回归：63 passed
+- 全量测试：117 passed
+- 2 用户、8 step、CPU 训练与两次独立评估通过；checkpoint 和训练历史
+  均为环境版本 4，且包含新增指标；临时结果已清理
+
+**影响：** 切换成功、用户阻塞、任务失败和切换频率的定义均已改变。
+环境版本 4 之前的 checkpoint 和实验结果不能与新结果直接比较，正式比较需
+重新训练所有方法。
+
+## 2026-07-28 - 系统冗余代码清理
+
+**代码变更：**
+
+- 新增统一的 `build_env_config`，训练与基线对比入口不再分别维护
+  `EnvConfig` 字段清单；新增环境字段会自动从训练配置传递。
+- 删除已废弃的 `han_attn_cpq` 算法入口及其重复训练/评估实现，当前候选注意力
+  HAN 方法统一使用 `han_attn`。
+- 删除固定参数的一次性实验脚本
+  `run_latency_priority_g1_300k_600s_u20_suite.py`，保留通用训练、系统对比、
+  多用户扩展和绘图入口。
+- 删除未被系统调用的旧标量星座坐标路径、图格式转换与调试辅助函数、旧
+  Critic、旧模型保存接口、非原子迁移包装器以及多用户信道占位类。
+- 清理各模块未使用的导入、兼容属性和重复配置赋值；历史实验记录保留，
+  但活动代码和当前使用文档不再引用废弃名称。
+
+**验证：**
+
+- Python 全量编译通过。
+- 全量测试：118 passed。
+- `train.py --help` 与 `compare_system_baselines.py --help` 正常加载。
+- 2 用户、8 step、CPU 的 MAPPO 真实训练通过并生成最终 checkpoint；
+  验证产物已清理。
+
+**兼容性：** 本次只删除不可达或已明确废弃的接口，不改变环境行为和模型结构，
+因此不提升 `environment_schema_version` 或模型版本。旧命令中的
+`han_attn_cpq` 需要改为 `han_attn`。
 
 ## 2026-07-05 - Repository Slimming Cleanup
 
@@ -1056,6 +1240,88 @@ names such as `han_mappo`, `mappo_no_han`, `random`, `min_distance`,
 - `pytest tests/test_multiuser_scaling_suite.py -q`
 - `python scripts/run_multiuser_scaling_suite.py --help`
 - `python -m py_compile scripts/run_multiuser_scaling_suite.py`
+
+## 2026-07-28 - P1 正确性修复（B05–B09）
+
+**范围：** 修复审查文档中的 B05、B06、B07、B08、B09；B10 已在默认配置
+统一工作中完成，本次未重复修改。
+
+**代码变更：**
+
+- B05：明确 `process_queue(t, Δt)` 处理区间为 `[t, t+Δt)`；环境使用
+  slot 起始时刻调用 MEC，并按照实际消耗 cycles 插值 slot 内完成时刻。
+- B06：HAN+MAPPO 评估改用独立环境和固定
+  `seed + 100000 + episode_index`；评估结束后恢复训练环境、图缓存及模型模式。
+- B07：任务迁移改为事务式提交。目标队列满时任务保留在源队列，并返回
+  `migrated_task_ids`、`failed_task_ids`。
+- B08：动作 0 统一为 stay，切换候选排除当前服务卫星；环境对
+  `target_sat == serving_satellite` 再做防御性 no-op。训练、启发式基线、
+  DQN、MADDPG、PDQN 和 No-HAN 路径共用同一候选接口。
+- B09：MEC 更新和 deadline 结算在当前 step 产生的奖励于当前 step 发放，
+  terminal/truncated 前清空 pending reward。
+- checkpoint 与训练历史增加 `environment_schema_version=3`。旧环境语义下
+  的 checkpoint 不允许恢复训练或用于正式比较。
+
+**验证：**
+
+- `pytest tests/test_p1_correctness.py -q`：6 passed
+- 受影响模块交叉回归：82 passed
+- `pytest -q`：110 passed
+- Python 编译检查和 `git diff --check` 通过
+- 2 用户、4 step、2 次独立评估的 CPU 冒烟通过；最终 checkpoint 为
+  `model=2`、`geometry=2`、`environment=3`，临时结果已清理
+
+**影响：** MEC 时延、deadline 判定、切换动作编号、任务迁移与奖励归因均已
+改变。修复前 checkpoint 和评估结果不可与修复后结果直接比较，正式实验必须
+重新训练全部方法。
+
+## 2026-07-28 - P0 正确性修复
+
+**代码变更：**
+
+- 修复 HAN 多跳元路径的 64/256 维度错位，按 relation 区分
+  `visible=5`、`serving=2`、`nearby=1`、`isl=3` 的边特征维度，并取消
+  元路径异常静默跳过。
+- 让 `han_num_layers` 实际控制 HAN 堆叠深度。
+- rollout 保存图快照，PPO update 使用当前 HAN 参数重新编码；HAN、Actor、
+  Critic 由同一损失联合反向传播，并记录 HAN 梯度范数和参数变化量。
+- checkpoint schema 更新为版本 2，同时保存和恢复 HAN optimizer。
+- GAE 使用当前 transition 的 done 边界，阻止跨 episode 优势泄漏。
+- RVT 改为基于未来轨道位置的批量出视预测。
+- 增加几何版本；卫星传播后立即刷新可见性缓存，动作继续使用生成观测时的
+  候选卫星映射。
+
+**预期影响：** 修复后模型和旧模型对应不同的网络结构、优势估计与环境转移。
+旧 checkpoint 不再用于恢复训练或正式比较，后续正式结果必须重新训练。
+
+**验证：**
+
+- `pytest tests/test_p0_correctness.py -q`：8 passed
+- `pytest -q`：104 passed
+- 最小 PPO 更新中 HAN gradient norm 和 parameter delta 均为非零
+- checkpoint 已验证可保存和恢复 HAN optimizer
+- 训练入口 8-step CPU 冒烟通过：2 次 update，最终
+  `han_grad_norm=0.13836`、`han_parameter_delta=0.09354`；临时结果已清理
+- 40 用户几何推进与图构建冒烟：5 步共 `0.073s`，约 `0.015s/step`
+
+## 2026-07-27 - 默认配置统一
+
+**配置基准：**
+`results/baseline_compare/multiuser_scaling_multiuser_6_7` 引用的
+20、25、30、35、40 用户原始训练记录。
+
+**代码变更：** 统一 `EnvConfig`、`TrainConfig`、训练 CLI 和基线比较入口。
+环境与奖励默认值由 `EnvConfig` 维护，训练与评估默认值由 `TrainConfig`
+维护，其余入口直接继承，不再重复写奖励常量。
+
+**当前默认值：** `total_timesteps=300000`、`max_steps=600`、
+`eval_interval=50000`、`eval_episodes=3`、`save_interval=100000`、
+`graph_update_interval=1`、`log_interval=1`、
+`best_model_metric=avg_delay`。奖励权重恢复为目标训练使用的时延与 QoS
+优先配置。
+
+**影响：** 只影响后续新训练和未读取历史配置的新比较任务；未运行新的训练
+实验，也未修改既有结果。
 
 **2026-07-04 suffix update:** Added `--output-suffix` for plot-only aggregate
 regeneration. When provided, aggregate artifacts are written with the suffix

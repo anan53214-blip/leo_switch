@@ -36,18 +36,14 @@ HAN使用元路径(meta-path)来聚合不同类型的邻居信息：
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-from .features import FeatureExtractor, NodeFeatures, EdgeFeatures
+from .features import FeatureExtractor, NodeFeatures
 
 
 @dataclass
 class HeteroGraphData:
     """
     异质图数据结构
-    
-    【设计说明】
-    这个数据结构可以直接转换为PyTorch Geometric的HeteroData
-    或DGL的DGLHeteroGraph，便于与深度学习框架集成。
-    
+
     【数据组织】
     - node_features: 按节点类型组织的特征字典
     - edge_index: 按边类型组织的邻接关系
@@ -77,32 +73,6 @@ class HeteroGraphData:
     # 元信息
     metadata: Dict[str, Any] = field(default_factory=dict)
     
-    def get_node_types(self) -> List[str]:
-        """获取所有节点类型"""
-        return list(self.node_features.keys())
-    
-    def get_edge_types(self) -> List[Tuple[str, str, str]]:
-        """获取所有边类型（三元组形式）"""
-        return list(self.edge_index.keys())
-    
-    def num_edges(self, edge_type: Tuple[str, str, str] = None) -> int:
-        """获取边数量"""
-        if edge_type is None:
-            return sum(idx[0].shape[0] for idx in self.edge_index.values())
-        return self.edge_index[edge_type][0].shape[0]
-    
-    def to_dict(self) -> Dict:
-        """转换为字典格式（便于序列化）"""
-        return {
-            'node_features': {k: v.tolist() for k, v in self.node_features.items()},
-            'edge_index': {str(k): (v[0].tolist(), v[1].tolist()) 
-                          for k, v in self.edge_index.items()},
-            'edge_features': {str(k): v.tolist() for k, v in self.edge_features.items()},
-            'num_nodes': self.num_nodes,
-            'metadata': self.metadata
-        }
-
-
 class HeteroGraphBuilder:
     """
     异质图构建器
@@ -115,17 +85,6 @@ class HeteroGraphBuilder:
     3. 构建邻接关系（COO格式）
     4. 组装为HeteroGraphData
     
-    【使用示例】
-    ```python
-    builder = HeteroGraphBuilder()
-    graph = builder.build(env)
-    
-    # 转换为PyTorch Geometric格式
-    pyg_data = builder.to_pyg(graph)
-    
-    # 转换为DGL格式
-    dgl_graph = builder.to_dgl(graph)
-    ```
     """
     
     def __init__(
@@ -263,6 +222,7 @@ class HeteroGraphBuilder:
         # ============== Step 4: 添加元信息 ==============
         graph.metadata = {
             'timestamp': env.current_time,
+            'geometry_version': getattr(env, 'geometry_version', None),
             'num_satellites': env.num_satellites,
             'num_users': env.num_users,
             'feature_dims': self.feature_extractor.get_feature_dimensions()
@@ -301,125 +261,6 @@ class HeteroGraphBuilder:
         )
         graph.edge_features[user_self_loop_type] = np.ones((num_users, 1), dtype=np.float32)
     
-    # ================================================================
-    #                  格式转换方法
-    # ================================================================
-    
-    def to_pyg(self, graph: HeteroGraphData):
-        """
-        转换为PyTorch Geometric的HeteroData格式
-        
-        【PyTorch Geometric HeteroData结构】
-        ```python
-        from torch_geometric.data import HeteroData
-        
-        data = HeteroData()
-        data['satellite'].x = torch.tensor(...)  # 节点特征
-        data['user'].x = torch.tensor(...)
-        data['user', 'connect', 'satellite'].edge_index = torch.tensor(...)  # 边
-        data['user', 'connect', 'satellite'].edge_attr = torch.tensor(...)   # 边特征
-        ```
-        
-        Args:
-            graph: HeteroGraphData实例
-            
-        Returns:
-            PyTorch Geometric的HeteroData对象
-        """
-        try:
-            import torch
-            from torch_geometric.data import HeteroData
-        except ImportError:
-            raise ImportError("需要安装PyTorch Geometric: pip install torch-geometric")
-        
-        data = HeteroData()
-        
-        # 添加节点特征
-        for node_type, features in graph.node_features.items():
-            data[node_type].x = torch.tensor(features, dtype=torch.float32)
-        
-        # 添加边
-        for edge_type, (src, dst) in graph.edge_index.items():
-            data[edge_type].edge_index = torch.tensor(
-                np.stack([src, dst], axis=0),
-                dtype=torch.long
-            )
-            
-            # 添加边特征
-            if edge_type in graph.edge_features:
-                data[edge_type].edge_attr = torch.tensor(
-                    graph.edge_features[edge_type],
-                    dtype=torch.float32
-                )
-        
-        return data
-    
-    def to_dgl(self, graph: HeteroGraphData):
-        """
-        转换为DGL的DGLHeteroGraph格式
-        
-        【DGL异质图结构】
-        ```python
-        import dgl
-        
-        # 创建异质图
-        hetero_graph = dgl.heterograph({
-            ('user', 'connect', 'satellite'): (src_tensor, dst_tensor),
-            ('satellite', 'isl', 'satellite'): (src_tensor, dst_tensor),
-        })
-        
-        # 添加节点特征
-        hetero_graph.nodes['satellite'].data['feat'] = torch.tensor(...)
-        
-        # 添加边特征
-        hetero_graph.edges['connect'].data['feat'] = torch.tensor(...)
-        ```
-        
-        Args:
-            graph: HeteroGraphData实例
-            
-        Returns:
-            DGL的DGLHeteroGraph对象
-        """
-        try:
-            import torch
-            import dgl
-        except ImportError:
-            raise ImportError("需要安装DGL: pip install dgl")
-        
-        # 构建边字典
-        graph_data = {}
-        for edge_type, (src, dst) in graph.edge_index.items():
-            graph_data[edge_type] = (
-                torch.tensor(src, dtype=torch.long),
-                torch.tensor(dst, dtype=torch.long)
-            )
-        
-        # 创建异质图，需要指定节点数量
-        hetero_graph = dgl.heterograph(
-            graph_data,
-            num_nodes_dict=graph.num_nodes
-        )
-        
-        # 添加节点特征
-        for node_type, features in graph.node_features.items():
-            hetero_graph.nodes[node_type].data['feat'] = torch.tensor(
-                features, dtype=torch.float32
-            )
-        
-        # 添加边特征
-        for edge_type, features in graph.edge_features.items():
-            etype_name = edge_type[1]  # 边类型名称
-            hetero_graph.edges[etype_name].data['feat'] = torch.tensor(
-                features, dtype=torch.float32
-            )
-        
-        return hetero_graph
-    
-    # ================================================================
-    #                  元路径相关方法
-    # ================================================================
-    
     def get_metapaths(self) -> List[List[Tuple[str, str, str]]]:
         """
         获取HAN使用的元路径
@@ -456,95 +297,3 @@ class HeteroGraphBuilder:
             [('satellite', 'isl', 'satellite'), ('satellite', 'isl', 'satellite')],
         ]
         return metapaths
-    
-    def compute_metapath_adjacency(
-        self, 
-        graph: HeteroGraphData,
-        metapath: List[Tuple[str, str, str]]
-    ) -> np.ndarray:
-        """
-        计算元路径邻接矩阵
-        
-        【原理】
-        元路径邻接矩阵 = A1 @ A2 @ ... @ An
-        其中Ai是元路径中第i条边的邻接矩阵
-        
-        例如U-S-U元路径：
-        A_USU = A_US @ A_SU
-        
-        结果矩阵[i,j]=k表示用户i和用户j之间有k条U-S-U路径
-        
-        Args:
-            graph: 异质图数据
-            metapath: 元路径
-            
-        Returns:
-            元路径邻接矩阵
-        """
-        adj = None
-        
-        for edge_type in metapath:
-            if edge_type not in graph.edge_index:
-                # 检查是否有反向边
-                reverse_type = (edge_type[2], 'rev_' + edge_type[1], edge_type[0])
-                if reverse_type in graph.edge_index:
-                    edge_type = reverse_type
-                else:
-                    raise ValueError(f"边类型 {edge_type} 不存在于图中")
-            
-            src, dst = graph.edge_index[edge_type]
-            src_type, _, dst_type = edge_type
-            
-            # 构建稀疏邻接矩阵
-            num_src = graph.num_nodes[src_type]
-            num_dst = graph.num_nodes[dst_type]
-            
-            # 创建邻接矩阵
-            edge_adj = np.zeros((num_src, num_dst), dtype=np.float32)
-            for s, d in zip(src, dst):
-                edge_adj[s, d] = 1.0
-            
-            # 矩阵乘法
-            if adj is None:
-                adj = edge_adj
-            else:
-                adj = adj @ edge_adj
-        
-        return adj
-    
-    # ================================================================
-    #                  调试和可视化
-    # ================================================================
-    
-    def print_graph_summary(self, graph: HeteroGraphData):
-        """
-        打印图的摘要信息
-        
-        Args:
-            graph: 异质图数据
-        """
-        print("=" * 60)
-        print("异质图摘要")
-        print("=" * 60)
-        
-        print("\n【节点信息】")
-        for node_type, count in graph.num_nodes.items():
-            feat_dim = graph.node_features[node_type].shape[1]
-            print(f"  {node_type}: {count} 个节点, 特征维度 = {feat_dim}")
-        
-        print("\n【边信息】")
-        for edge_type, (src, dst) in graph.edge_index.items():
-            num_edges = src.shape[0]
-            src_type, rel, dst_type = edge_type
-            print(f"  {src_type} --[{rel}]--> {dst_type}: {num_edges} 条边")
-            
-            if edge_type in graph.edge_features:
-                feat_dim = graph.edge_features[edge_type].shape[1]
-                print(f"    边特征维度 = {feat_dim}")
-        
-        print("\n【元路径】")
-        for mp in self.get_metapaths():
-            path_str = " -> ".join([f"({e[0]})-[{e[1]}]->({e[2]})" for e in mp])
-            print(f"  {path_str}")
-        
-        print("=" * 60)

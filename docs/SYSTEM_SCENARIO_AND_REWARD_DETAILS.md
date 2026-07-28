@@ -94,36 +94,20 @@ action_i = (handover_action_i, offload_ratio_i)
 
 ## 5. Reward 组成
 
-当前 reward 同时考虑收益与惩罚：
+当前 reward 使用“QoS 门控任务收益 + 服务连接惩罚”：
 
-- 时延项：鼓励低时延任务处理。
-- 能耗项：鼓励更低能耗。
-- QoS 项：鼓励满足任务 deadline 和服务质量。
-- 切换项：奖励有效切换，惩罚失败切换和不必要切换成本。
-- 负载均衡项：鼓励选择队列压力较小的卫星。
-- 入队奖励：任务成功进入 MEC 队列时给予小奖励。
-- 队列满惩罚：目标 MEC 队列已满时惩罚。
+- deadline 内完成的任务：
+  `1 - 0.60 × clip(时延/deadline) - 0.10 × clip(能耗/10J)`；
+- 超时或最终失败的任务：固定为 `-1`；
+- 尚未结算的任务：暂不计分，完成或失败后通过 `pending_rewards` 发放；
+- 服务中断：按用户在当前时隙内的中断比例计罚，完整中断最多 `-0.30`；
+- 切换失败：固定 `-0.20`，旧链路仍有效时不产生服务中断惩罚；
+- 全局 reward：所有用户 reward 的算术平均值。
 
-主要 reward 权重：
-
-| 参数 | 当前默认值 |
-| --- | --- |
-| `reward_delay_weight` | `0.35` |
-| `reward_energy_weight` | `0.05` |
-| `reward_handover_weight` | `0.10` |
-| `reward_load_balance_weight` | `0.05` |
-| `reward_qos_weight` | `0.40` |
-| `reward_service_continuity_weight` | `0.15` |
-| `reward_deadline_slack_weight` | `0.25` |
-| `reward_deadline_penalty` | `1.00` |
-| `reward_failed_task_penalty` | `0.80` |
-| `reward_enqueue_bonus` | `0.0` |
-| `reward_queue_full_penalty` | `0.3` |
-
-`reward_service_continuity` is kept as the legacy breakdown key, but it is now
-a signed service-interruption penalty: no interruption contributes `0`, and
-interrupted time contributes `-reward_service_continuity_weight *
-interruption_seconds / step_user_seconds`.
+成功切换不再获得额外正奖励，只承担实际切换时延对应的服务中断惩罚。负载均衡、
+队列压力、切换次数和动作合法性不进入 reward，分别由评价指标和 action mask 处理。
+完整公式、事件语义、默认参数和论文依据见
+[Reward 函数设计（方案二）](REWARD_WEIGHT_CONFIG.md)。
 
 ## 6. 关键统计指标
 

@@ -5,7 +5,7 @@
 """
 
 import numpy as np
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -19,7 +19,7 @@ class UserState(Enum):
     IDLE = 0          # 空闲，未连接任何卫星
     CONNECTED = 1     # 已连接卫星，正常服务
     HANDOVER = 2      # 正在切换中
-    BLOCKED = 3       # 阻塞，无可用卫星
+    BLOCKED = 3       # 阻塞，无满足链路与资源约束的可用卫星
 
 
 @dataclass
@@ -115,6 +115,7 @@ class User:
             self.state = UserState.CONNECTED
             self.successful_handovers += 1
         else:
+            self.serving_satellite = -1
             self.state = UserState.BLOCKED
             self.failed_handovers += 1
         

@@ -13,9 +13,7 @@ MAPPO使用"集中式训练，分布式执行"(CTDE)范式：
 - 训练时：Critic可以访问全局状态（所有智能体的观测）
 - 执行时：Actor只使用本地观测
 
-【两种Critic实现】
-1. SharedCritic: 简单的MLP，输入为状态嵌入
-2. CentralizedCritic: 聚合所有智能体信息
+当前使用 CentralizedCritic 聚合所有智能体信息。
 
 【与Actor的区别】
 - Actor: 为每个智能体输出动作分布
@@ -36,13 +34,9 @@ MAPPO使用"集中式训练，分布式执行"(CTDE)范式：
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 from dataclasses import dataclass
-
-from .layers import MLP
-
 
 @dataclass
 class CriticConfig:
@@ -73,95 +67,6 @@ class CriticConfig:
     def __post_init__(self):
         if self.hidden_dims is None:
             self.hidden_dims = [256, 256, 128]
-
-
-class SharedCritic(nn.Module):
-    """
-    共享Critic网络
-    
-    【设计思想】
-    所有智能体共享同一个Critic来评估全局状态价值。
-    
-    输入可以是：
-    1. 全局状态嵌入（如所有节点嵌入的平均/池化）
-    2. 拼接所有智能体的嵌入
-    
-    【使用方式】
-    ```python
-    critic = SharedCritic(config)
-    
-    # 获取全局状态表示
-    global_state = get_global_state(embeddings)  # (batch, input_dim)
-    
-    # 估计价值
-    value = critic(global_state)  # (batch, 1)
-    ```
-    """
-    
-    def __init__(self, config: CriticConfig):
-        """
-        初始化Critic网络
-        
-        Args:
-            config: Critic配置
-        """
-        super().__init__()
-        
-        self.config = config
-        
-        # 构建MLP
-        layers = []
-        prev_dim = config.input_dim
-        
-        for hidden_dim in config.hidden_dims:
-            layers.append(nn.Linear(prev_dim, hidden_dim))
-            if config.use_layer_norm:
-                layers.append(nn.LayerNorm(hidden_dim))
-            layers.append(nn.ReLU())
-            if config.dropout > 0:
-                layers.append(nn.Dropout(config.dropout))
-            prev_dim = hidden_dim
-        
-        # 输出层（单个值）
-        layers.append(nn.Linear(prev_dim, 1))
-        
-        self.net = nn.Sequential(*layers)
-        
-        # 初始化
-        if config.use_orthogonal_init:
-            self._orthogonal_init()
-    
-    def _orthogonal_init(self):
-        """
-        正交初始化
-        
-        【为什么使用正交初始化？】
-        1. 在深度网络中保持梯度范数
-        2. 避免梯度消失/爆炸
-        3. 在RL中特别有效（PPO论文推荐）
-        """
-        for m in self.net:
-            if isinstance(m, nn.Linear):
-                nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
-                nn.init.constant_(m.bias, 0)
-        
-        # 最后一层使用较小的增益
-        final_layer = self.net[-1]
-        if isinstance(final_layer, nn.Linear):
-            nn.init.orthogonal_(final_layer.weight, gain=self.config.init_gain)
-            nn.init.constant_(final_layer.bias, 0)
-    
-    def forward(self, state_embedding: torch.Tensor) -> torch.Tensor:
-        """
-        前向传播
-        
-        Args:
-            state_embedding: 全局状态嵌入, (batch_size, input_dim)
-            
-        Returns:
-            状态价值, (batch_size, 1)
-        """
-        return self.net(state_embedding)
 
 
 class CentralizedCritic(nn.Module):
@@ -290,64 +195,3 @@ class CentralizedCritic(nn.Module):
         value = self.value_net(combined)
         
         return value
-    
-    def get_value_from_graph(
-        self,
-        node_embeddings: Dict[str, torch.Tensor]
-    ) -> torch.Tensor:
-        """
-        从图嵌入直接计算价值（便捷接口）
-        
-        Args:
-            node_embeddings: HAN输出的节点嵌入字典
-            
-        Returns:
-            状态价值
-        """
-        user_emb = node_embeddings.get('user')
-        sat_emb = node_embeddings.get('satellite')
-        
-        return self.forward(user_emb, sat_emb)
-
-# ================================================================
-#                    工具函数
-# ================================================================
-
-def create_global_state(
-    user_embeddings: torch.Tensor,
-    satellite_embeddings: torch.Tensor,
-    method: str = 'concat_mean'
-) -> torch.Tensor:
-    """
-    创建全局状态表示
-    
-    【聚合方法】
-    - 'concat_mean': 拼接用户和卫星的平均嵌入
-    - 'concat_max': 拼接用户和卫星的最大嵌入
-    - 'attention': 使用注意力加权（需要额外参数）
-    
-    Args:
-        user_embeddings: (num_users, embed_dim)
-        satellite_embeddings: (num_sats, embed_dim)
-        method: 聚合方法
-        
-    Returns:
-        全局状态, (embed_dim * 2,) 或 (embed_dim,)
-    """
-    if method == 'concat_mean':
-        user_state = user_embeddings.mean(dim=0)
-        sat_state = satellite_embeddings.mean(dim=0)
-        return torch.cat([user_state, sat_state], dim=-1)
-    
-    elif method == 'concat_max':
-        user_state = user_embeddings.max(dim=0)[0]
-        sat_state = satellite_embeddings.max(dim=0)[0]
-        return torch.cat([user_state, sat_state], dim=-1)
-    
-    elif method == 'mean':
-        # 所有节点平均
-        all_embeddings = torch.cat([user_embeddings, satellite_embeddings], dim=0)
-        return all_embeddings.mean(dim=0)
-    
-    else:
-        raise ValueError(f"未知聚合方法: {method}")

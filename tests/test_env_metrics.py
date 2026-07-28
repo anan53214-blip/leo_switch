@@ -6,6 +6,7 @@ import pytest
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv, summarize_env_stats
 from src.environment.mec import MECConfig, MECServer
 from src.environment.user import UserState
+from src.environment.visibility import VisibilityInfo
 from scripts.compare_system_baselines import (
     HIGHER_IS_BETTER,
     REWARD_BREAKDOWN_KEYS,
@@ -248,20 +249,19 @@ def test_compare_summary_preserves_reward_breakdown_metrics():
         "avg_delay": 1.0,
         "total_tasks": 2,
         "completed_tasks": 2,
-        "reward_delay": 2.5,
-        "reward_energy": 1.5,
-        "reward_qos": 0.8,
-        "reward_service_continuity": 0.4,
-        "penalty_deadline": -0.1,
+        "reward_task_success": 2.0,
+        "penalty_delay": -0.5,
+        "penalty_energy": -0.1,
+        "penalty_service_interruption": -0.2,
     }
 
     result = summarize_results("example", [4.0], [summary])
     episode = result["episode_metrics"][0]
 
-    assert "reward_service_continuity" in REWARD_BREAKDOWN_KEYS
-    assert result["reward_delay"] == pytest.approx(2.5)
-    assert result["reward_service_continuity"] == pytest.approx(0.4)
-    assert episode["penalty_deadline"] == pytest.approx(-0.1)
+    assert "penalty_service_interruption" in REWARD_BREAKDOWN_KEYS
+    assert result["reward_task_success"] == pytest.approx(2.0)
+    assert result["penalty_delay"] == pytest.approx(-0.5)
+    assert episode["penalty_service_interruption"] == pytest.approx(-0.2)
 
 
 def test_stats_summary_removes_custom_composite_latency_score():
@@ -342,7 +342,7 @@ def test_blocked_pending_task_expires_as_deadline_violation():
         env.close()
 
 
-def test_expired_pending_task_adds_deadline_penalty_signal():
+def test_expired_pending_task_adds_single_failure_penalty():
     env = _build_single_user_env(task_arrival_prob=1.0)
 
     try:
@@ -355,9 +355,10 @@ def test_expired_pending_task_adds_deadline_penalty_signal():
         env.current_time = 1.0
         env._expire_pending_user_tasks()
 
-        assert env.stats['penalty_deadline'] < 0.0
-        assert env.stats['reward_energy'] == 0.0
-        assert env.pending_rewards[0] < 0.0
+        assert env.stats['penalty_task_failure'] == pytest.approx(-1.0)
+        assert env.stats['penalty_delay'] == pytest.approx(0.0)
+        assert env.stats['penalty_energy'] == pytest.approx(0.0)
+        assert env.pending_rewards[0] == pytest.approx(-1.0)
     finally:
         env.close()
 
@@ -415,30 +416,64 @@ def test_handover_frequency_uses_time_normalized_handover_count():
     assert summary['handover_frequency'] == pytest.approx(0.08)
 
 
-def test_handover_success_probability_prefers_high_quality_targets():
+def test_handover_frequency_uses_only_committed_handovers_in_new_schema():
+    summary = summarize_env_stats({
+        'total_user_seconds': 100.0,
+        'total_handovers': 8,
+        'handover_attempts': 8,
+        'handover_committed': 3,
+        'successful_handovers': 3,
+        'failed_handovers': 5,
+    })
+
+    assert summary['handover_frequency'] == pytest.approx(0.03)
+    assert summary['handover_success_rate'] == pytest.approx(3 / 8)
+
+
+def test_forced_task_failure_is_included_in_resolution_and_failure_rates():
+    summary = summarize_env_stats({
+        'total_tasks': 10,
+        'completed_tasks': 6,
+        'deadline_violations': 2,
+        'failed_tasks': 1,
+    })
+
+    assert summary['resolved_tasks'] == 9
+    assert summary['pending_tasks'] == 1
+    assert summary['task_failure_rate'] == pytest.approx(0.3)
+    assert summary['deadline_violation_rate'] == pytest.approx(0.2)
+
+
+def test_handover_link_admission_uses_hard_quality_thresholds():
     env = _build_single_user_env()
 
     try:
-        high_quality = env._compute_handover_success_probability(
-            elevation_deg=70.0,
-            rvt_seconds=180.0,
-            snr_db=20.0,
-            utilization=0.2,
-            queue_ratio=0.1,
-            migration_load=0,
+        env.channel.compute_snr_db = lambda *_: 20.0
+        feasible, reason = env._check_handover_link_feasibility(
+            VisibilityInfo(
+                sat_id=0,
+                is_visible=True,
+                elevation_deg=70.0,
+                azimuth_deg=0.0,
+                distance_km=700.0,
+                rvt_seconds=180.0,
+            )
         )
-        low_quality = env._compute_handover_success_probability(
-            elevation_deg=12.0,
-            rvt_seconds=10.0,
-            snr_db=-3.0,
-            utilization=0.95,
-            queue_ratio=0.9,
-            migration_load=5,
+        rejected, rejected_reason = env._check_handover_link_feasibility(
+            VisibilityInfo(
+                sat_id=0,
+                is_visible=True,
+                elevation_deg=70.0,
+                azimuth_deg=0.0,
+                distance_km=700.0,
+                rvt_seconds=10.0,
+            )
         )
 
-        assert high_quality > low_quality
-        assert 0.1 <= low_quality <= 0.995
-        assert 0.1 <= high_quality <= 0.995
+        assert feasible
+        assert reason is None
+        assert not rejected
+        assert rejected_reason == "rvt_below_threshold"
     finally:
         env.close()
 
