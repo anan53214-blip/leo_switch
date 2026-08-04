@@ -125,7 +125,7 @@ class MECServer:
     @property
     def utilization(self) -> float:
         """CPU利用率"""
-        return 1.0 - (self.available_freq_ghz / max(self.total_capacity_ghz, 1e-6))
+        return float(np.clip(self.current_load, 0.0, 1.0))
     
     def add_user(self, user_id: int):
         """添加连接用户"""
@@ -306,9 +306,19 @@ class MECServer:
         freq_per_task_ghz = self.total_capacity_ghz / num_active
         cycles_per_task = freq_per_task_ghz * 1e9 * time_step  # 本步可处理的 cycles
         
-        # 更新负载
-        self.available_freq_ghz = 0.0  # 所有资源都在使用
-        self.current_load = 1.0
+        # 本 slot 实际需求占总容量的比例。旧实现只要队列非空就恒为 1，
+        # 导致观测、负载公平性和绘图指标退化成二值量。
+        slot_capacity_cycles = self.total_capacity_ghz * 1e9 * time_step
+        requested_cycles = sum(
+            max(float(task['remaining_cycles']), 0.0)
+            for task in active_tasks
+        )
+        self.current_load = float(np.clip(
+            requested_cycles / max(slot_capacity_cycles, 1e-9),
+            0.0,
+            1.0,
+        ))
+        self.available_freq_ghz = self.total_capacity_ghz * (1.0 - self.current_load)
         
         tasks_to_remove = []
         
@@ -343,6 +353,8 @@ class MECServer:
                 total_delay = task['upload_delay'] + queue_wait + processing_time + task['download_delay']
                 
                 task['total_delay'] = total_delay
+                task['queue_wait'] = queue_wait
+                task['processing_time'] = processing_time
                 task['deadline_met'] = total_delay <= task['max_delay']
                 task['finish_time'] = finish_time
                 
@@ -357,6 +369,15 @@ class MECServer:
                 if elapsed > task['max_delay']:
                     task['status'] = 'timeout'
                     task['total_delay'] = elapsed
+                    task['queue_wait'] = max(
+                        float(task['start_processing_time'])
+                        - float(task['arrival_time']),
+                        0.0,
+                    )
+                    task['processing_time'] = max(
+                        slot_end - float(task['start_processing_time']),
+                        0.0,
+                    )
                     task['deadline_met'] = False
                     task['finish_time'] = slot_end
                     

@@ -540,7 +540,9 @@ class SemanticAttention(nn.Module):
     def forward(
         self,
         z_list: List[torch.Tensor],
-        return_weights: bool = False
+        return_weights: bool = False,
+        batch_index: Optional[torch.Tensor] = None,
+        num_graphs: Optional[int] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         前向传播
@@ -557,16 +559,47 @@ class SemanticAttention(nn.Module):
         z_stack = torch.stack(z_list, dim=0)
         num_metapaths, num_nodes, embed_dim = z_stack.shape
         
-        # 计算每条元路径的平均注意力分数
-        # (K, N, D) -> (K, N, 1) -> mean over N -> (K, 1)
-        scores = self.attention(z_stack).mean(dim=1)  # (K, 1)
-        
-        # Softmax得到权重
-        beta = F.softmax(scores, dim=0)  # (K, 1)
-        
-        # 加权求和
-        # (K, 1, 1) * (K, N, D) -> sum -> (N, D)
-        z_final = (beta.unsqueeze(-1) * z_stack).sum(dim=0)
+        per_node_scores = self.attention(z_stack).squeeze(-1)  # (K, N)
+        if batch_index is None:
+            # 单图：所有节点共享每条元路径的语义权重。
+            scores = per_node_scores.mean(dim=1, keepdim=True)  # (K, 1)
+            beta = F.softmax(scores, dim=0)
+            z_final = (beta.unsqueeze(-1) * z_stack).sum(dim=0)
+        else:
+            if batch_index.ndim != 1 or batch_index.numel() != num_nodes:
+                raise ValueError(
+                    "batch_index must be one-dimensional and aligned with nodes"
+                )
+            if num_graphs is None:
+                num_graphs = (
+                    int(batch_index.max().item()) + 1
+                    if batch_index.numel()
+                    else 0
+                )
+            if num_graphs <= 0:
+                raise ValueError("num_graphs must be positive for batched graphs")
+
+            # Each disconnected graph keeps its own semantic-attention
+            # weights. Averaging over the union would couple rollout steps.
+            expanded_batch = batch_index.unsqueeze(0).expand(
+                num_metapaths,
+                -1,
+            )
+            score_sums = torch.zeros(
+                num_metapaths,
+                num_graphs,
+                dtype=per_node_scores.dtype,
+                device=per_node_scores.device,
+            )
+            score_sums.scatter_add_(1, expanded_batch, per_node_scores)
+            counts = torch.bincount(
+                batch_index,
+                minlength=num_graphs,
+            ).to(per_node_scores.dtype).clamp_min_(1.0)
+            scores = score_sums / counts.unsqueeze(0)
+            beta = F.softmax(scores, dim=0)  # (K, G)
+            node_weights = beta[:, batch_index].unsqueeze(-1)  # (K, N, 1)
+            z_final = (node_weights * z_stack).sum(dim=0)
         
         if return_weights:
             return z_final, beta.squeeze(-1)

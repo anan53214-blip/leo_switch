@@ -1,0 +1,31 @@
+
+$ /home/pjpjq/miniconda3/envs/satellite.env/bin/python scripts/compare_system_baselines.py --run-mode compare_only --system-run-dir /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u25_multiuser_20260730 --output-dir /home/pjpjq/LEO_switch/results/baseline_compare/multiuser_scaling_multiuser_20260730/u25 --episodes 10 --max-steps 512 --total-timesteps 200000 --seed 42 --device cuda --num-users 25 --best-model-metric reward --compare-ranking-metric reward --plot-window 5 --early-stop-patience 0 --baselines attn_mappo mappo_no_han pdqn han_pdqn random min_distance full_local joint_greedy
+2026-07-31 15:13:09,517 | INFO | 初始化环境...
+2026-07-31 15:13:09,522 | INFO |   - 原始观测维度: 73
+2026-07-31 15:13:09,522 | INFO |   - HAN嵌入维度: 64
+2026-07-31 15:13:09,523 | INFO |   - 拼接后观测维度: 137 (raw 73 + HAN 64)
+2026-07-31 15:13:09,523 | INFO |   - 全局状态维度: 3425
+2026-07-31 15:13:09,523 | INFO |   - HAN+Attn policy observation dim: 143 (base HAN+MAPPO obs + shared constraints 6)
+2026-07-31 15:13:09,523 | INFO |   - HAN+Attn global state dim: 3575
+2026-07-31 15:13:09,523 | INFO | 初始化图构建器...
+2026-07-31 15:13:09,523 | INFO | 初始化HAN编码器...
+2026-07-31 15:13:09,808 | INFO |   - HAN参数量: 200,640
+2026-07-31 15:13:09,808 | INFO | Initializing HAN+Attn MAPPO with context-aware candidate features...
+2026-07-31 15:13:14,049 | INFO |   - HAN+Attn Actor params: 123,524
+2026-07-31 15:13:14,049 | INFO |   - Critic params: 194,305
+2026-07-31 15:13:14,049 | INFO | 初始化经验缓冲区...
+2026-07-31 15:13:14,051 | INFO | 训练器初始化完成，设备: cuda
+2026-07-31 15:13:14,051 | INFO | 环境: 25 用户, 66 卫星
+Traceback (most recent call last):
+  File "/home/pjpjq/LEO_switch/scripts/compare_system_baselines.py", line 4994, in <module>
+    main()
+  File "/home/pjpjq/LEO_switch/scripts/compare_system_baselines.py", line 4756, in main
+    system_method = evaluate_system_checkpoint(
+  File "/home/pjpjq/LEO_switch/scripts/compare_system_baselines.py", line 2696, in evaluate_system_checkpoint
+    return evaluate_mappo_checkpoint_with_trainer(
+  File "/home/pjpjq/LEO_switch/scripts/compare_system_baselines.py", line 2733, in evaluate_mappo_checkpoint_with_trainer
+    trainer.mappo.actor.load_state_dict(checkpoint_payload["actor_state_dict"])
+  File "/home/pjpjq/miniconda3/envs/satellite.env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2584, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for CandidateAttentionActor:
+	size mismatch for user_proj.0.weight: copying a param with shape torch.Size([80, 148]) from checkpoint, the shape in current model is torch.Size([80, 143]).

@@ -150,7 +150,7 @@ class FeatureExtractor:
         self.max_rvt = 600.0               # 最大RVT(秒)，约10分钟
         self.max_snr = 50.0                # 最大SNR(dB)
         self.max_data_rate = 500.0         # 最大传输速率(Mbps)
-        self.max_queue_length = 100        # 最大队列长度
+        self.max_queue_length = 100        # 缺失 MEC 配置时的兼容回退值
         self.max_users_per_sat = 50        # 每卫星最大用户数
         
         # 任务参数归一化
@@ -242,10 +242,55 @@ class FeatureExtractor:
         for sat_id in range(num_sats):
             server = env.mec_manager.get_server(sat_id)
             if server:
-                features[sat_id, idx] = server.utilization
-                features[sat_id, idx+1] = server.queue_length / self.max_queue_length
-                features[sat_id, idx+2] = len(server.connected_users) / self.max_users_per_sat
-                features[sat_id, idx+3] = server.available_freq_ghz / server.config.satellite_max_cpu_freq_ghz
+                queue_capacity = max(
+                    float(
+                        getattr(
+                            server.config,
+                            "max_queue_size",
+                            self.max_queue_length,
+                        )
+                    ),
+                    1.0,
+                )
+                total_capacity = float(
+                    getattr(server, "total_capacity_ghz", 0.0)
+                )
+                if total_capacity <= 0.0:
+                    total_capacity = (
+                        float(
+                            getattr(
+                                server.config,
+                                "satellite_max_cpu_freq_ghz",
+                                1.0,
+                            )
+                        )
+                        * max(
+                            float(
+                                getattr(
+                                    server.config,
+                                    "satellite_num_cores",
+                                    1,
+                                )
+                            ),
+                            1.0,
+                        )
+                    )
+                features[sat_id, idx] = np.clip(server.utilization, 0.0, 1.0)
+                features[sat_id, idx+1] = np.clip(
+                    server.queue_length / queue_capacity,
+                    0.0,
+                    1.0,
+                )
+                features[sat_id, idx+2] = np.clip(
+                    len(server.connected_users) / max(float(env.num_users), 1.0),
+                    0.0,
+                    1.0,
+                )
+                features[sat_id, idx+3] = np.clip(
+                    server.available_freq_ghz / max(total_capacity, 1e-6),
+                    0.0,
+                    1.0,
+                )
         
         return features
     
@@ -253,7 +298,7 @@ class FeatureExtractor:
         """
         提取用户节点特征
         
-        【用户特征向量组成】(共13维)
+        【用户特征向量组成】(共16维；末尾新增任务年龄、剩余时限和积压)
         ┌─────────────────────────────────────────────────────────┐
         │  索引  │  特征名称          │  物理含义                  │
         ├─────────────────────────────────────────────────────────┤
@@ -274,10 +319,10 @@ class FeatureExtractor:
             env: 环境实例
             
         Returns:
-            特征矩阵 shape=(num_users, 13)
+            特征矩阵 shape=(num_users, 16)
         """
         num_users = env.num_users
-        feat_dim = 13
+        feat_dim = 16
         features = np.zeros((num_users, feat_dim), dtype=np.float32)
         
         for user_id, user in enumerate(env.user_manager.users):
@@ -327,8 +372,23 @@ class FeatureExtractor:
             else:
                 # 无任务时填充0
                 idx += 4
+
+            # ------ 6. 任务动态状态 (3维) ------
+            user_task_queues = getattr(env, "user_task_queues", {})
+            queue_length = len(user_task_queues.get(user_id, []))
+            if task is not None:
+                elapsed = max(float(env.current_time) - float(task.creation_time), 0.0)
+                deadline = max(float(task.max_delay), 1e-6)
+                features[user_id, idx] = np.clip(elapsed / deadline, 0.0, 2.0)
+                features[user_id, idx + 1] = np.clip(
+                    (deadline - elapsed) / deadline,
+                    0.0,
+                    1.0,
+                )
+            features[user_id, idx + 2] = np.clip(queue_length / 10.0, 0.0, 1.0)
+            idx += 3
             
-            # ------ 6. 历史统计 (2维) ------
+            # ------ 7. 历史统计 (2维) ------
             # 切换次数
             max_handovers = 20
             features[user_id, idx] = min(user.handover_count, max_handovers) / max_handovers
@@ -341,7 +401,7 @@ class FeatureExtractor:
                 features[user_id, idx] = 1.0  # 无切换时认为质量完美
             idx += 1
             
-            # ------ 7. RVT预警信号 (1维) ------
+            # ------ 8. RVT预警信号 (1维) ------
             rvt_threshold = getattr(env.config, 'rvt_threshold_sec', 60.0)
             if user.serving_satellite >= 0:
                 vis_info = env._get_satellite_visibility(user, user.serving_satellite)
@@ -559,9 +619,7 @@ class FeatureExtractor:
             return edges, features
         
         # 预计算所有ISL边索引（拓扑固定，只需算一次距离）
-        src_list = []
-        dst_list = []
-        link_types = []
+        topology_edges = set()
         
         for sat_id in range(env.num_satellites):
             plane_id = sat_id // sats_per_plane
@@ -569,17 +627,20 @@ class FeatureExtractor:
             
             # 同轨道前向邻居
             next_sat_id = plane_id * sats_per_plane + (sat_idx + 1) % sats_per_plane
-            if sat_id < next_sat_id:
-                src_list.append(sat_id)
-                dst_list.append(next_sat_id)
-                link_types.append(0.0)
+            topology_edges.add(
+                (min(sat_id, next_sat_id), max(sat_id, next_sat_id), 0.0)
+            )
             
             # 跨轨道邻居
             right_sat_id = ((plane_id + 1) % num_planes) * sats_per_plane + sat_idx
-            if sat_id < right_sat_id:
-                src_list.append(sat_id)
-                dst_list.append(right_sat_id)
-                link_types.append(1.0)
+            topology_edges.add(
+                (min(sat_id, right_sat_id), max(sat_id, right_sat_id), 1.0)
+            )
+
+        ordered_edges = sorted(topology_edges)
+        src_list = [item[0] for item in ordered_edges]
+        dst_list = [item[1] for item in ordered_edges]
+        link_types = [item[2] for item in ordered_edges]
         
         if not src_list:
             return [], np.zeros((0, 3), dtype=np.float32)

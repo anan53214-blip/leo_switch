@@ -49,6 +49,9 @@ class MultiAgentRolloutBuffer:
         self.candidate_masks = np.ones(
             (buffer_size, num_agents, max_candidates + 1), dtype=np.float32
         )
+        self.continuous_action_masks = np.ones(
+            (buffer_size, num_agents), dtype=np.float32
+        )
         
 
         self.rewards = np.zeros(
@@ -57,6 +60,7 @@ class MultiAgentRolloutBuffer:
         
 
         self.dones = np.zeros(buffer_size, dtype=np.float32)
+        self.timeout_bootstrap_values = np.zeros(buffer_size, dtype=np.float32)
         
 
         self.log_probs = np.zeros(
@@ -107,7 +111,9 @@ class MultiAgentRolloutBuffer:
         value: float,
         log_probs: np.ndarray,
         candidate_masks: Optional[np.ndarray] = None,
+        continuous_action_masks: Optional[np.ndarray] = None,
         candidate_sat_ids: Optional[np.ndarray] = None,
+        timeout_bootstrap_value: float = 0.0,
         graph_snapshot: Optional[Any] = None,
     ):
         self.observations[self.pos] = obs
@@ -132,11 +138,14 @@ class MultiAgentRolloutBuffer:
             self.rewards[self.pos] = rewards
         
         self.dones[self.pos] = float(done)
+        self.timeout_bootstrap_values[self.pos] = float(timeout_bootstrap_value)
         self.values[self.pos] = value
         self.log_probs[self.pos] = log_probs
         
         if candidate_masks is not None:
             self.candidate_masks[self.pos] = candidate_masks
+        if continuous_action_masks is not None:
+            self.continuous_action_masks[self.pos] = continuous_action_masks
 
         if candidate_sat_ids is not None:
             self.candidate_sat_ids[self.pos] = candidate_sat_ids
@@ -164,9 +173,14 @@ class MultiAgentRolloutBuffer:
                 next_value = self.values[step + 1]
             
 
+            bootstrap_value = (
+                self.timeout_bootstrap_values[step]
+                if self.dones[step]
+                else next_value * next_non_terminal
+            )
             delta = (
-                self.rewards[step]  # (num_agents,)
-                + self.gamma * next_value * next_non_terminal
+                self.rewards[step]
+                + self.gamma * bootstrap_value
                 - self.values[step]
             )
             
@@ -178,7 +192,8 @@ class MultiAgentRolloutBuffer:
     def get_batches(
         self,
         batch_size: int,
-        shuffle: bool = True
+        shuffle: bool = True,
+        group_by_time: bool = False,
     ) -> Generator[Dict[str, torch.Tensor], None, None]:
 
         total_samples = self.pos * self.num_agents
@@ -194,6 +209,7 @@ class MultiAgentRolloutBuffer:
         flat_masks = self.candidate_masks[:self.pos].reshape(
             -1, self.max_candidates + 1
         )
+        flat_continuous_masks = self.continuous_action_masks[:self.pos].reshape(-1)
         
 
         flat_log_probs = self.log_probs[:self.pos].reshape(-1)
@@ -231,15 +247,41 @@ class MultiAgentRolloutBuffer:
         )
 
 
-        if shuffle:
-            indices = np.random.permutation(total_samples)
+        if group_by_time:
+            # Keep every agent from a selected time step together. Shuffling
+            # individual agents makes each PPO minibatch touch almost every
+            # graph snapshot and causes massive duplicate HAN re-encoding.
+            time_order = (
+                np.random.permutation(self.pos)
+                if shuffle
+                else np.arange(self.pos, dtype=np.int64)
+            )
+            time_steps_per_batch = max(
+                1,
+                int(round(float(batch_size) / float(self.num_agents))),
+            )
+            batch_indices_iter = (
+                (
+                    selected_times[:, None] * self.num_agents
+                    + np.arange(self.num_agents, dtype=np.int64)[None, :]
+                ).reshape(-1)
+                for start in range(0, self.pos, time_steps_per_batch)
+                for selected_times in [
+                    time_order[start:start + time_steps_per_batch]
+                ]
+            )
         else:
-            indices = np.arange(total_samples)
-        
+            indices = (
+                np.random.permutation(total_samples)
+                if shuffle
+                else np.arange(total_samples)
+            )
+            batch_indices_iter = (
+                indices[start:min(start + batch_size, total_samples)]
+                for start in range(0, total_samples, batch_size)
+            )
 
-        for start in range(0, total_samples, batch_size):
-            end = min(start + batch_size, total_samples)
-            batch_indices = indices[start:end]
+        for batch_indices in batch_indices_iter:
             
             yield {
                 'observations': torch.tensor(
@@ -259,6 +301,11 @@ class MultiAgentRolloutBuffer:
                 ),
                 'candidate_masks': torch.tensor(
                     flat_masks[batch_indices], device=self.device, dtype=torch.float32
+                ),
+                'continuous_action_masks': torch.tensor(
+                    flat_continuous_masks[batch_indices],
+                    device=self.device,
+                    dtype=torch.float32,
                 ),
                 'candidate_sat_ids': torch.tensor(
                     flat_candidate_sat_ids[batch_indices], device=self.device, dtype=torch.long

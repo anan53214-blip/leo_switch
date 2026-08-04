@@ -23,6 +23,7 @@ from scripts.run_multiuser_scaling_suite import (
     plot_scaling_metrics,
 )
 from scripts.train import (
+    ENVIRONMENT_SCHEMA_VERSION,
     HANMAPPOTrainer,
     compute_model_selection_score,
     summarize_env_stats_with_load_balance,
@@ -197,13 +198,16 @@ def test_new_paper_figures_reject_old_or_incomplete_schema(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="environment_schema_version=5"):
+    with pytest.raises(
+        ValueError,
+        match=f"environment_schema_version={ENVIRONMENT_SCHEMA_VERSION}",
+    ):
         _validate_comparison_schema(compare_dir)
 
     summary_path.write_text(
         json.dumps(
             {
-                "environment_schema_version": 5,
+                "environment_schema_version": ENVIRONMENT_SCHEMA_VERSION,
                 "metric_schema_version": 2,
                 "env_config": {},
             }
@@ -259,6 +263,10 @@ def _write_complete_training_history(
         "total_timesteps": config.total_timesteps,
         "max_steps": config.max_steps,
         "n_steps": config.n_steps,
+        "batch_size": config.batch_size,
+        "learning_rate": config.learning_rate,
+        "n_epochs": config.n_epochs,
+        "algorithm": "mappo",
         "eval_interval": config.eval_interval,
         "eval_episodes": config.eval_episodes,
         "save_interval": config.save_interval,
@@ -269,13 +277,15 @@ def _write_complete_training_history(
         "seed": seed,
         "reward_delay_weight": defaults.reward_delay_weight,
         "reward_energy_weight": defaults.reward_energy_weight,
+        "reward_energy_reference_j": defaults.reward_energy_reference_j,
         "reward_interruption_weight": defaults.reward_interruption_weight,
         "reward_failed_handover_penalty": defaults.reward_failed_handover_penalty,
+        "reward_load_balance_weight": config.reward_load_balance_weight,
     }
     (run_dir / "training_history.json").write_text(
         json.dumps(
             {
-                "environment_schema_version": 5,
+                "environment_schema_version": ENVIRONMENT_SCHEMA_VERSION,
                 "config": history_config,
                 "summary": {"total_steps": total_steps},
             }

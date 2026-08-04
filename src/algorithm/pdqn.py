@@ -28,7 +28,7 @@ class PDQNConfig:
     epsilon_decay_steps: int = 100_000
     grad_clip_norm: float = 1.0
     param_loss_coef: float = 0.1
-    bc_loss_coef: float = 0.001
+    bc_loss_coef: float = 0.0
     seed: int | None = None
     device: str = "cpu"
 

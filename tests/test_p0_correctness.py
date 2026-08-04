@@ -6,7 +6,12 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from scripts.train import HANMAPPOTrainer, TrainConfig
+from scripts.train import (
+    ENVIRONMENT_SCHEMA_VERSION,
+    HANMAPPOTrainer,
+    MODEL_SCHEMA_VERSION,
+    TrainConfig,
+)
 from src.algorithm.buffer import MultiAgentRolloutBuffer
 from src.environment.gym_env import EnvConfig, LEOSatelliteEnv
 from src.graph.builder import HeteroGraphBuilder
@@ -107,6 +112,128 @@ def test_gae_does_not_cross_episode_boundary():
 
     assert buffer.advantages[0, 0] == pytest.approx(1.0)
     assert buffer.advantages[1, 0] == pytest.approx(10.0)
+
+
+def test_time_limit_bootstraps_terminal_value_without_crossing_reset():
+    buffer = MultiAgentRolloutBuffer(
+        buffer_size=1,
+        num_agents=1,
+        obs_dim=1,
+        global_state_dim=1,
+        gamma=0.9,
+        gae_lambda=0.95,
+    )
+    buffer.add(
+        obs=np.zeros((1, 1), dtype=np.float32),
+        global_state=np.zeros(1, dtype=np.float32),
+        satellite_embeddings=None,
+        actions_discrete=np.zeros(1, dtype=np.int64),
+        actions_continuous=np.zeros(1, dtype=np.float32),
+        rewards=np.ones(1, dtype=np.float32),
+        done=True,
+        value=2.0,
+        log_probs=np.zeros(1, dtype=np.float32),
+        timeout_bootstrap_value=3.0,
+    )
+
+    buffer.compute_returns_and_advantages(last_value=99.0, last_done=True)
+
+    assert buffer.advantages[0, 0] == pytest.approx(1.0 + 0.9 * 3.0 - 2.0)
+
+
+def test_rollout_buffer_grouped_batches_keep_complete_time_steps():
+    buffer = MultiAgentRolloutBuffer(
+        buffer_size=5,
+        num_agents=3,
+        obs_dim=1,
+        global_state_dim=3,
+        device="cpu",
+    )
+    common = {
+        "global_state": np.zeros(3, dtype=np.float32),
+        "satellite_embeddings": None,
+        "actions_discrete": np.zeros(3, dtype=np.int64),
+        "actions_continuous": np.zeros(3, dtype=np.float32),
+        "rewards": np.zeros(3, dtype=np.float32),
+        "done": False,
+        "value": 0.0,
+        "log_probs": np.zeros(3, dtype=np.float32),
+    }
+    for time_index in range(5):
+        buffer.add(
+            obs=np.full((3, 1), time_index, dtype=np.float32),
+            **common,
+        )
+
+    batches = list(
+        buffer.get_batches(
+            batch_size=7,
+            shuffle=False,
+            group_by_time=True,
+        )
+    )
+
+    observed_times = []
+    for batch in batches:
+        time_indices = batch["time_indices"].tolist()
+        agent_indices = batch["agent_indices"].tolist()
+        for time_index in sorted(set(time_indices)):
+            agents = [
+                agent
+                for batch_time, agent in zip(time_indices, agent_indices)
+                if batch_time == time_index
+            ]
+            assert agents == [0, 1, 2]
+            observed_times.append(time_index)
+
+    assert observed_times == [0, 1, 2, 3, 4]
+
+
+def test_batched_graph_encoding_matches_separate_graphs():
+    env = LEOSatelliteEnv(
+        EnvConfig(
+            num_users=3,
+            max_steps=5,
+            randomize_episode_start=False,
+            seed=7,
+        )
+    )
+    try:
+        env.reset(seed=7)
+        builder = HeteroGraphBuilder(add_reverse_edges=True)
+        first_graph = builder.build(env)
+        env._update_environment()
+        second_graph = builder.build(env)
+
+        trainer = object.__new__(HANMAPPOTrainer)
+        trainer.device = torch.device("cpu")
+        trainer.han_encoder = HANEncoder(
+            HANConfig(
+                hidden_dim=64,
+                out_dim=64,
+                num_heads=4,
+                dropout=0.0,
+            )
+        ).eval()
+
+        separate = [
+            trainer._encode_graph_snapshot(graph)
+            for graph in (first_graph, second_graph)
+        ]
+        batched = trainer._encode_graph_snapshots(
+            (first_graph, second_graph)
+        )
+
+        for node_type, graph_outputs in batched.items():
+            for graph_index, graph_output in enumerate(graph_outputs):
+                assert torch.allclose(
+                    graph_output,
+                    separate[graph_index][node_type],
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
+    finally:
+        env.close()
 
 
 def _elevations(env):
@@ -260,9 +387,9 @@ def test_han_parameters_change_after_ppo_update():
             map_location="cpu",
             weights_only=False,
         )
-        assert checkpoint["model_schema_version"] == 2
-        assert checkpoint["geometry_schema_version"] == 2
-        assert checkpoint["environment_schema_version"] == 5
+        assert checkpoint["model_schema_version"] == MODEL_SCHEMA_VERSION
+        assert checkpoint["geometry_schema_version"] == 3
+        assert checkpoint["environment_schema_version"] == ENVIRONMENT_SCHEMA_VERSION
         assert checkpoint["han_optimizer_state_dict"] is not None
         trainer.load_checkpoint(checkpoint_path)
     finally:

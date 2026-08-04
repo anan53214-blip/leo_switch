@@ -206,7 +206,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\plot_training_artifa
   --history HAN+PDQN=results\baseline_compare\xxx\learned_baselines\han_pdqn\training_history.json `
   --output-dir results\plot_only_comparison\selected_methods `
   --selection-metric avg_delay `
-  --plot-window 5
+  --plot-window 3
 ```
 
 说明：
@@ -214,7 +214,9 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\plot_training_artifa
 - `LABEL=PATH` 中的 `LABEL` 是图例显示名。
 - 第一条 `--history` 默认作为系统方法显示。
 - `--selection-metric` 用来从历史记录里选择代表性指标记录。
-- `--plot-window` 控制训练曲线平滑窗口。
+- `--plot-window` 控制训练曲线平滑窗口，默认值为 `3`。
+- reward 曲线统一读取原始 `mean_reward`，并只执行一次移动平均；
+  `recent_mean_reward` 不参与绘图。
 
 ### 3.2 从已有 comparison_summary.json 重新生成普通对比图
 
@@ -225,7 +227,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\plot_training_artifa
   --comparison-summary results\baseline_compare\xxx\comparison_summary.json `
   --output-dir results\baseline_compare\xxx\replot `
   --selection-metric avg_delay `
-  --plot-window 5
+  --plot-window 3
 ```
 
 也可以传入目录，脚本会自动读取目录下的 `comparison_summary.json`：
@@ -269,7 +271,7 @@ reward_distribution.png
 | `--comparison-summary` | 指定已有 `comparison_summary.json` 或其所在目录 |
 | `--output-dir` | 指定输出目录 |
 | `--selection-metric` | 指定用于选择代表记录和排序的指标，例如 `avg_delay` |
-| `--plot-window` | 指定训练曲线平滑窗口 |
+| `--plot-window` | 指定训练曲线平滑窗口，默认值为 `3` |
 
 ## 4. 常见问题
 

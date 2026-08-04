@@ -92,10 +92,10 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 pip install numpy scipy matplotlib gymnasium pyyaml
 
 # 快速验证
-python scripts/train.py --total_timesteps 100000 --max_steps 600 --eval_episodes 1
+python scripts/train.py --total_timesteps 100000 --max_steps 512 --eval_episodes 1
 
 # 标准训练（不传参数时也采用这组训练规模）
-python scripts/train.py --total_timesteps 300000 --max_steps 600
+python scripts/train.py --total_timesteps 150000 --max_steps 512 --n_steps 1024 --batch_size 512
 
 # 生成图表
 python scripts/plot_training_artifacts.py --comparison-summary results/baseline_compare/<run_id> --output-dir results/baseline_compare/<run_id>/replot

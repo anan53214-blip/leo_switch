@@ -21,16 +21,17 @@ from dataclasses import dataclass, fields
 from .constellation import WalkerConstellation
 from .visibility import VisibilityCalculator, VisibilityInfo
 from .user import User, UserState, UserGenerator, UserManager
-from .task import Task, TaskGenerator, TaskManager
-from .channel import SatelliteChannel
-from .mec import MECManager, OffloadingCalculator
+from .task import Task, TaskConfig, TaskGenerator, TaskManager
+from .channel import ChannelConfig, SatelliteChannel
+from .mec import MECConfig, MECManager, OffloadingCalculator
 
 
 TASK_SUCCESS_REWARD = 1.0
 TASK_FAILURE_PENALTY = 1.0
-REWARD_ENERGY_REFERENCE_J = 10.0
+REWARD_ENERGY_REFERENCE_J = 1.0
 REWARD_BREAKDOWN_KEYS = (
     'reward_task_success',
+    'reward_load_balance',
     'penalty_delay',
     'penalty_energy',
     'penalty_task_failure',
@@ -55,10 +56,11 @@ class EnvConfig:
     user_center_lat: float = 39.9      # 北京
     user_center_lon: float = 116.4
     user_radius_deg: float = 5.0       # 扩大用户分布范围，增加可见卫星差异
+    resample_users_on_reset: bool = True
     
     # 仿真参数
     time_step_sec: float = 1.0         # 时间步长 (秒)
-    max_steps: int = 600               # 每个 episode 的最大步数（10 分钟）
+    max_steps: int = 512               # 每个 episode 的最大步数（8 分 32 秒）
 
     # Episode 起始时间随机化
     randomize_episode_start: bool = True
@@ -70,19 +72,61 @@ class EnvConfig:
     # 切换参数
     handover_delay_sec: float = 0.6    # Moderate signaling cost
     rvt_threshold_sec: float = 60.0    # Encourage proactive switching
-    pre_handover_rvt_sec: float = 30.0  # Pre-handover RVT 阈值
+    pre_handover_rvt_sec: float = 60.0  # 与风险观测一致，允许提前切换
     handover_min_snr_db: float = -5.0  # 目标链路硬准入阈值
     
     # 任务参数
     task_arrival_prob: float = 0.35    # Moderate competition without pathological saturation
     min_effective_offload_ratio: float = 0.05  # Treat tiny noisy offload actions as local execution
     task_arrival_seed_offset: int = 7919
+    enable_task_trace: bool = False    # Opt-in task-level diagnostics; disabled during training
+
+    # 信道参数（写入 checkpoint，避免依赖模块中的隐式默认值）
+    carrier_frequency_ghz: float = 20.0
+    bandwidth_mhz: float = 10.0
+    satellite_tx_power_dbm: float = 40.0
+    satellite_antenna_gain_db: float = 34.0
+    user_tx_power_dbm: float = 24.0
+    user_antenna_gain_db: float = 38.5
+    noise_temperature_k: float = 354.81
+    noise_figure_db: float = 2.0
+    rain_attenuation_db: float = 0.0
+    atmospheric_loss_db: float = 0.3
+    pointing_loss_db: float = 0.5
+    polarization_loss_db: float = 0.3
+    implementation_loss_db: float = 1.0
+
+    # MEC/终端计算参数
+    satellite_cpu_freq_ghz: float = 5.0
+    satellite_max_cpu_freq_ghz: float = 8.0
+    satellite_num_cores: int = 4
+    max_queue_size: int = 6
+    user_cpu_freq_ghz: float = 0.5
+    user_max_cpu_freq_ghz: float = 1.5
+    kappa: float = 1e-27
+    user_idle_power_w: float = 0.05
+    result_ratio: float = 0.1
+
+    # 三类任务分布
+    light_data_range: Tuple[float, float] = (1e6, 3e6)
+    light_compute_range: Tuple[float, float] = (0.3e9, 0.8e9)
+    light_delay_range: Tuple[float, float] = (1.5, 3.0)
+    medium_data_range: Tuple[float, float] = (5e6, 10e6)
+    medium_compute_range: Tuple[float, float] = (1.2e9, 2.5e9)
+    medium_delay_range: Tuple[float, float] = (2.5, 5.5)
+    heavy_data_range: Tuple[float, float] = (12e6, 25e6)
+    heavy_compute_range: Tuple[float, float] = (3e9, 7e9)
+    heavy_delay_range: Tuple[float, float] = (4.0, 8.0)
     
-    # QoS 门控奖励：成功/失败固定为 +1/-1，仅保留四个可调系数
+    # QoS 门控奖励：成功/失败固定为 +1/-1，并加入可消融的协作公平性项
     reward_delay_weight: float = 0.60
     reward_energy_weight: float = 0.10
+    reward_energy_reference_j: float = REWARD_ENERGY_REFERENCE_J
     reward_interruption_weight: float = 0.30
     reward_failed_handover_penalty: float = 0.20
+    # Cooperative dense state reward over reachable MEC nodes. 0 disables the
+    # term and is the load-balancing ablation setting.
+    reward_load_balance_weight: float = 0.05
     
     # 随机种子
     seed: Optional[int] = None
@@ -281,6 +325,8 @@ def summarize_env_stats(stats: Dict[str, float]) -> Dict[str, float]:
         'load_variance_cdf': load_variance_cdf,
         'mec_load_fairness': mec_load_fairness,
         'jain_mec_load_fairness': jain_mec_load_fairness,
+        'active_mec_load_fairness': mec_load_fairness,
+        'reachable_jain_mec_load_fairness': jain_mec_load_fairness,
         'active_load_balance_score': mec_load_fairness,
         'avg_load_balance_score': mec_load_fairness,
     })
@@ -298,7 +344,7 @@ class LEOSatelliteEnv(gym.Env):
         - 用户状态 (1)
         - 当前服务卫星信息 (5)
         - 可见卫星信息 (K * 6)，K为最大可见卫星数
-        - 当前任务信息 (4)
+        - 当前任务静态信息与紧迫度/积压 (7)
         
     动作空间 (每个用户):
         - 离散: 切换决策 (0=不切换, 1~K=切换到第k个可见卫星)
@@ -352,6 +398,12 @@ class LEOSatelliteEnv(gym.Env):
             dtype=np.float32,
         )
         self._offload_task_meta: Dict[Tuple[int, int], Dict[str, float]] = {}
+        self._local_cpu_available_time = np.zeros(
+            self.config.num_users,
+            dtype=np.float64,
+        )
+        self._task_trace_active: Dict[Tuple[int, int], Dict[str, Any]] = {}
+        self._task_trace_records: List[Dict[str, Any]] = []
         
         # 可见性和 RVT 缓存绑定明确的几何版本。
         self.geometry_version = 0
@@ -371,6 +423,7 @@ class LEOSatelliteEnv(gym.Env):
         # 统计信息
         self.stats = self._build_stats()
         self._last_load_balance_score = 1.0
+        self._previous_load_balance_potential = 0.0
 
     def _make_task_arrival_rng(self, seed: Optional[int]) -> np.random.Generator:
         """Build a task-arrival RNG that is independent of action outcomes."""
@@ -407,16 +460,37 @@ class LEOSatelliteEnv(gym.Env):
     
     def _init_channel(self):
         """初始化信道"""
-        self.channel = SatelliteChannel()
+        self.channel_config = ChannelConfig(**{
+            item.name: getattr(self.config, item.name)
+            for item in fields(ChannelConfig)
+        })
+        self.channel = SatelliteChannel(self.channel_config)
     
     def _init_mec(self):
         """初始化MEC"""
-        self.mec_manager = MECManager(num_satellites=self.num_satellites)
-        self.offload_calc = OffloadingCalculator()
+        self.mec_config = MECConfig(**{
+            item.name: getattr(self.config, item.name)
+            for item in fields(MECConfig)
+        })
+        self.mec_manager = MECManager(
+            num_satellites=self.num_satellites,
+            config=self.mec_config,
+        )
+        self.offload_calc = OffloadingCalculator(
+            self.mec_config,
+            self.channel_config,
+        )
     
     def _init_task_generator(self):
         """初始化任务生成器"""
-        self.task_generator = TaskGenerator(seed=self.config.seed)
+        self.task_config = TaskConfig(**{
+            item.name: getattr(self.config, item.name)
+            for item in fields(TaskConfig)
+        })
+        self.task_generator = TaskGenerator(
+            config=self.task_config,
+            seed=self.config.seed,
+        )
         self.task_manager = TaskManager()
         
         # 当前每个用户的任务
@@ -477,6 +551,7 @@ class LEOSatelliteEnv(gym.Env):
             'successful_task_delay_samples': [],
             'total_energy': 0.0,
             'reward_task_success': 0.0,
+            'reward_load_balance': 0.0,
             'penalty_delay': 0.0,
             'penalty_energy': 0.0,
             'penalty_task_failure': 0.0,
@@ -670,8 +745,8 @@ class LEOSatelliteEnv(gym.Env):
             3 +                              # 用户位置 (lat, lon, alt)
             1 +                              # 用户状态
             5 +                              # 当前服务卫星 (id, dist, elev, snr, rvt)
-            self.max_visible_sats * 6 +      # 可见卫星 (id, dist, elev, snr, rvt, load)
-            4                                # 当前任务 (data, compute, deadline, priority)
+            self.max_visible_sats * 6 +      # 切换候选 (id, dist, elev, snr, rvt, load)
+            7                                # 当前任务 + age/remaining/backlog
         )
         self.user_obs_dim = user_obs_dim
         
@@ -731,7 +806,10 @@ class LEOSatelliteEnv(gym.Env):
         if seed is not None:
             self.rng = np.random.default_rng(seed)
             self.task_arrival_rng = self._make_task_arrival_rng(seed)
-            self.task_generator = TaskGenerator(seed=seed)
+            self.task_generator = TaskGenerator(
+                config=self.task_config,
+                seed=seed,
+            )
         
         # 重置星座时间（支持 episode 起始时间随机化）
         offset_sec = 0.0
@@ -741,6 +819,22 @@ class LEOSatelliteEnv(gym.Env):
         self.constellation.reset(time_offset_sec=offset_sec)
         self.geometry_version = 0
         self._rvt_prediction_version = -1
+
+        if self.config.resample_users_on_reset:
+            user_seed = (
+                int(seed)
+                if seed is not None
+                else int(self.rng.integers(0, np.iinfo(np.int32).max))
+            )
+            generator = UserGenerator(seed=user_seed)
+            users = generator.generate_users_in_circle(
+                center_lat=self.config.user_center_lat,
+                center_lon=self.config.user_center_lon,
+                radius_deg=self.config.user_radius_deg,
+                num_users=self.config.num_users,
+            )
+            self.user_manager = UserManager(users)
+            self._precompute_user_geometry()
         
         # 重置用户状态
         for user in self.user_manager.users:
@@ -749,6 +843,9 @@ class LEOSatelliteEnv(gym.Env):
             user.handover_count = 0
             user.successful_handovers = 0
             user.failed_handovers = 0
+            user.total_service_time = 0.0
+            user.total_blocked_time = 0.0
+            user.last_update_time = 0.0
         
         # 重置MEC
         self.mec_manager.reset_all()
@@ -769,12 +866,23 @@ class LEOSatelliteEnv(gym.Env):
             dtype=np.float32,
         )
         self._offload_task_meta = {}
+        self._local_cpu_available_time = np.zeros(
+            self.config.num_users,
+            dtype=np.float64,
+        )
+        self._task_trace_active = {}
+        self._task_trace_records = []
+        self._previous_load_balance_potential = 0.0
         self._invalidate_visibility_cache()
         self.stats = self._build_stats()
         self._last_load_balance_score = 1.0
         
         # 初始连接：为每个用户选择最佳卫星
         self._initial_connection()
+
+        # Gym 决策时序：外生任务必须在生成动作的观测之前到达。
+        # 首批任务在 reset 时生成，后续任务在每个非终止 step 的末尾生成。
+        self._generate_tasks()
         
         # 获取初始观测
         observation = self._get_observation()
@@ -822,8 +930,7 @@ class LEOSatelliteEnv(gym.Env):
         # 可见性缓存只在几何状态推进后失效。
         self._expire_pending_user_tasks()
         
-        # 1. 生成新任务
-        self._generate_tasks()
+        # 当前动作只处理生成该动作的观测中已经可见的任务。
         self._step_handover_interruption_seconds.fill(0.0)
         
         # 2. 执行每个用户的动作
@@ -851,8 +958,9 @@ class LEOSatelliteEnv(gym.Env):
                 user_rewards[user_id] += pending_reward
                 self.pending_rewards[user_id] = 0.0
         
-        # 4. 计算用户级服务中断惩罚和全局平均奖励
+        # 4. 计算用户级服务中断惩罚、负载均衡协作奖励和全局平均奖励
         self._record_load_balance_metrics()
+        load_balance_reward = self._compute_load_balance_reward()
 
         slot_duration = float(self.config.time_step_sec)
         blocked_seconds_by_user = np.asarray(
@@ -870,7 +978,9 @@ class LEOSatelliteEnv(gym.Env):
             interruption_seconds_by_user
         )
         self.last_user_rewards = (
-            np.asarray(user_rewards, dtype=np.float32) + interruption_penalties
+            np.asarray(user_rewards, dtype=np.float32)
+            + interruption_penalties
+            + load_balance_reward
         )
         total_reward = float(np.mean(self.last_user_rewards))
 
@@ -884,7 +994,8 @@ class LEOSatelliteEnv(gym.Env):
         self.stats['service_interruption_seconds'] += interruption_seconds
         self._record_reward_terms(
             average_over_users=False,
-            penalty_service_interruption=float(np.mean(interruption_penalties))
+            penalty_service_interruption=float(np.mean(interruption_penalties)),
+            reward_load_balance=load_balance_reward,
         )
         self.episode_rewards.append(total_reward)
         
@@ -892,6 +1003,11 @@ class LEOSatelliteEnv(gym.Env):
         self.current_step += 1
         terminated = False
         truncated = self.current_step >= self.config.max_steps
+
+        # 为下一个决策时刻生成外生任务。终止步不再创建无人处理的任务，
+        # 避免把 episode 边界处的伪 pending task 计入评估指标。
+        if not terminated and not truncated:
+            self._generate_tasks()
         
         # 6. 获取新观测
         observation = self._get_observation() if return_observation else None
@@ -902,6 +1018,172 @@ class LEOSatelliteEnv(gym.Env):
     def _refresh_user_task_head(self, user_id: int) -> None:
         queue = self.user_task_queues[user_id]
         self.user_tasks[user_id] = queue[0] if queue else None
+
+    @staticmethod
+    def _task_trace_key(user_id: int, task_id: int) -> Tuple[int, int]:
+        return int(user_id), int(task_id)
+
+    def _trace_task_created(self, task: Task) -> None:
+        if not self.config.enable_task_trace:
+            return
+        key = self._task_trace_key(task.user_id, task.task_id)
+        self._task_trace_active[key] = {
+            'user_id': int(task.user_id),
+            'task_id': int(task.task_id),
+            'task_type': task.task_type.name.lower(),
+            'data_size_bits': float(task.data_size),
+            'computation_cycles': float(task.computation),
+            'max_delay_sec': float(task.max_delay),
+            'creation_time_sec': float(task.creation_time),
+            'decision_made': False,
+            'decision_time_sec': np.nan,
+            'settlement_time_sec': np.nan,
+            'requested_offload_ratio': np.nan,
+            'effective_requested_offload_ratio': np.nan,
+            'actual_offload_ratio': np.nan,
+            'execution_mode': 'pending',
+            'serving_satellite': -1,
+            'mec_queue_length_at_admission': np.nan,
+            'mec_queue_capacity': np.nan,
+            'mec_estimated_wait_sec': np.nan,
+            'mec_admission_attempted': False,
+            'mec_admission_accepted': False,
+            'mec_admission_rejected': False,
+            'mec_rejection_reason': '',
+            'task_wait_before_decision_sec': np.nan,
+            'local_cpu_queue_wait_sec': 0.0,
+            'local_compute_delay_sec': 0.0,
+            'local_branch_delay_sec': 0.0,
+            'upload_delay_sec': 0.0,
+            'mec_queue_wait_sec': 0.0,
+            'mec_processing_delay_sec': 0.0,
+            'download_delay_sec': 0.0,
+            'handover_delay_sec': 0.0,
+            'total_delay_sec': np.nan,
+            'total_energy_j': np.nan,
+            'task_reward': np.nan,
+            'success': False,
+            'outcome': 'pending',
+            'critical_branch': '',
+            'deadline_miss_reason': '',
+        }
+
+    def _trace_task_decision(
+        self,
+        user: User,
+        task: Task,
+        requested_offload_ratio: float,
+        effective_offload_ratio: float,
+    ) -> None:
+        if not self.config.enable_task_trace:
+            return
+        record = self._task_trace_active.get(
+            self._task_trace_key(user.user_id, task.task_id)
+        )
+        if record is None:
+            self._trace_task_created(task)
+            record = self._task_trace_active[
+                self._task_trace_key(user.user_id, task.task_id)
+            ]
+        sat_id = int(user.serving_satellite)
+        server = self.mec_manager.get_server(sat_id) if sat_id >= 0 else None
+        record.update({
+            'decision_made': True,
+            'decision_time_sec': float(self.current_time),
+            'requested_offload_ratio': float(requested_offload_ratio),
+            'effective_requested_offload_ratio': float(effective_offload_ratio),
+            'serving_satellite': sat_id,
+            'task_wait_before_decision_sec': max(
+                float(self.current_time) - float(task.creation_time),
+                0.0,
+            ),
+        })
+        if server is not None:
+            record.update({
+                'mec_queue_length_at_admission': int(server.queue_length),
+                'mec_queue_capacity': int(server.config.max_queue_size),
+                'mec_estimated_wait_sec': float(server.get_estimated_wait_time()),
+            })
+
+    def _trace_task_update(self, user_id: int, task_id: int, **values: Any) -> None:
+        if not self.config.enable_task_trace:
+            return
+        record = self._task_trace_active.get(
+            self._task_trace_key(user_id, task_id)
+        )
+        if record is not None:
+            record.update(values)
+
+    @staticmethod
+    def _local_deadline_miss_reason(
+        local_cpu_queue_wait: float,
+        task_wait_before_decision: float,
+    ) -> str:
+        if task_wait_before_decision > 1e-9:
+            return 'user_task_queue_wait'
+        if local_cpu_queue_wait > 1e-9:
+            return 'local_cpu_queue_wait'
+        return 'local_compute_slow'
+
+    @staticmethod
+    def _mec_deadline_miss_reason(record: Dict[str, Any]) -> str:
+        stages = {
+            'upload_too_slow': float(record.get('upload_delay_sec', 0.0) or 0.0),
+            'mec_queue_wait': float(record.get('mec_queue_wait_sec', 0.0) or 0.0),
+            'mec_compute_slow': float(record.get('mec_processing_delay_sec', 0.0) or 0.0),
+            'download_too_slow': float(record.get('download_delay_sec', 0.0) or 0.0),
+        }
+        return max(stages, key=stages.get)
+
+    def _trace_task_finalize(
+        self,
+        user_id: int,
+        task_id: int,
+        *,
+        outcome: str,
+        success: bool,
+        total_delay: float,
+        total_energy: float,
+        task_reward: float,
+        deadline_miss_reason: str = '',
+        **values: Any,
+    ) -> None:
+        if not self.config.enable_task_trace:
+            return
+        key = self._task_trace_key(user_id, task_id)
+        record = self._task_trace_active.pop(key, None)
+        if record is None:
+            return
+        record.update(values)
+        record.update({
+            'settlement_time_sec': float(self.current_time),
+            'total_delay_sec': float(total_delay),
+            'total_energy_j': float(total_energy),
+            'task_reward': float(task_reward),
+            'success': bool(success),
+            'outcome': str(outcome),
+            'deadline_miss_reason': (
+                '' if success else str(deadline_miss_reason or 'unclassified')
+            ),
+        })
+        self._task_trace_records.append(record)
+
+    def get_task_trace_records(self, include_pending: bool = True) -> List[Dict[str, Any]]:
+        """Return detached task-level diagnostics for the current episode."""
+        if not self.config.enable_task_trace:
+            return []
+        records = [dict(record) for record in self._task_trace_records]
+        if include_pending:
+            for active in self._task_trace_active.values():
+                pending = dict(active)
+                pending['outcome'] = (
+                    'episode_pending_mec'
+                    if pending.get('mec_admission_accepted')
+                    else 'episode_pending_user_queue'
+                )
+                pending['deadline_miss_reason'] = 'episode_pending'
+                records.append(pending)
+        return records
 
     def _pop_user_task(self, user_id: int) -> Optional[Task]:
         queue = self.user_task_queues[user_id]
@@ -938,6 +1220,19 @@ class LEOSatelliteEnv(gym.Env):
                     self.pending_rewards[user_id] = 0.0
                 self.pending_rewards[user_id] += task_reward
                 self.task_manager.fail_task(task.task_id, self.current_time)
+                self._trace_task_finalize(
+                    user_id,
+                    task.task_id,
+                    outcome='deadline_miss',
+                    success=False,
+                    total_delay=elapsed,
+                    total_energy=0.0,
+                    task_reward=task_reward,
+                    deadline_miss_reason='user_task_queue_wait',
+                    execution_mode='not_executed',
+                    actual_offload_ratio=np.nan,
+                    critical_branch='user_queue',
+                )
             self._refresh_user_task_head(user_id)
 
     def _generate_tasks(self):
@@ -952,6 +1247,7 @@ class LEOSatelliteEnv(gym.Env):
                 self._refresh_user_task_head(user_id)
                 self.task_manager.add_task(task)
                 self.stats['total_tasks'] += 1
+                self._trace_task_created(task)
 
     def _execute_user_action(
         self,
@@ -992,9 +1288,21 @@ class LEOSatelliteEnv(gym.Env):
         
         # ========== 处理任务卸载 ==========
         task = self.user_tasks[user.user_id]
-        if task is not None and user.state == UserState.CONNECTED:
-            reward += self._execute_offloading(user, task, offload_ratio)
-        
+        if task is not None:
+            # 本地计算不依赖卫星连接。阻塞用户请求卸载时退化为完整本地
+            # 执行，避免 full_local 基线和策略在无链路时被错误冻结。
+            effective_ratio = (
+                offload_ratio
+                if user.state == UserState.CONNECTED
+                else 0.0
+            )
+            self._trace_task_decision(
+                user,
+                task,
+                requested_offload_ratio=offload_ratio,
+                effective_offload_ratio=effective_ratio,
+            )
+            reward += self._execute_offloading(user, task, effective_ratio)
             self._pop_user_task(user.user_id)
         return reward
 
@@ -1010,6 +1318,22 @@ class LEOSatelliteEnv(gym.Env):
                 float(np.clip(0.5 * queue_ratio + 0.5 * cpu_utilization, 0.0, 1.0))
             )
         return np.asarray(mec_loads, dtype=np.float32)
+
+    def _compute_reachable_mec_loads(self) -> np.ndarray:
+        """Return loads only for MEC nodes feasible for at least one user now."""
+        reachable_ids = set()
+        for user in self.user_manager.users:
+            if user.serving_satellite >= 0:
+                reachable_ids.add(int(user.serving_satellite))
+            reachable_ids.update(
+                int(item.sat_id)
+                for item in self._get_visible_satellites(user)
+            )
+        if not reachable_ids:
+            return np.zeros(0, dtype=np.float32)
+        loads = self._compute_mec_loads()
+        indices = np.asarray(sorted(reachable_ids), dtype=np.int64)
+        return loads[indices]
 
     def _compute_mec_load_fairness(self) -> float:
         """Measure load fairness among MEC servers with nonzero work."""
@@ -1049,8 +1373,22 @@ class LEOSatelliteEnv(gym.Env):
         return float(np.clip(fairness, 0.0, 1.0))
 
     def _compute_systemwide_jain_mec_load_fairness(self) -> Optional[float]:
-        """Return paper metric Jain fairness, including idle available MEC nodes."""
-        return self._jain_fairness(self._compute_mec_loads())
+        """Return Jain fairness over currently reachable MEC nodes."""
+        return self._jain_fairness(self._compute_reachable_mec_loads())
+
+    def _compute_load_balance_reward(self) -> float:
+        """Return a persistent dense reward for reachable-MEC fairness.
+
+        Reachable idle MEC nodes remain in the Jain denominator, so concentrating
+        all work on one server cannot obtain a perfect score. A state reward is
+        intentional here: the previous potential-difference term telescoped over
+        an episode and gave the coordinator essentially no learning signal.
+        """
+        fairness = self._compute_systemwide_jain_mec_load_fairness()
+        current_potential = 0.0 if fairness is None else float(fairness)
+        weight = max(float(self.config.reward_load_balance_weight), 0.0)
+        self._previous_load_balance_potential = current_potential
+        return weight * float(np.clip(current_potential, 0.0, 1.0))
 
     def _compute_load_balance_score(self) -> float:
         """Backward-compatible reward hook for MEC load fairness."""
@@ -1072,7 +1410,7 @@ class LEOSatelliteEnv(gym.Env):
     def _record_load_balance_metrics(self) -> None:
         """Record per-step load balance score and active-load variance sample."""
         load_balance_score = self._compute_load_balance_score()
-        loads = self._compute_mec_loads()
+        loads = self._compute_reachable_mec_loads()
         self._last_load_balance_score = load_balance_score
         self.stats['load_balance_sum'] += load_balance_score
         self.stats['load_balance_samples'] += 1
@@ -1104,7 +1442,8 @@ class LEOSatelliteEnv(gym.Env):
             return self._compute_task_failure_reward()
 
         energy_ratio = np.clip(
-            float(total_energy) / REWARD_ENERGY_REFERENCE_J,
+            float(total_energy)
+            / max(float(self.config.reward_energy_reference_j), 1e-6),
             0.0,
             1.0,
         )
@@ -1159,6 +1498,31 @@ class LEOSatelliteEnv(gym.Env):
                 self.pending_rewards.get(user_id, 0.0) + task_reward
             )
             self.task_manager.fail_task(task_id, self.current_time)
+            trace_record = self._task_trace_active.get(
+                self._task_trace_key(user_id, task_id),
+                {},
+            )
+            self._trace_task_finalize(
+                user_id,
+                task_id,
+                outcome='forced_disconnect',
+                success=False,
+                total_delay=elapsed,
+                total_energy=float(task_info.get('upload_energy', 0.0)),
+                task_reward=task_reward,
+                deadline_miss_reason='forced_disconnect_stranded',
+                actual_offload_ratio=float(task_info.get('offload_ratio', np.nan)),
+                upload_delay_sec=float(task_info.get('upload_delay', 0.0)),
+                mec_queue_wait_sec=float(task_info.get('queue_wait', 0.0)),
+                mec_processing_delay_sec=float(
+                    task_info.get('processing_time', 0.0)
+                ),
+                download_delay_sec=float(task_info.get('download_delay', 0.0)),
+                critical_branch='offload',
+                handover_delay_sec=float(
+                    trace_record.get('handover_delay_sec', 0.0) or 0.0
+                ),
+            )
 
     def _block_user(self, user: User, old_sat_id: int) -> None:
         """Enter BLOCKED only after the old service link is no longer usable."""
@@ -1309,7 +1673,21 @@ class LEOSatelliteEnv(gym.Env):
         if offload_ratio < self.config.min_effective_offload_ratio:
             offload_ratio = 0.0
         wait_delay = max(float(self.current_time) - float(task.creation_time), 0.0)
+        self._trace_task_update(
+            user.user_id,
+            task.task_id,
+            actual_offload_ratio=offload_ratio,
+            execution_mode=(
+                'local'
+                if offload_ratio == 0.0
+                else ('full_offload' if offload_ratio >= 1.0 - 1e-9 else 'split')
+            ),
+        )
         
+        # 完全本地路径必须先于任何卫星/链路访问。
+        if offload_ratio == 0.0:
+            return self._settle_local_task(user.user_id, task, task.computation)
+
         # 获取卫星信息
         sat_id = user.serving_satellite
         if sat_id < 0:
@@ -1323,6 +1701,19 @@ class LEOSatelliteEnv(gym.Env):
         server = self.mec_manager.get_server(sat_id)
         if server is None:
             raise RuntimeError(f"服务卫星 {sat_id} 缺少 MEC 服务器")
+
+        # 上传前准入；拒绝时不产生传输开销，也不预先占用部分本地 CPU。
+        if server.is_full:
+            self._trace_task_update(
+                user.user_id,
+                task.task_id,
+                mec_admission_attempted=True,
+                mec_admission_rejected=True,
+                mec_rejection_reason='queue_full_pre_admission',
+                actual_offload_ratio=0.0,
+                execution_mode='local_fallback',
+            )
+            return self._settle_local_task(user.user_id, task, task.computation)
         
         # ========== 本地计算部分（立即处理） ==========
         local_ratio = 1.0 - offload_ratio
@@ -1331,9 +1722,22 @@ class LEOSatelliteEnv(gym.Env):
         local_energy = 0.0
         
         if local_cycles > 0:
-            local_delay = self.offload_calc.compute_local_delay(local_cycles)
-            local_energy = self.offload_calc.compute_local_energy(local_cycles)
+            local_delay, local_energy, local_compute_delay = self._schedule_local_branch(
+                user.user_id,
+                task,
+                local_cycles,
+            )
             self.stats['total_energy'] += local_energy
+            self._trace_task_update(
+                user.user_id,
+                task.task_id,
+                local_cpu_queue_wait_sec=max(
+                    local_delay - wait_delay - local_compute_delay,
+                    0.0,
+                ),
+                local_compute_delay_sec=local_compute_delay,
+                local_branch_delay_sec=local_delay,
+            )
         
         # ========== 卸载部分（入队处理） ==========
         if offload_ratio > 0:
@@ -1352,6 +1756,13 @@ class LEOSatelliteEnv(gym.Env):
             self.stats['total_energy'] += upload_energy
             
             # 尝试将任务入队
+            self._trace_task_update(
+                user.user_id,
+                task.task_id,
+                mec_admission_attempted=True,
+                upload_delay_sec=upload_delay,
+                download_delay_sec=download_delay,
+            )
             enqueued = server.enqueue_task(
                 user_id=user.user_id,
                 task_id=task.task_id,
@@ -1367,24 +1778,37 @@ class LEOSatelliteEnv(gym.Env):
             
             if enqueued:
                 # 入队成功，记录任务元信息用于后续奖励计算
+                self._trace_task_update(
+                    user.user_id,
+                    task.task_id,
+                    mec_admission_accepted=True,
+                    handover_delay_sec=float(
+                        self._step_handover_interruption_seconds[user.user_id]
+                    ),
+                )
                 task.offload_ratio = offload_ratio
                 task.local_delay = local_delay
                 task.local_energy = local_energy
                 task.transmission_energy = upload_energy
                 self._offload_task_meta[(user.user_id, task.task_id)] = {
-                    'local_delay': wait_delay + local_delay,
+                    'local_delay': local_delay,
                     'local_energy': local_energy,
+                    'handover_delay': float(
+                        self._step_handover_interruption_seconds[user.user_id]
+                    ),
                 }
             else:
                 # 队列已满，任务被拒绝 -> 强制本地执行或丢弃
                 # 这里选择：退化为完全本地执行
                 fallback_cycles = offload_cycles
-                fallback_delay = self.offload_calc.compute_local_delay(fallback_cycles)
-                fallback_energy = self.offload_calc.compute_local_energy(fallback_cycles)
-                
-                local_delay += fallback_delay
+                fallback_delay, fallback_energy, fallback_compute_delay = self._schedule_local_branch(
+                    user.user_id,
+                    task,
+                    fallback_cycles,
+                )
+                local_delay = max(local_delay, fallback_delay)
                 local_energy += fallback_energy
-                total_delay = wait_delay + local_delay
+                total_delay = local_delay
                 self.stats['total_delay'] += total_delay
                 self.stats['total_energy'] += fallback_energy
                 
@@ -1404,6 +1828,40 @@ class LEOSatelliteEnv(gym.Env):
                 task.total_delay = total_delay
                 task.total_energy = local_energy + upload_energy
                 task.offload_ratio = 0.0  # 实际退化为本地
+                trace_record = self._task_trace_active.get(
+                    self._task_trace_key(user.user_id, task.task_id),
+                    {},
+                )
+                local_cpu_queue_wait = max(
+                    fallback_delay - wait_delay - fallback_compute_delay,
+                    float(trace_record.get('local_cpu_queue_wait_sec', 0.0) or 0.0),
+                    0.0,
+                )
+                success = total_delay <= task.max_delay
+                self._trace_task_finalize(
+                    user.user_id,
+                    task.task_id,
+                    outcome='completed' if success else 'deadline_miss',
+                    success=success,
+                    total_delay=total_delay,
+                    total_energy=local_energy + upload_energy,
+                    task_reward=task_reward,
+                    deadline_miss_reason=self._local_deadline_miss_reason(
+                        local_cpu_queue_wait,
+                        wait_delay,
+                    ),
+                    mec_admission_rejected=True,
+                    mec_rejection_reason='queue_full_at_enqueue',
+                    actual_offload_ratio=0.0,
+                    execution_mode='local_fallback_after_upload',
+                    local_cpu_queue_wait_sec=local_cpu_queue_wait,
+                    local_compute_delay_sec=(
+                        float(trace_record.get('local_compute_delay_sec', 0.0) or 0.0)
+                        + fallback_compute_delay
+                    ),
+                    local_branch_delay_sec=total_delay,
+                    critical_branch='local',
+                )
         else:
             # 完全本地执行
             total_delay = wait_delay + local_delay
@@ -1426,6 +1884,78 @@ class LEOSatelliteEnv(gym.Env):
             self._record_reward_terms(**reward_terms)
         
         return reward
+
+    def _schedule_local_branch(
+        self,
+        user_id: int,
+        task: Task,
+        computation_cycles: float,
+    ) -> Tuple[float, float, float]:
+        """在每用户串行 CPU 时间线上预约计算，返回总延迟、能耗和工期。"""
+        cycles = max(float(computation_cycles), 0.0)
+        duration = self.offload_calc.compute_local_delay(cycles)
+        start_time = max(
+            float(self.current_time),
+            float(self._local_cpu_available_time[user_id]),
+        )
+        finish_time = start_time + duration
+        self._local_cpu_available_time[user_id] = finish_time
+        total_delay = max(finish_time - float(task.creation_time), 0.0)
+        energy = self.offload_calc.compute_local_energy(cycles)
+        return total_delay, energy, duration
+
+    def _settle_local_task(
+        self,
+        user_id: int,
+        task: Task,
+        computation_cycles: float,
+    ) -> float:
+        total_delay, local_energy, local_compute_delay = self._schedule_local_branch(
+            user_id,
+            task,
+            computation_cycles,
+        )
+        self.stats['total_delay'] += total_delay
+        self.stats['total_energy'] += local_energy
+        task.total_delay = total_delay
+        task.total_energy = local_energy
+        task.offload_ratio = 0.0
+        if total_delay <= task.max_delay:
+            self.stats['completed_tasks'] += 1
+            self.stats['successful_task_delay_samples'].append(total_delay)
+        else:
+            self.stats['deadline_violations'] += 1
+        task_reward, reward_terms = self._compute_task_reward(
+            total_delay=total_delay,
+            total_energy=local_energy,
+            max_delay=task.max_delay,
+        )
+        self._record_reward_terms(**reward_terms)
+        task_wait = max(float(self.current_time) - float(task.creation_time), 0.0)
+        local_cpu_queue_wait = max(
+            total_delay - task_wait - local_compute_delay,
+            0.0,
+        )
+        success = total_delay <= task.max_delay
+        self._trace_task_finalize(
+            user_id,
+            task.task_id,
+            outcome='completed' if success else 'deadline_miss',
+            success=success,
+            total_delay=total_delay,
+            total_energy=local_energy,
+            task_reward=task_reward,
+            deadline_miss_reason=self._local_deadline_miss_reason(
+                local_cpu_queue_wait,
+                task_wait,
+            ),
+            actual_offload_ratio=0.0,
+            local_cpu_queue_wait_sec=local_cpu_queue_wait,
+            local_compute_delay_sec=local_compute_delay,
+            local_branch_delay_sec=total_delay,
+            critical_branch='local',
+        )
+        return task_reward
     
     def _update_environment(self):
         """更新环境状态（包含 MEC 队列处理）"""
@@ -1444,6 +1974,7 @@ class LEOSatelliteEnv(gym.Env):
 
         # 当前状态在本 slot 结束时刻。
         self.current_time = slot_start + slot_duration
+        self.user_manager.update_all_statistics(self.current_time)
         self._expire_pending_user_tasks()
         
         # 累积完成任务的奖励到 pending_rewards
@@ -1454,7 +1985,8 @@ class LEOSatelliteEnv(gym.Env):
                 {},
             )
             total_delay = max(
-                float(task_info['total_delay']),
+                float(task_info['total_delay'])
+                + float(task_meta.get('handover_delay', 0.0)),
                 float(task_meta.get('local_delay', 0.0)),
             )
             total_energy = float(task_info.get('upload_energy', 0.0))
@@ -1480,6 +2012,54 @@ class LEOSatelliteEnv(gym.Env):
             if user_id not in self.pending_rewards:
                 self.pending_rewards[user_id] = 0.0
             self.pending_rewards[user_id] += task_reward
+            trace_record = self._task_trace_active.get(
+                self._task_trace_key(user_id, task_info['task_id']),
+                {},
+            )
+            offload_branch_delay = (
+                float(task_info['total_delay'])
+                + float(task_meta.get('handover_delay', 0.0))
+            )
+            local_branch_delay = float(task_meta.get('local_delay', 0.0))
+            critical_branch = (
+                'local'
+                if local_branch_delay >= offload_branch_delay
+                else 'offload'
+            )
+            trace_values = {
+                'actual_offload_ratio': float(task_info.get('offload_ratio', np.nan)),
+                'local_branch_delay_sec': local_branch_delay,
+                'upload_delay_sec': float(task_info.get('upload_delay', 0.0)),
+                'mec_queue_wait_sec': float(task_info.get('queue_wait', 0.0)),
+                'mec_processing_delay_sec': float(
+                    task_info.get('processing_time', 0.0)
+                ),
+                'download_delay_sec': float(task_info.get('download_delay', 0.0)),
+                'handover_delay_sec': float(task_meta.get('handover_delay', 0.0)),
+                'critical_branch': critical_branch,
+            }
+            miss_reason = ''
+            if not deadline_met:
+                if critical_branch == 'local':
+                    miss_reason = self._local_deadline_miss_reason(
+                        float(trace_record.get('local_cpu_queue_wait_sec', 0.0) or 0.0),
+                        float(trace_record.get('task_wait_before_decision_sec', 0.0) or 0.0),
+                    )
+                else:
+                    miss_reason = self._mec_deadline_miss_reason(
+                        {**trace_record, **trace_values}
+                    )
+            self._trace_task_finalize(
+                user_id,
+                task_info['task_id'],
+                outcome='completed' if deadline_met else 'deadline_miss',
+                success=deadline_met,
+                total_delay=total_delay,
+                total_energy=total_energy,
+                task_reward=task_reward,
+                deadline_miss_reason=miss_reason,
+                **trace_values,
+            )
         
         # 检查用户连接状态
         for user in self.user_manager.users:
@@ -1558,7 +2138,7 @@ class LEOSatelliteEnv(gym.Env):
         False 表示安全用户（应强制 handover_action=0）。
         """
         mask = np.zeros(self.num_users, dtype=bool)
-        threshold = float(getattr(self.config, "pre_handover_rvt_sec", 30.0))
+        threshold = float(getattr(self.config, "pre_handover_rvt_sec", 60.0))
         for uid, user in enumerate(self.user_manager.users):
             if user.serving_satellite < 0:
                 mask[uid] = True
@@ -1573,6 +2153,46 @@ class LEOSatelliteEnv(gym.Env):
             server = self.mec_manager.get_server(user.serving_satellite)
             if server is not None and float(server.utilization) >= 0.95:
                 mask[uid] = True
+        return mask
+
+    def get_handover_action_mask(
+        self,
+        max_candidates: Optional[int] = None,
+        *,
+        apply_pre_handover_gate: bool = True,
+    ) -> np.ndarray:
+        """返回与动作编号严格对齐的当前合法切换掩码。
+
+        候选列表仍负责稳定的 action->satellite 映射；这里只把无线准入、
+        RVT、目标 MEC 和迁移容量当前不可行的动作置为 0。联合动作执行时
+        其他用户可能继续消耗容量，因此环境执行入口仍保留二次校验。
+        """
+        candidate_limit = int(
+            self.max_visible_sats
+            if max_candidates is None
+            else max_candidates
+        )
+        mask = np.zeros(
+            (self.num_users, candidate_limit + 1),
+            dtype=np.float32,
+        )
+        mask[:, 0] = 1.0
+        pre_handover = self.get_pre_handover_mask()
+        for user_id, user in enumerate(self.user_manager.users):
+            if apply_pre_handover_gate and not pre_handover[user_id]:
+                continue
+            candidates = self._get_handover_candidates(user)[:candidate_limit]
+            for candidate_index, target in enumerate(candidates, start=1):
+                link_feasible, _ = self._check_handover_link_feasibility(target)
+                if not link_feasible:
+                    continue
+                migration_plan = self.mec_manager.prepare_user_task_migration(
+                    user_id=user.user_id,
+                    old_sat_id=int(user.serving_satellite),
+                    new_sat_id=int(target.sat_id),
+                )
+                if migration_plan.feasible:
+                    mask[user_id, candidate_index] = 1.0
         return mask
 
     def _get_observation(self) -> np.ndarray:
@@ -1615,8 +2235,9 @@ class LEOSatelliteEnv(gym.Env):
                 ]
         idx += 5
         
-        # 4. 可见卫星信息
-        visible_sats = self._get_visible_satellites(user)
+        # 4. 可切换候选卫星信息。该顺序必须与 handover action 1..K 和
+        # candidate_sat_ids 完全一致；当前服务卫星已在上一个区块单独描述。
+        visible_sats = self._get_handover_candidates(user)
         for i in range(self.max_visible_sats):
             if i < len(visible_sats):
                 sat = visible_sats[i]
@@ -1633,16 +2254,24 @@ class LEOSatelliteEnv(gym.Env):
                 ]
             idx += 6
         
-        # 5. 当前任务信息
+        # 5. 当前任务信息（含紧迫度和用户侧积压）
         task = self.user_tasks[user.user_id]
+        queue_length = len(self.user_task_queues[user.user_id])
         if task is not None:
-            obs[idx:idx+4] = [
+            elapsed = max(self.current_time - task.creation_time, 0.0)
+            deadline = max(float(task.max_delay), 1e-6)
+            obs[idx:idx+7] = [
                 task.data_size / 1e8,           # 归一化
                 task.computation / 1e10,         # 归一化
                 task.max_delay / 10.0,           # 归一化
-                task.task_type.value / 2.0       # 归一化
+                task.task_type.value / 2.0,      # 归一化
+                np.clip(elapsed / deadline, 0.0, 2.0),
+                np.clip((deadline - elapsed) / deadline, 0.0, 1.0),
+                np.clip(queue_length / 10.0, 0.0, 1.0),
             ]
-        idx += 4
+        else:
+            obs[idx + 6] = np.clip(queue_length / 10.0, 0.0, 1.0)
+        idx += 7
         
         return obs
     

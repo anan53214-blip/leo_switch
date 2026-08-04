@@ -18,7 +18,7 @@ LEO卫星网络切换与任务卸载联合优化 - 完整训练脚本
 python scripts/train.py
 
 # 指定参数
-python scripts/train.py --num_users 10 --total_timesteps 300000 --seed 42
+python scripts/train.py --num_users 10 --total_timesteps 150000 --seed 42
 
 # 从检查点恢复
 python scripts/train.py --load_path results/models/checkpoint_100000.pt
@@ -38,7 +38,7 @@ import logging
 import copy
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Sequence
 from dataclasses import dataclass, asdict
 import json
 
@@ -80,9 +80,10 @@ from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
 from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
 
-MODEL_SCHEMA_VERSION = 2
-GEOMETRY_SCHEMA_VERSION = 2
-ENVIRONMENT_SCHEMA_VERSION = 5
+MODEL_SCHEMA_VERSION = 5
+GEOMETRY_SCHEMA_VERSION = 3
+ENVIRONMENT_SCHEMA_VERSION = 9
+EVALUATION_SEED_OFFSET = 1_000_000
 
 
 def reward_breakdown(stats: Dict[str, Any]) -> Dict[str, float]:
@@ -233,7 +234,7 @@ class TrainConfig:
     整合环境、HAN、MAPPO、训练等所有参数
     """
     # ---------- 实验信息 ----------
-    exp_name: str = "han_mappo_delay_focus_fast"  # 实验名称
+    exp_name: str = "han_mappo_delay_focus"      # 实验名称
     seed: int = 42                        # 随机种子
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     
@@ -243,13 +244,57 @@ class TrainConfig:
     altitude_km: float = EnvConfig.altitude_km
     inclination_deg: float = EnvConfig.inclination_deg
     num_users: int = EnvConfig.num_users
+    user_center_lat: float = EnvConfig.user_center_lat
+    user_center_lon: float = EnvConfig.user_center_lon
+    user_radius_deg: float = EnvConfig.user_radius_deg
+    resample_users_on_reset: bool = EnvConfig.resample_users_on_reset
     max_steps: int = EnvConfig.max_steps
     time_step_sec: float = EnvConfig.time_step_sec
+    randomize_episode_start: bool = EnvConfig.randomize_episode_start
+    episode_start_time_jitter_sec: float = EnvConfig.episode_start_time_jitter_sec
+    min_elevation_deg: float = EnvConfig.min_elevation_deg
+    handover_delay_sec: float = EnvConfig.handover_delay_sec
+    rvt_threshold_sec: float = EnvConfig.rvt_threshold_sec
+    task_arrival_prob: float = EnvConfig.task_arrival_prob
+    task_arrival_seed_offset: int = EnvConfig.task_arrival_seed_offset
+    carrier_frequency_ghz: float = EnvConfig.carrier_frequency_ghz
+    bandwidth_mhz: float = EnvConfig.bandwidth_mhz
+    satellite_tx_power_dbm: float = EnvConfig.satellite_tx_power_dbm
+    satellite_antenna_gain_db: float = EnvConfig.satellite_antenna_gain_db
+    user_tx_power_dbm: float = EnvConfig.user_tx_power_dbm
+    user_antenna_gain_db: float = EnvConfig.user_antenna_gain_db
+    noise_temperature_k: float = EnvConfig.noise_temperature_k
+    noise_figure_db: float = EnvConfig.noise_figure_db
+    rain_attenuation_db: float = EnvConfig.rain_attenuation_db
+    atmospheric_loss_db: float = EnvConfig.atmospheric_loss_db
+    pointing_loss_db: float = EnvConfig.pointing_loss_db
+    polarization_loss_db: float = EnvConfig.polarization_loss_db
+    implementation_loss_db: float = EnvConfig.implementation_loss_db
+    satellite_cpu_freq_ghz: float = EnvConfig.satellite_cpu_freq_ghz
+    satellite_max_cpu_freq_ghz: float = EnvConfig.satellite_max_cpu_freq_ghz
+    satellite_num_cores: int = EnvConfig.satellite_num_cores
+    max_queue_size: int = EnvConfig.max_queue_size
+    user_cpu_freq_ghz: float = EnvConfig.user_cpu_freq_ghz
+    user_max_cpu_freq_ghz: float = EnvConfig.user_max_cpu_freq_ghz
+    kappa: float = EnvConfig.kappa
+    user_idle_power_w: float = EnvConfig.user_idle_power_w
+    result_ratio: float = EnvConfig.result_ratio
+    light_data_range: tuple = EnvConfig.light_data_range
+    light_compute_range: tuple = EnvConfig.light_compute_range
+    light_delay_range: tuple = EnvConfig.light_delay_range
+    medium_data_range: tuple = EnvConfig.medium_data_range
+    medium_compute_range: tuple = EnvConfig.medium_compute_range
+    medium_delay_range: tuple = EnvConfig.medium_delay_range
+    heavy_data_range: tuple = EnvConfig.heavy_data_range
+    heavy_compute_range: tuple = EnvConfig.heavy_compute_range
+    heavy_delay_range: tuple = EnvConfig.heavy_delay_range
     min_effective_offload_ratio: float = EnvConfig.min_effective_offload_ratio
     reward_delay_weight: float = EnvConfig.reward_delay_weight
     reward_energy_weight: float = EnvConfig.reward_energy_weight
+    reward_energy_reference_j: float = EnvConfig.reward_energy_reference_j
     reward_interruption_weight: float = EnvConfig.reward_interruption_weight
     reward_failed_handover_penalty: float = EnvConfig.reward_failed_handover_penalty
+    reward_load_balance_weight: float = EnvConfig.reward_load_balance_weight
     pre_handover_rvt_sec: float = EnvConfig.pre_handover_rvt_sec
     handover_min_snr_db: float = EnvConfig.handover_min_snr_db
 
@@ -261,7 +306,8 @@ class TrainConfig:
     han_out_dim: int = 64                 # HAN输出维度
     han_num_heads: int = 4                # 注意力头数
     han_num_layers: int = 2               # HAN层数
-    han_dropout: float = 0.1              # Dropout率
+    # PPO rollout/update 的 log-prob 必须可复现，HAN 训练路径禁用 Dropout。
+    han_dropout: float = 0.0
     
     # ---------- Actor参数 ----------
     actor_hidden_dims: tuple = (256, 128)  # Actor隐藏层
@@ -271,7 +317,7 @@ class TrainConfig:
     
     # ---------- MAPPO参数 ----------
     algorithm: str = "mappo"
-    learning_rate: float = 3e-4           # 学习率（v4: 从5e-5提升至3e-4）
+    learning_rate: float = 1e-4           # 保守更新，降低中后期策略震荡
     gamma: float = 0.99                   # 折扣因子
     gae_lambda: float = 0.95              # GAE参数
     clip_range: float = 0.2               # PPO clip
@@ -283,8 +329,8 @@ class TrainConfig:
     entropy_coef: float = 0.005            # Keep exploration from collapsing too early
     max_grad_norm: float = 0.5            # 梯度裁剪
     entropy_schedule: str = "constant"    # Entropy schedule: constant / linear
-    n_epochs: int = 6                     # PPO epochs per update
-    batch_size: int = 256                 # PPO mini-batch size
+    n_epochs: int = 4                     # 降低同一 rollout 的重复更新强度
+    batch_size: int = 512                 # PPO mini-batch size
     maddpg_actor_lr: float = 5e-4
     maddpg_critic_lr: float = 1e-3
     pdqn_lr: float = 1e-3
@@ -295,16 +341,17 @@ class TrainConfig:
     epsilon_start: float = 1.0
     epsilon_final: float = 0.02
     epsilon_decay_fraction: float = 0.25
-    bc_loss_coef: float = 0.001
+    bc_loss_coef: float = 0.0
+    safe_exploration_probability: float = 0.0
     target_update_interval: int = 500
     
     # ---------- 训练参数 ----------
-    total_timesteps: int = 300_000        # 总训练步数
+    total_timesteps: int = 150_000        # 总训练步数
     n_steps: int = 1024                   # 每次更新收集步数
-    eval_interval: int = 50_000           # 评估间隔
-    eval_episodes: int = 3                # 评估episode数
+    eval_interval: int = 25_000           # 评估间隔
+    eval_episodes: int = 5                # 评估episode数
     graph_update_interval: int = 1        # 每步更新动态图
-    save_interval: int = 100_000          # 检查点保存间隔
+    save_interval: int = 50_000           # 检查点保存间隔
     log_interval: int = 1                 # 日志间隔
     
     # ---------- 路径参数 ----------
@@ -313,10 +360,11 @@ class TrainConfig:
     
     # ---------- 加载参数 ----------
     load_path: Optional[str] = None       # 加载检查点路径
+    pretrained_han_path: Optional[str] = None  # off-policy 方法使用的已训练 HAN
     
     # ---------- Early Stopping ----------
     early_stop_patience: int = 0          # 连续N次更新无改善则停止（0=禁用）
-    best_model_metric: str = "avg_delay"  # best_model.pt 的选优指标
+    best_model_metric: str = "reward"  # best_model.pt 统一按验证集 mean reward 选优
 
 
 # ============================================================
@@ -376,6 +424,13 @@ class HANMAPPOTrainer:
         
         # 设置日志
         self._setup_logging()
+
+        # 所有 on-policy 训练器共享 collect_rollouts，但并非所有变体都会
+        # 构建 HAN 图。先建立统一的缓存契约，避免无图子类在首个 rollout
+        # 访问尚不存在的属性。
+        self._cached_han_user_embed = None
+        self._cached_sat_embed = None
+        self._cached_graph_snapshot = None
         
         # 创建目录
         self._create_directories()
@@ -458,8 +513,9 @@ class HANMAPPOTrainer:
         # 环境的观测空间是 (num_users, user_obs_dim)
         self.raw_obs_dim = self.env.user_obs_dim
         self.han_out_dim = self.config.han_out_dim
-        # Final observation = raw env obs + HAN embedding + rvt_warning(1) + task_features(4).
-        self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5
+        # Raw observation already contains serving-link RVT and task features.
+        # Do not append a second, differently normalized copy around HAN.
+        self.obs_dim = self.raw_obs_dim + self.han_out_dim
         
         # 全局状态维度 (所有用户观测拼接)
         self.global_state_dim = self.num_agents * self.obs_dim
@@ -468,13 +524,28 @@ class HANMAPPOTrainer:
         self.logger.info(f"  - HAN嵌入维度: {self.han_out_dim}")
         self.logger.info(
             f"  - 拼接后观测维度: {self.obs_dim} "
-            f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim} + rvt_warning 1 + task 4)"
+            f"(raw {self.raw_obs_dim} + HAN {self.han_out_dim})"
         )
         self.logger.info(f"  - 全局状态维度: {self.global_state_dim}")
     
     def _create_eval_env(self) -> LEOSatelliteEnv:
         """Create an isolated environment for evaluation episodes."""
         return LEOSatelliteEnv(copy.deepcopy(self.env.config))
+
+    def _agent_reward_vector(self, rewards) -> np.ndarray:
+        """Return per-user local rewards plus the shared cooperative term."""
+        local_rewards = getattr(self.env, "last_user_rewards", None)
+        if local_rewards is not None:
+            reward_array = np.asarray(local_rewards, dtype=np.float32)
+            if reward_array.shape == (self.num_agents,):
+                return reward_array.copy()
+        if isinstance(rewards, dict):
+            shared = float(np.mean(list(rewards.values()))) if rewards else 0.0
+        elif isinstance(rewards, (int, float)):
+            shared = float(rewards)
+        else:
+            shared = float(np.mean(np.asarray(rewards, dtype=np.float32)))
+        return np.full(self.num_agents, shared, dtype=np.float32)
 
     def _init_graph_builder(self):
         """初始化图构建器"""
@@ -492,7 +563,7 @@ class HANMAPPOTrainer:
         
         han_config = HANConfig(
             satellite_in_dim=10,
-            user_in_dim=13,
+            user_in_dim=16,
             hidden_dim=self.config.han_hidden_dim,
             out_dim=self.config.han_out_dim,
             num_heads=self.config.han_num_heads,
@@ -519,8 +590,10 @@ class HANMAPPOTrainer:
             global_state_dim=self.global_state_dim,
             max_candidates=self.max_candidates,
             sat_embed_dim=self.han_out_dim,  # 卫星嵌入维度 = HAN输出维度
+            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
             actor_hidden_dims=list(self.config.actor_hidden_dims),
             critic_hidden_dims=list(self.config.critic_hidden_dims),
+            actor_dropout=0.0,
             clip_range=self.config.clip_range,
             clip_range_vf=self.config.clip_range_vf,
             value_loss_coef=self.config.value_loss_coef,
@@ -613,62 +686,195 @@ class HANMAPPOTrainer:
             edge_features,
         )
 
+    def _encode_graph_snapshots(
+        self,
+        graphs: Sequence[Any],
+    ) -> Dict[str, tuple[torch.Tensor, ...]]:
+        """将多个互不连通的图快照合并为一次 HAN 前向。
+
+        边索引按各图的节点偏移量平移，因此批图中不存在跨时间步的边。
+        ``node_batch`` 让语义注意力仍按原图分别归一化，输出与逐图前向
+        保持相同语义。
+        """
+        if not graphs:
+            raise ValueError("graphs must contain at least one snapshot")
+
+        first_graph = graphs[0]
+        node_types = tuple(first_graph.node_features)
+        edge_types = tuple(first_graph.edge_index)
+        node_feature_parts = {node_type: [] for node_type in node_types}
+        node_batch_parts = {node_type: [] for node_type in node_types}
+        node_sizes = {node_type: [] for node_type in node_types}
+        edge_src_parts = {edge_type: [] for edge_type in edge_types}
+        edge_dst_parts = {edge_type: [] for edge_type in edge_types}
+        edge_feature_parts = {edge_type: [] for edge_type in edge_types}
+        node_offsets = {node_type: 0 for node_type in node_types}
+
+        for graph_index, graph in enumerate(graphs):
+            if tuple(graph.node_features) != node_types:
+                raise ValueError("graph snapshots have inconsistent node types")
+            if tuple(graph.edge_index) != edge_types:
+                raise ValueError("graph snapshots have inconsistent edge types")
+            if set(graph.edge_features) != set(edge_types):
+                raise ValueError("graph snapshot is missing edge features")
+
+            graph_offsets = dict(node_offsets)
+            for node_type in node_types:
+                features = torch.as_tensor(
+                    graph.node_features[node_type],
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                count = int(features.shape[0])
+                node_feature_parts[node_type].append(features)
+                node_batch_parts[node_type].append(
+                    torch.full(
+                        (count,),
+                        graph_index,
+                        dtype=torch.long,
+                        device=self.device,
+                    )
+                )
+                node_sizes[node_type].append(count)
+                node_offsets[node_type] += count
+
+            for edge_type in edge_types:
+                src_type, _, dst_type = edge_type
+                src_indices, dst_indices = graph.edge_index[edge_type]
+                edge_src_parts[edge_type].append(
+                    torch.as_tensor(
+                        src_indices,
+                        dtype=torch.long,
+                        device=self.device,
+                    ) + graph_offsets[src_type]
+                )
+                edge_dst_parts[edge_type].append(
+                    torch.as_tensor(
+                        dst_indices,
+                        dtype=torch.long,
+                        device=self.device,
+                    ) + graph_offsets[dst_type]
+                )
+                edge_feature_parts[edge_type].append(
+                    torch.as_tensor(
+                        graph.edge_features[edge_type],
+                        dtype=torch.float32,
+                        device=self.device,
+                    )
+                )
+
+        node_features = {
+            node_type: torch.cat(parts, dim=0)
+            for node_type, parts in node_feature_parts.items()
+        }
+        node_batch = {
+            node_type: torch.cat(parts, dim=0)
+            for node_type, parts in node_batch_parts.items()
+        }
+        edge_index = {
+            edge_type: (
+                torch.cat(edge_src_parts[edge_type], dim=0),
+                torch.cat(edge_dst_parts[edge_type], dim=0),
+            )
+            for edge_type in edge_types
+        }
+        edge_features = {
+            edge_type: torch.cat(edge_feature_parts[edge_type], dim=0)
+            for edge_type in edge_types
+        }
+        embeddings = self.han_encoder(
+            node_features,
+            edge_index,
+            edge_features,
+            node_batch=node_batch,
+            num_graphs=len(graphs),
+        )
+        return {
+            node_type: torch.split(
+                embeddings[node_type],
+                node_sizes[node_type],
+                dim=0,
+            )
+            for node_type in node_types
+        }
+
     def _reencode_mappo_batch(
         self,
         batch: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
-        """用当前 HAN 参数重算 PPO minibatch 的图表示。"""
+        """用一次批图 HAN 前向重算 PPO minibatch 的图表示。"""
         time_indices = batch["time_indices"].detach().cpu().tolist()
-        agent_indices = batch["agent_indices"].detach().cpu().tolist()
-        encoded_by_time = {}
-
-        for time_index in sorted(set(time_indices)):
+        unique_time_indices = list(dict.fromkeys(time_indices))
+        graphs = []
+        for time_index in unique_time_indices:
             graph = self.buffer.graph_snapshots[time_index]
             if graph is None:
                 raise RuntimeError(
                     f"rollout 的第 {time_index} 步缺少图快照"
                 )
-            node_embeddings = self._encode_graph_snapshot(graph)
-            stored_observations = torch.as_tensor(
-                self.buffer.observations[time_index],
-                dtype=torch.float32,
-                device=self.device,
-            )
-            policy_observations = torch.cat(
-                [
-                    stored_observations[:, :self.raw_obs_dim],
-                    node_embeddings["user"],
-                    stored_observations[:, -5:],
-                ],
-                dim=1,
-            )
-            encoded_by_time[time_index] = (
-                policy_observations,
-                node_embeddings["satellite"],
-                policy_observations.reshape(-1),
-            )
+            graphs.append(graph)
 
-        batch["observations"] = torch.stack(
-            [
-                encoded_by_time[time_index][0][agent_index]
-                for time_index, agent_index in zip(
-                    time_indices,
-                    agent_indices,
-                )
-            ]
+        node_embeddings = self._encode_graph_snapshots(graphs)
+        stored_observations = torch.as_tensor(
+            self.buffer.observations[unique_time_indices],
+            dtype=torch.float32,
+            device=self.device,
         )
-        batch["satellite_embeddings"] = torch.stack(
+        user_embeddings = torch.stack(
+            node_embeddings["user"],
+            dim=0,
+        )
+        reencoded_satellite_embeddings = torch.stack(
+            node_embeddings["satellite"],
+            dim=0,
+        )
+        stored_satellite_embeddings = torch.as_tensor(
+            self.buffer.satellite_embeddings[unique_time_indices],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        satellite_suffix = stored_satellite_embeddings[
+            :,
+            :,
+            self.config.han_out_dim:,
+        ]
+        satellite_embeddings = torch.cat(
+            [reencoded_satellite_embeddings, satellite_suffix],
+            dim=2,
+        )
+        observation_suffix = stored_observations[
+            :,
+            :,
+            self.raw_obs_dim + self.config.han_out_dim:,
+        ]
+        policy_observations = torch.cat(
             [
-                encoded_by_time[time_index][1]
+                stored_observations[:, :, :self.raw_obs_dim],
+                user_embeddings,
+                observation_suffix,
+            ],
+            dim=2,
+        )
+
+        time_position_by_index = {
+            time_index: position
+            for position, time_index in enumerate(unique_time_indices)
+        }
+        time_positions = torch.as_tensor(
+            [
+                time_position_by_index[time_index]
                 for time_index in time_indices
-            ]
+            ],
+            dtype=torch.long,
+            device=self.device,
         )
-        batch["global_states"] = torch.stack(
-            [
-                encoded_by_time[time_index][2]
-                for time_index in time_indices
-            ]
-        )
+        agent_indices = batch["agent_indices"].long()
+        batch["observations"] = policy_observations[
+            time_positions,
+            agent_indices,
+        ]
+        batch["satellite_embeddings"] = satellite_embeddings[time_positions]
+        batch["global_states"] = policy_observations.flatten(1)[time_positions]
         return batch
 
     def _raw_policy_observations(self) -> np.ndarray:
@@ -688,7 +894,7 @@ class HANMAPPOTrainer:
         """构建异质图并使用 HAN 编码，返回用户嵌入、卫星嵌入、候选动作掩码和候选卫星ID。
 
         性能优化：HAN编码每 graph_update_interval 步才重新计算一次，
-        中间步骤只更新轻量级特征（task/rvt/available_actions）。
+        中间步骤直接刷新原始观测、动作掩码和候选卫星ID。
         """
         graph_update_interval = max(1, int(self.config.graph_update_interval))
         
@@ -706,48 +912,28 @@ class HANMAPPOTrainer:
             self._cached_sat_embed = node_embeddings['satellite'].detach().cpu().numpy().astype(np.float32)
             self._cached_graph_snapshot = graph
         
-        # 轻量级更新：内联提取task/rvt，避免调用完整的extract_node_features
-        rvt_warning = np.zeros((self.num_agents, 1), dtype=np.float32)
-        task_features = np.zeros((self.num_agents, 4), dtype=np.float32)
-        available_actions = np.zeros((self.num_agents, self.max_candidates + 1), dtype=np.float32)
-        available_actions[:, 0] = 1.0
-        
-        rvt_threshold = getattr(self.env.config, 'rvt_threshold_sec', 60.0)
+        available_actions = self.env.get_handover_action_mask(
+            self.max_candidates,
+            apply_pre_handover_gate=False,
+        )
+
         candidate_sat_ids = np.full(
             (self.num_agents, self.max_candidates),
             -1,
             dtype=np.int64,
         )
         for uid, user in enumerate(self.env.user_manager.users):
-            # task特征
-            task = self.env.user_tasks.get(uid)
-            if task is not None:
-                task_features[uid, 0] = task.data_size / 50e6
-                task_features[uid, 1] = task.computation / 10e9
-                task_features[uid, 2] = task.max_delay / 10.0
-                task_features[uid, 3] = task.task_type.value / 2.0
-            # rvt预警
-            if user.serving_satellite >= 0:
-                vis = self.env._get_satellite_visibility(user, user.serving_satellite)
-                if vis is not None and vis.is_visible:
-                    rvt_warning[uid, 0] = 1.0 if vis.rvt_seconds < rvt_threshold else 0.0
-                else:
-                    rvt_warning[uid, 0] = 1.0
-            else:
-                rvt_warning[uid, 0] = 1.0
             # available_actions and candidate_sat_ids
             visible_sats = self.env._get_handover_candidates(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
-                available_actions[uid, 1:valid_count + 1] = 1.0
                 candidate_sat_ids[uid, :valid_count] = [
                     sat_info.sat_id for sat_info in visible_sats[:valid_count]
                 ]
 
         raw_observations = self._raw_policy_observations()
-        light_features = np.concatenate([rvt_warning, task_features], axis=1)
         user_embeddings = np.concatenate(
-            [raw_observations, self._cached_han_user_embed, light_features],
+            [raw_observations, self._cached_han_user_embed],
             axis=1,
         ).astype(np.float32, copy=False)
         return user_embeddings, self._cached_sat_embed, available_actions, candidate_sat_ids
@@ -840,6 +1026,7 @@ class HANMAPPOTrainer:
             'total_energy': 0.0,
             'successful_task_delay_samples': [],
             'reward_task_success': 0.0,
+            'reward_load_balance': 0.0,
             'penalty_delay': 0.0,
             'penalty_energy': 0.0,
             'penalty_task_failure': 0.0,
@@ -897,13 +1084,27 @@ class HANMAPPOTrainer:
         global_state = observations.flatten()
 
         for step in range(self.config.n_steps):
+            user_tasks = getattr(self.env, "user_tasks", None)
+            continuous_action_mask = np.asarray(
+                [
+                    True if user_tasks is None else user_tasks.get(user_id) is not None
+                    for user_id in range(self.num_agents)
+                ],
+                dtype=np.float32,
+            )
+            rollout_graph_snapshot = getattr(
+                self,
+                "_cached_graph_snapshot",
+                None,
+            )
             # 选择动作
             with torch.no_grad():
                 actions, log_probs, value = self.mappo.act(
                     observations,
                     available_actions,
                     satellite_embeddings=satellite_embeddings,
-                    candidate_sat_ids=candidate_sat_ids
+                    candidate_sat_ids=candidate_sat_ids,
+                    continuous_action_mask=continuous_action_mask,
                 )
             
             # 执行动作
@@ -916,25 +1117,21 @@ class HANMAPPOTrainer:
             info = info or {}
             
             done = terminated or truncated
-            
-            # 处理奖励（可以是标量或数组）
-            if hasattr(self.env, "last_user_rewards"):
-                agent_rewards = np.asarray(self.env.last_user_rewards, dtype=np.float32)
-            elif isinstance(info, dict) and "user_rewards" in info:
-                agent_rewards = np.asarray(info["user_rewards"], dtype=np.float32)
-            elif isinstance(rewards, (int, float)):
-                shared_reward = float(rewards)
-                agent_rewards = np.full(self.num_agents, shared_reward, dtype=np.float32)
-            elif isinstance(rewards, dict):
-                agent_rewards = np.array(
-                    [rewards.get(f'user_{i}', 0) for i in range(self.num_agents)],
-                    dtype=np.float32,
+            timeout_bootstrap_value = 0.0
+            if truncated and not terminated:
+                # TimeLimit 不是 MDP 终态：在 reset 前对真实终态观测估值，
+                # 但 GAE 递推仍在此处截断，不能穿过下一个 episode。
+                self._invalidate_han_cache()
+                terminal_observations, terminal_satellite_embeddings, _, _ = (
+                    self._encode_graph_state()
                 )
-            else:
-                agent_rewards = np.asarray(rewards, dtype=np.float32)
-
-            if agent_rewards.shape != (self.num_agents,):
-                agent_rewards = np.resize(agent_rewards, self.num_agents).astype(np.float32)
+                with torch.no_grad():
+                    timeout_bootstrap_value = self.mappo.get_value(
+                        terminal_observations,
+                        satellite_embeddings=terminal_satellite_embeddings,
+                    )
+            
+            agent_rewards = self._agent_reward_vector(rewards)
 
             # 统计口径：使用每步全局平均奖励（避免多智能体重复求和导致量纲放大）
             if isinstance(rewards, (int, float)):
@@ -959,8 +1156,10 @@ class HANMAPPOTrainer:
                 value=value,
                 log_probs=log_probs,
                 candidate_masks=available_actions,
+                continuous_action_masks=continuous_action_mask,
                 candidate_sat_ids=candidate_sat_ids,
-                graph_snapshot=self._cached_graph_snapshot,
+                timeout_bootstrap_value=timeout_bootstrap_value,
+                graph_snapshot=rollout_graph_snapshot,
             )
             
             # 更新统计
@@ -1101,10 +1300,16 @@ class HANMAPPOTrainer:
             update_start = time.time()
             
             # 1. 收集数据
+            rollout_start = time.time()
             rollout_stats = self.collect_rollouts()
+            rollout_elapsed = time.time() - rollout_start
             
             # 2. 更新策略
+            ppo_update_start = time.time()
             update_stats = self.mappo.update()
+            ppo_update_elapsed = time.time() - ppo_update_start
+            update_stats["rollout_elapsed_sec"] = rollout_elapsed
+            update_stats["ppo_update_elapsed_sec"] = ppo_update_elapsed
             
             # 3. 记录日志 + 保存训练历史
             elapsed = time.time() - update_start
@@ -1254,6 +1459,11 @@ class HANMAPPOTrainer:
             f"HAN Metapaths: {update_stats.get('han_metapaths_executed', 0)}"
         )
         self.logger.info(
+            "  Phase | "
+            f"Rollout: {update_stats.get('rollout_elapsed_sec', 0.0):.2f}s | "
+            f"PPO update: {update_stats.get('ppo_update_elapsed_sec', 0.0):.2f}s"
+        )
+        self.logger.info(
             "  Env | "
             f"HO: {rollout_stats.get('handover_success_rate', 0):.2%} | "
             f"Cont: {rollout_stats.get('service_continuity_rate', 0):.2%} | "
@@ -1266,6 +1476,7 @@ class HANMAPPOTrainer:
         self.logger.info(
             "  Reward | "
             f"Success: {rollout_stats.get('reward_task_success', 0):.2f} | "
+            f"Load: {rollout_stats.get('reward_load_balance', 0):.2f} | "
             f"Delay: {rollout_stats.get('penalty_delay', 0):.2f} | "
             f"Energy: {rollout_stats.get('penalty_energy', 0):.2f} | "
             f"TaskFail: {rollout_stats.get('penalty_task_failure', 0):.2f} | "
@@ -1298,7 +1509,9 @@ class HANMAPPOTrainer:
             self.mappo.critic.eval()
 
             for ep in range(self.config.eval_episodes):
-                self.env.reset(seed=self.config.seed + 100_000 + ep)
+                self.env.reset(
+                    seed=self.config.seed + EVALUATION_SEED_OFFSET + ep
+                )
                 self._invalidate_han_cache()
                 (
                     observations,
@@ -1563,9 +1776,13 @@ class HANMAPPOTrainer:
         """加载检查点"""
         self.logger.info(f"加载检查点: {path}")
         
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(
+            path,
+            map_location=self.device,
+            weights_only=False,
+        )
         schema_version = int(checkpoint.get('model_schema_version', 1))
-        if schema_version < MODEL_SCHEMA_VERSION:
+        if schema_version != MODEL_SCHEMA_VERSION:
             raise ValueError(
                 "该检查点来自 P0 修复前的 HAN/环境结构，不能用于恢复训练或正式比较；"
                 "请使用修复后的代码重新训练。"
@@ -1573,7 +1790,14 @@ class HANMAPPOTrainer:
         environment_schema_version = int(
             checkpoint.get('environment_schema_version', 1)
         )
-        if environment_schema_version < ENVIRONMENT_SCHEMA_VERSION:
+        geometry_schema_version = int(
+            checkpoint.get('geometry_schema_version', 1)
+        )
+        if geometry_schema_version != GEOMETRY_SCHEMA_VERSION:
+            raise ValueError(
+                "检查点的轨道/图几何版本与当前代码不一致，不能恢复训练。"
+            )
+        if environment_schema_version != ENVIRONMENT_SCHEMA_VERSION:
             raise ValueError(
                 "该检查点来自 P1 修复前的 MEC 时序、切换候选或奖励结算语义，"
                 "不能用于恢复训练或正式比较；请使用当前代码重新训练。"
@@ -1644,6 +1868,7 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
             global_state_dim=self.global_state_dim,
             max_candidates=self.max_candidates,
             sat_embed_dim=self.sat_feature_dim,
+            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
             actor_hidden_dims=list(self.config.actor_hidden_dims),
             critic_hidden_dims=list(self.config.critic_hidden_dims),
             clip_range=self.config.clip_range,
@@ -1678,11 +1903,10 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
     def _encode_graph_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         raw_observations = self._raw_policy_observations()
         satellite_features = self._satellite_load_features()
-        available_actions = np.zeros(
-            (self.num_agents, self.max_candidates + 1),
-            dtype=np.float32,
+        available_actions = self.env.get_handover_action_mask(
+            self.max_candidates,
+            apply_pre_handover_gate=False,
         )
-        available_actions[:, 0] = 1.0
         candidate_sat_ids = np.full(
             (self.num_agents, self.max_candidates),
             -1,
@@ -1693,7 +1917,6 @@ class AttentionMAPPOTrainer(HANMAPPOTrainer):
             visible_sats = self.env._get_handover_candidates(user)
             valid_count = min(len(visible_sats), self.max_candidates)
             if valid_count > 0:
-                available_actions[uid, 1 : valid_count + 1] = 1.0
                 candidate_sat_ids[uid, :valid_count] = [
                     sat_info.sat_id for sat_info in visible_sats[:valid_count]
                 ]
@@ -1708,7 +1931,7 @@ class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
 
     def _init_environment(self):
         super()._init_environment()
-        self.obs_dim = self.raw_obs_dim + self.han_out_dim + 5 + SHARED_CONSTRAINT_DIM
+        self.obs_dim = self.raw_obs_dim + self.han_out_dim + SHARED_CONSTRAINT_DIM
         self.global_state_dim = self.num_agents * self.obs_dim
         self.logger.info(
             f"  - HAN+Attn policy observation dim: {self.obs_dim} "
@@ -1728,6 +1951,7 @@ class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
             sat_embed_dim=fused_sat_dim,
             risk_feature_start=self.config.han_out_dim + SATELLITE_LOAD_FEATURE_DIM,
             risk_feature_dim=SATELLITE_CONTEXT_FEATURE_DIM - SATELLITE_LOAD_FEATURE_DIM,
+            min_effective_offload_ratio=self.config.min_effective_offload_ratio,
             actor_hidden_dims=list(self.config.actor_hidden_dims),
             critic_hidden_dims=list(self.config.critic_hidden_dims),
             clip_range=self.config.clip_range,
@@ -1748,6 +1972,11 @@ class HANCandidateAttentionMAPPOTrainer(HANMAPPOTrainer):
         )
 
         self.mappo = AttentionMAPPO(mappo_config)
+        self.mappo.set_representation_module(
+            self.han_encoder,
+            self._reencode_mappo_batch,
+            learning_rate=self.config.learning_rate,
+        )
         actor_params = sum(p.numel() for p in self.mappo.actor.parameters())
         critic_params = sum(p.numel() for p in self.mappo.critic.parameters())
         self.logger.info(f"  - HAN+Attn Actor params: {actor_params:,}")
@@ -1780,8 +2009,51 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
 
     algorithm_name = "maddpg"
 
+    def _load_frozen_pretrained_han(self) -> None:
+        """Load a trained HAN for replay-based algorithms and freeze it.
+
+        Replay entries currently contain encoded observations rather than raw
+        graph snapshots. End-to-end encoder updates would therefore make old
+        entries stale. Requiring a trained frozen encoder is preferable to the
+        previous silent use of a randomly initialized HAN.
+        """
+        checkpoint_path = getattr(self.config, "pretrained_han_path", None)
+        if not checkpoint_path:
+            raise ValueError(
+                "HAN off-policy training requires pretrained_han_path; "
+                "refusing to train with a frozen random HAN encoder"
+            )
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location=self.device,
+            weights_only=False,
+        )
+        schema_contract = {
+            'model_schema_version': MODEL_SCHEMA_VERSION,
+            'geometry_schema_version': GEOMETRY_SCHEMA_VERSION,
+            'environment_schema_version': ENVIRONMENT_SCHEMA_VERSION,
+        }
+        for key, expected in schema_contract.items():
+            actual = int(checkpoint.get(key, 0))
+            if actual != expected:
+                raise ValueError(
+                    f"Frozen HAN checkpoint {checkpoint_path} has {key}={actual}; "
+                    f"expected {expected}"
+                )
+        state_dict = checkpoint.get("han_state_dict")
+        if state_dict is None:
+            raise ValueError(
+                f"Checkpoint {checkpoint_path} does not contain han_state_dict"
+            )
+        self.han_encoder.load_state_dict(state_dict)
+        self.han_encoder.eval()
+        for parameter in self.han_encoder.parameters():
+            parameter.requires_grad_(False)
+        self.logger.info(f"  - Loaded frozen pretrained HAN: {checkpoint_path}")
+
     def _init_mappo(self):
         self.logger.info("初始化 HAN+MADDPG...")
+        self._load_frozen_pretrained_han()
         maddpg_config = MADDPGConfig(
             num_agents=self.num_agents,
             obs_dim=self.obs_dim,
@@ -1830,15 +2102,17 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         return float(np.mean(np.asarray(rewards, dtype=float)))
 
     def _replay_reward(self, reward_value: float):
-        if self.algorithm_name == "pdqn" and hasattr(self.env, "last_user_rewards"):
-            return np.asarray(self.env.last_user_rewards, dtype=np.float32)
-        return float(reward_value)
+        return self._agent_reward_vector(reward_value)
 
     def _reset_encoded_env(self, seed: Optional[int] = None):
         self._cached_han_user_embed = None
         self._cached_sat_embed = None
         self.env.reset(seed=seed)
         user_emb, sat_emb, masks, _ = self._encode_graph_state()
+        masks = self._apply_pre_handover_action_mask(
+            masks,
+            self.env.get_pre_handover_mask(),
+        )
         return user_emb, sat_emb, masks
 
     def _select_train_action(self, observations: np.ndarray, masks: np.ndarray, step_idx: int):
@@ -1895,7 +2169,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
 
         return self._action_features_from_env_actions(actions, masks_np)
 
-    def _mixed_safe_random_actions(self, masks: np.ndarray, safe_probability: float = 0.7):
+    def _mixed_safe_random_actions(self, masks: np.ndarray, safe_probability: float = 0.0):
         masks_np = np.asarray(masks, dtype=bool)
         safe_actions, safe_features, safe_handover = self._safe_heuristic_actions(masks_np)
         random_actions, random_features, random_handover = self.algorithm.random_actions(masks_np)
@@ -1986,6 +2260,14 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'load_variance_sample_count': summary.get('load_variance_sample_count', 0),
             'mec_load_fairness': summary.get('mec_load_fairness', 0.0),
             'jain_mec_load_fairness': summary.get('jain_mec_load_fairness', 0.0),
+            'active_mec_load_fairness': summary.get(
+                'active_mec_load_fairness',
+                summary.get('mec_load_fairness', 0.0),
+            ),
+            'reachable_jain_mec_load_fairness': summary.get(
+                'reachable_jain_mec_load_fairness',
+                summary.get('jain_mec_load_fairness', 0.0),
+            ),
             'avg_load_balance_score': summary.get('avg_load_balance_score', 0.0),
             'active_load_balance_score': summary.get('active_load_balance_score', 0.0),
             **reward_breakdown(env_stats),
@@ -2021,13 +2303,22 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             done = bool(terminated or truncated)
             reward_value = self._scalar_reward(rewards)
             next_observations, _, next_masks, _ = self._encode_graph_state()
-            replay_next_masks = np.zeros_like(masks, dtype=bool) if done else next_masks.astype(bool)
+            next_masks = self._apply_pre_handover_action_mask(
+                next_masks,
+                self.env.get_pre_handover_mask(),
+            )
+            replay_terminal = bool(terminated)
+            replay_next_masks = (
+                np.zeros_like(masks, dtype=bool)
+                if replay_terminal
+                else next_masks.astype(bool)
+            )
             self.buffer.add(
                 observations,
                 action_features,
                 self._replay_reward(reward_value),
                 next_observations,
-                done,
+                replay_terminal,
                 masks.astype(bool),
                 replay_next_masks,
             )
@@ -2101,7 +2392,9 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         try:
             self.env = eval_env
             for ep in range(self.config.eval_episodes):
-                observations, _, masks = self._reset_encoded_env(seed=self.config.seed + 100_000 + ep)
+                observations, _, masks = self._reset_encoded_env(
+                    seed=self.config.seed + EVALUATION_SEED_OFFSET + ep
+                )
                 episode_reward = 0.0
                 episode_length = 0
                 done = False
@@ -2117,6 +2410,10 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
                     episode_length += 1
                     if not done:
                         observations, _, masks, _ = self._encode_graph_state()
+                        masks = self._apply_pre_handover_action_mask(
+                            masks,
+                            self.env.get_pre_handover_mask(),
+                        )
                 eval_rewards.append(episode_reward)
                 eval_lengths.append(episode_length)
                 self._accumulate_env_stats(eval_env_stats, self.env.get_stats_summary())
@@ -2259,13 +2556,19 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
     def load_checkpoint(self, path: str):
         self.logger.info(f"加载检查点: {path}")
         checkpoint = torch.load(path, map_location=self.device)
+        model_schema_version = int(checkpoint.get('model_schema_version', 1))
+        geometry_schema_version = int(checkpoint.get('geometry_schema_version', 1))
         environment_schema_version = int(
             checkpoint.get('environment_schema_version', 1)
         )
-        if environment_schema_version < ENVIRONMENT_SCHEMA_VERSION:
+        if (
+            model_schema_version != MODEL_SCHEMA_VERSION
+            or geometry_schema_version != GEOMETRY_SCHEMA_VERSION
+            or environment_schema_version != ENVIRONMENT_SCHEMA_VERSION
+        ):
             raise ValueError(
-                "该检查点来自 P1 修复前的环境动作/时序语义，不能用于恢复训练或"
-                "正式比较；请使用当前代码重新训练。"
+                "检查点的模型、几何或环境 schema 与当前代码不一致，"
+                "不能恢复训练或正式比较；请使用当前代码重新训练。"
             )
         self.total_steps = checkpoint['total_steps']
         self.episodes = checkpoint['episodes']
@@ -2291,6 +2594,7 @@ class HANPDQNTrainer(HANMADDPGTrainer):
 
     def _init_mappo(self):
         self.logger.info("初始化 HAN+PDQN...")
+        self._load_frozen_pretrained_han()
         pdqn_config = PDQNConfig(
             num_agents=self.num_agents,
             obs_dim=self.obs_dim,
@@ -2319,9 +2623,18 @@ class HANPDQNTrainer(HANMADDPGTrainer):
         self.logger.info(f"  - PDQN 参数网络参数量: {param_params:,}")
 
     def _select_train_action(self, observations: np.ndarray, masks: np.ndarray, step_idx: int):
+        safe_probability = float(
+            getattr(self.config, "safe_exploration_probability", 0.0)
+        )
         if step_idx < self.config.warmup_steps:
-            return self._mixed_safe_random_actions(masks.astype(bool), safe_probability=0.7)
-        exploration_actions, _, _ = self._mixed_safe_random_actions(masks.astype(bool), safe_probability=0.7)
+            return self._mixed_safe_random_actions(
+                masks.astype(bool),
+                safe_probability=safe_probability,
+            )
+        exploration_actions, _, _ = self._mixed_safe_random_actions(
+            masks.astype(bool),
+            safe_probability=safe_probability,
+        )
         return self.algorithm.act(
             observations,
             masks.astype(bool),
@@ -2397,16 +2710,36 @@ def parse_args():
                         help='成功任务的归一化时延惩罚权重')
     parser.add_argument('--reward_energy_weight', type=float, default=defaults.reward_energy_weight,
                         help='成功任务的归一化能耗惩罚权重')
+    parser.add_argument(
+        '--reward_energy_reference_j',
+        type=float,
+        default=defaults.reward_energy_reference_j,
+        help='成功任务能耗归一化参考值（焦耳）',
+    )
     parser.add_argument('--reward_interruption_weight', type=float, default=defaults.reward_interruption_weight,
                         help='用户级服务中断比例惩罚权重')
     parser.add_argument('--reward_failed_handover_penalty', type=float, default=defaults.reward_failed_handover_penalty,
                         help='失败切换的固定惩罚')
+    parser.add_argument(
+        '--reward_load_balance_weight',
+        '--reward-load-balance-weight',
+        dest='reward_load_balance_weight',
+        type=float,
+        default=defaults.reward_load_balance_weight,
+        help='可达MEC节点Jain公平性的协作奖励权重；设为0可做消融',
+    )
     parser.add_argument('--min_effective_offload_ratio', type=float, default=defaults.min_effective_offload_ratio,
                         help='Treat smaller offload ratios as local execution')
     parser.add_argument('--pre_handover_rvt_sec', type=float, default=defaults.pre_handover_rvt_sec,
                         help='Pre-handover RVT threshold (seconds)')
     parser.add_argument('--handover_min_snr_db', type=float, default=defaults.handover_min_snr_db,
                         help='Minimum target-link SNR for handover admission (dB)')
+    parser.add_argument(
+        '--pretrained_han_path',
+        type=str,
+        default=defaults.pretrained_han_path,
+        help='Trained HAN checkpoint required by replay-based HAN+MADDPG/PDQN',
+    )
 
     # 训练参数
     parser.add_argument('--total_timesteps', type=int, default=defaults.total_timesteps,
@@ -2425,6 +2758,12 @@ def parse_args():
                         help='Entropy coefficient schedule')
     parser.add_argument('--bc_loss_coef', type=float, default=defaults.bc_loss_coef,
                         help='PDQN behavior-cloning loss coefficient')
+    parser.add_argument(
+        '--safe-exploration-probability',
+        type=float,
+        default=defaults.safe_exploration_probability,
+        help='PDQN启发式探索候选概率；默认0以保持算法比较公平',
+    )
     
     # HAN参数
     parser.add_argument('--han_hidden_dim', type=int, default=defaults.han_hidden_dim,

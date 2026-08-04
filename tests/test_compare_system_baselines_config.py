@@ -35,7 +35,7 @@ def test_filter_duplicate_system_baselines_keeps_other_systems_intact():
         {"algorithm": "mappo"},
     )
 
-    assert filtered == ["han_attn", "attn_mappo", "han_mappo"]
+    assert filtered == ["han_attn", "attn_mappo"]
 
 
 def test_no_han_mappo_can_reuse_existing_checkpoint_without_training(tmp_path, monkeypatch):

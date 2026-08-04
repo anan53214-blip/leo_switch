@@ -35,7 +35,7 @@ from scripts.load_balance_metrics import normalize_load_balance_metrics
 
 
 HistorySpec = Tuple[Optional[str], Path]
-DEFAULT_SELECTION_METRIC = "avg_delay"
+DEFAULT_SELECTION_METRIC = "reward"
 PRIMARY_COMPARE_METRICS = (
     ("avg_delay", "Average Delay"),
     ("service_continuity_rate", "Service Continuity"),
@@ -172,8 +172,8 @@ def _float(record: Dict[str, Any], key: str, default: float = 0.0) -> float:
 def _record_reward(record: Dict[str, Any]) -> float:
     return _float(
         record,
-        "eval_mean_reward",
-        _float(record, "mean_reward", _float(record, "recent_mean_reward", _float(record, "reward", 0.0))),
+        "mean_reward",
+        _float(record, "eval_mean_reward", _float(record, "reward", 0.0)),
     )
 
 
@@ -867,7 +867,7 @@ def generate_from_histories(
     output_dir: Path,
     system_history: Optional[Path] = None,
     selection_metric: Optional[str] = None,
-    plot_window: int = 5,
+    plot_window: int = 3,
 ) -> List[Path]:
     if not histories:
         raise ValueError("At least one --history entry is required.")
@@ -941,7 +941,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--system-history", type=str, default=None)
     parser.add_argument("--output-dir", "-o", type=str, default="results/plot_only_comparison")
     parser.add_argument("--selection-metric", type=str, default=None)
-    parser.add_argument("--plot-window", type=int, default=5)
+    parser.add_argument("--plot-window", type=int, default=3)
     return parser.parse_args(argv)
 
 

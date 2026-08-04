@@ -236,6 +236,54 @@ def test_candidate_attention_offload_distribution_is_conditioned_per_handover_ac
     assert offload_dist.mean.shape == (1, max_candidates + 1)
 
 
+def test_candidate_attention_zero_inflated_log_prob_is_reproducible():
+    from src.model.candidate_attention import (
+        CandidateAttentionActor,
+        CandidateAttentionConfig,
+    )
+
+    torch.manual_seed(23)
+    max_candidates = 2
+    obs_dim = 3 + 1 + 5 + max_candidates * 6 + 4
+    actor = CandidateAttentionActor(
+        CandidateAttentionConfig(
+            user_obs_dim=obs_dim,
+            sat_feature_dim=8,
+            hidden_dim=32,
+            num_heads=4,
+            max_candidates=max_candidates,
+            min_offload_ratio=0.05,
+            dropout=0.0,
+        )
+    )
+    actor.eval()
+    observations = torch.randn(2, obs_dim)
+    masks = torch.ones(2, max_candidates + 1)
+    satellite_features = torch.randn(4, 8)
+    candidate_sat_ids = torch.tensor([[0, 1], [2, 3]], dtype=torch.long)
+
+    actions = actor.sample_all(
+        observations,
+        masks,
+        deterministic=False,
+        satellite_features=satellite_features,
+        candidate_sat_ids=candidate_sat_ids,
+    )
+    evaluated_log_prob, _ = actor.evaluate_all(
+        observations,
+        actions["handover"],
+        actions["offload"],
+        masks,
+        satellite_features,
+        candidate_sat_ids,
+    )
+
+    assert torch.allclose(actions["log_prob"], evaluated_log_prob, atol=1e-5)
+    assert torch.all(
+        (actions["offload"] == 0.0) | (actions["offload"] >= 0.05)
+    )
+
+
 def test_satellite_load_encoder_accepts_global_satellite_tokens():
     from src.model.candidate_attention import SatelliteLoadEncoder
 

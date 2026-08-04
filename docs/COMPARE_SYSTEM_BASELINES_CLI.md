@@ -24,7 +24,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
   --num-users 1 `
   --total-timesteps 50000 `
   --episodes 3 `
-  --max-steps 600 `
+  --max-steps 512 `
   --device cpu `
   --best-model-metric avg_delay `
   --compare-ranking-metric avg_delay `
@@ -44,7 +44,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
   --num-users 1 `
   --total-timesteps 50000 `
   --episodes 3 `
-  --max-steps 600 `
+  --max-steps 512 `
   --device cpu `
   --best-model-metric avg_delay `
   --compare-ranking-metric avg_delay `
@@ -62,7 +62,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
   --run-mode compare_only `
   --system-run-dir results\single_user_system_mappo `
   --episodes 3 `
-  --max-steps 600 `
+  --max-steps 512 `
   --device cpu `
   --compare-ranking-metric avg_delay `
   --baselines random min_distance full_local joint_greedy `
@@ -84,9 +84,9 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
 
 | 参数 | 默认值 | 用法 |
 | --- | --- | --- |
-| `--episodes` | `3` | 每个方法评估的 episode 数。 |
+| `--episodes` | `5` | 每个方法评估的 episode 数。 |
 | `--max-steps` | 默认不覆盖 | 覆盖训练、评估、基线测试时每个 episode 的最大步数。 |
-| `--total-timesteps` | `300000` | 系统算法训练步数。学习型基线如果没有单独设置步数，也会使用这个值。 |
+| `--total-timesteps` | `150000` | 系统算法训练步数。学习型基线如果没有单独设置步数，也会使用这个值。 |
 | `--early-stop-patience` | `0` | MAPPO 类训练的早停耐心值，`0` 表示禁用早停。 |
 | `--seed` | `42` | 基线评估和默认配置使用的随机种子。 |
 | `--device` | `auto`，可选 `auto`、`cpu`、`cuda` | 训练和评估设备。本机快速验证建议用 `cpu`。 |
@@ -203,7 +203,7 @@ han_pdqn
 
 | 参数 | 默认值 | 用法 |
 | --- | --- | --- |
-| `--plot-window` | `5` | reward 曲线和按 step 记录指标曲线的平滑窗口。 |
+| `--plot-window` | `3` | reward 曲线和按 step 记录指标曲线的平滑窗口。reward 绘图读取原始 `mean_reward`，不使用 `recent_mean_reward`。 |
 | `--output-dir` | 默认在 `results/baseline_compare` 下创建时间戳目录 | JSON、CSV 和图像输出目录。论文实验建议显式指定。 |
 
 脚本一定会写出：

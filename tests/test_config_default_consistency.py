@@ -7,7 +7,12 @@ from scripts.compare_system_baselines import (
     build_env_config_from_train_config,
     parse_args as parse_compare_args,
 )
-from scripts.run_multiuser_scaling_suite import MultiUserConfig
+from scripts.run_multiuser_scaling_suite import (
+    MultiUserConfig,
+    build_paths,
+    build_train_command,
+    parse_args as parse_suite_args,
+)
 from scripts.train import TrainConfig, parse_args
 from src.environment.gym_env import EnvConfig, build_env_config
 
@@ -15,20 +20,25 @@ from src.environment.gym_env import EnvConfig, build_env_config
 REWARD_DEFAULTS = {
     "reward_delay_weight": 0.60,
     "reward_energy_weight": 0.10,
+    "reward_energy_reference_j": 1.0,
     "reward_interruption_weight": 0.30,
     "reward_failed_handover_penalty": 0.20,
+    "reward_load_balance_weight": 0.05,
 }
 
 TRAINING_DEFAULTS = {
-    "max_steps": 600,
-    "total_timesteps": 300_000,
+    "max_steps": 512,
+    "total_timesteps": 150_000,
     "n_steps": 1024,
-    "eval_interval": 50_000,
-    "eval_episodes": 3,
-    "save_interval": 100_000,
+    "batch_size": 512,
+    "learning_rate": 1e-4,
+    "n_epochs": 4,
+    "eval_interval": 25_000,
+    "eval_episodes": 5,
+    "save_interval": 50_000,
     "graph_update_interval": 1,
     "log_interval": 1,
-    "best_model_metric": "avg_delay",
+    "best_model_metric": "reward",
 }
 
 
@@ -53,6 +63,8 @@ def test_training_defaults_match_reference_training():
 
     assert_defaults(config, REWARD_DEFAULTS)
     assert_defaults(config, TRAINING_DEFAULTS)
+    assert config.algorithm == "mappo"
+    assert config.exp_name.startswith("han_mappo")
 
 
 def test_all_environment_fields_are_copied_from_training_config():
@@ -121,9 +133,9 @@ def test_comparison_defaults_inherit_reference_training():
     config = build_default_train_config(
         objective="multi_objective",
         seed=42,
-        max_steps=600,
+        max_steps=TRAINING_DEFAULTS["max_steps"],
         num_users=20,
-        best_model_metric="avg_delay",
+        best_model_metric="reward",
     )
 
     assert_defaults(config, REWARD_DEFAULTS)
@@ -138,3 +150,28 @@ def test_comparison_defaults_inherit_reference_training():
 )
 def test_suite_defaults_match_reference_training(config):
     assert_defaults(config, TRAINING_DEFAULTS)
+
+
+def test_suite_cli_defaults_and_train_command_propagate_reference_training(tmp_path):
+    args = parse_suite_args(["--run-id", "config-test"])
+    assert_defaults(args, TRAINING_DEFAULTS)
+
+    config = MultiUserConfig(run_id="config-test")
+    paths = build_paths(tmp_path, config.run_id, num_users=20)
+    command = build_train_command(paths, config, num_users=20)
+    assert command[command.index("--algorithm") + 1] == "mappo"
+    assert command[command.index("--reward-load-balance-weight") + 1] == "0.05"
+
+    for option, field_name in (
+        ("--total_timesteps", "total_timesteps"),
+        ("--max_steps", "max_steps"),
+        ("--n_steps", "n_steps"),
+        ("--batch_size", "batch_size"),
+        ("--learning_rate", "learning_rate"),
+        ("--n_epochs", "n_epochs"),
+        ("--eval_interval", "eval_interval"),
+        ("--eval_episodes", "eval_episodes"),
+        ("--save_interval", "save_interval"),
+    ):
+        option_index = command.index(option)
+        assert command[option_index + 1] == str(TRAINING_DEFAULTS[field_name])

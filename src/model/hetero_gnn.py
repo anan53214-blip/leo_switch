@@ -72,7 +72,7 @@ class HANConfig:
     """
     # 特征维度
     satellite_in_dim: int = 10         # 卫星输入特征维度
-    user_in_dim: int = 13              # 用户输入特征维度
+    user_in_dim: int = 16              # 用户输入特征维度（含任务紧迫度/积压）
     hidden_dim: int = 64               # 隐藏层维度
     out_dim: int = 64                  # 输出嵌入维度
     
@@ -345,7 +345,9 @@ class HeterogeneousAttentionNetwork(nn.Module):
         node_features: Dict[str, torch.Tensor],
         edge_index: Dict[Tuple[str, str, str], Tuple[torch.Tensor, torch.Tensor]],
         edge_features: Optional[Dict[Tuple[str, str, str], torch.Tensor]] = None,
-        return_attention: bool = False
+        return_attention: bool = False,
+        node_batch: Optional[Dict[str, torch.Tensor]] = None,
+        num_graphs: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         前向传播
@@ -409,7 +411,12 @@ class HeterogeneousAttentionNetwork(nn.Module):
         # 用户嵌入
         if user_embeddings:
             user_final, user_attn = self.user_semantic_attn(
-                user_embeddings, return_weights=return_attention
+                user_embeddings,
+                return_weights=return_attention,
+                batch_index=(
+                    None if node_batch is None else node_batch.get("user")
+                ),
+                num_graphs=num_graphs,
             )
             output['user'] = self.output_proj['user'](self.dropout(user_final))
             if return_attention:
@@ -423,7 +430,12 @@ class HeterogeneousAttentionNetwork(nn.Module):
         # 卫星嵌入
         if sat_embeddings:
             sat_final, sat_attn = self.sat_semantic_attn(
-                sat_embeddings, return_weights=return_attention
+                sat_embeddings,
+                return_weights=return_attention,
+                batch_index=(
+                    None if node_batch is None else node_batch.get("satellite")
+                ),
+                num_graphs=num_graphs,
             )
             output['satellite'] = self.output_proj['satellite'](self.dropout(sat_final))
             if return_attention:
@@ -475,7 +487,9 @@ class HANEncoder(nn.Module):
         node_features: Dict[str, torch.Tensor],
         edge_index: Dict[Tuple[str, str, str], Tuple[torch.Tensor, torch.Tensor]],
         edge_features: Optional[Dict[Tuple[str, str, str], torch.Tensor]] = None,
-        return_attention: bool = False
+        return_attention: bool = False,
+        node_batch: Optional[Dict[str, torch.Tensor]] = None,
+        num_graphs: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         """编码张量化异质图数据。"""
         current_features = node_features
@@ -486,6 +500,8 @@ class HANEncoder(nn.Module):
                 edge_index=edge_index,
                 edge_features=edge_features,
                 return_attention=return_attention,
+                node_batch=node_batch,
+                num_graphs=num_graphs,
             )
             if return_attention:
                 current_features, attention = result

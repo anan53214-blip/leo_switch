@@ -14,6 +14,63 @@ from scripts import compare_system_baselines as compare_baselines
 from scripts.train import HANMADDPGTrainer
 
 
+def test_raw_pdqn_action_mask_applies_the_same_pre_handover_gate():
+    users = [SimpleNamespace(user_id=0), SimpleNamespace(user_id=1)]
+    env = SimpleNamespace(
+        num_users=2,
+        max_visible_sats=3,
+        user_manager=SimpleNamespace(users=users),
+        _get_handover_candidates=lambda user: [
+            SimpleNamespace(sat_id=10),
+            SimpleNamespace(sat_id=11),
+        ],
+        get_pre_handover_mask=lambda: np.asarray([False, True], dtype=bool),
+    )
+
+    masks = compare_baselines.pdqn_action_mask(env)
+
+    assert masks[0].tolist() == [True, False, False, False]
+    assert masks[1].tolist() == [True, True, True, False]
+
+
+def test_raw_maddpg_action_mask_applies_the_same_pre_handover_gate():
+    users = [SimpleNamespace(user_id=0), SimpleNamespace(user_id=1)]
+    env = SimpleNamespace(
+        num_users=2,
+        max_visible_sats=2,
+        user_manager=SimpleNamespace(users=users),
+        _get_handover_candidates=lambda user: [
+            SimpleNamespace(sat_id=10),
+            SimpleNamespace(sat_id=11),
+        ],
+        get_pre_handover_mask=lambda: np.asarray([False, True], dtype=bool),
+    )
+
+    masks = compare_baselines.maddpg_action_mask(env)
+
+    assert masks[0].tolist() == [True, False, False]
+    assert masks[1].tolist() == [True, True, True]
+
+
+def test_raw_dqn_action_mask_keeps_only_stay_bins_for_safe_users():
+    users = [SimpleNamespace(user_id=0), SimpleNamespace(user_id=1)]
+    env = SimpleNamespace(
+        num_users=2,
+        max_visible_sats=2,
+        user_manager=SimpleNamespace(users=users),
+        _get_handover_candidates=lambda user: [
+            SimpleNamespace(sat_id=10),
+            SimpleNamespace(sat_id=11),
+        ],
+        get_pre_handover_mask=lambda: np.asarray([False, True], dtype=bool),
+    )
+
+    masks = compare_baselines.dqn_action_mask(env, [0.0, 0.5, 1.0])
+
+    assert masks[0].tolist() == [True, True, True, False, False, False, False, False, False]
+    assert masks[1].tolist() == [True] * 9
+
+
 class _FakeEnv:
     def __init__(self, name):
         self.name = name
@@ -172,11 +229,11 @@ def test_pdqn_update_accepts_per_agent_rewards():
     assert "param_loss" in stats
 
 
-def test_pdqn_defaults_use_fast_exploration_schedule_and_light_bc():
+def test_pdqn_defaults_use_fast_exploration_schedule_without_privileged_bc():
     config = PDQNConfig()
 
     assert config.epsilon_final == 0.02
-    assert config.bc_loss_coef == 0.001
+    assert config.bc_loss_coef == 0.0
 
 
 def test_pdqn_networks_normalize_observation_features():
@@ -437,5 +494,110 @@ def test_raw_pdqn_training_history_records_shared_algorithm_config(tmp_path, mon
     assert history_config["epsilon_start"] == 1.0
     assert history_config["epsilon_final"] == 0.02
     assert history_config["epsilon_decay_steps"] == 1_001
-    assert history_config["bc_loss_coef"] == 0.001
+    assert history_config["bc_loss_coef"] == 0.0
+    assert history_config["safe_exploration_probability"] == 0.0
     assert history_config["seed"] == 77
+
+
+def test_raw_pdqn_logs_progress_and_saves_periodic_checkpoints(tmp_path, monkeypatch):
+    class TinyTrainingEnv:
+        user_obs_dim = 3
+        num_users = 2
+        max_visible_sats = 2
+
+        def __init__(self):
+            self.episode_step = 0
+            self.last_user_rewards = np.ones(self.num_users, dtype=np.float32)
+
+        def reset(self, seed=None):
+            self.episode_step = 0
+            return np.zeros((self.num_users, self.user_obs_dim), dtype=np.float32), {}
+
+        def step(self, actions):
+            self.episode_step += 1
+            done = self.episode_step >= 2
+            observations = np.full(
+                (self.num_users, self.user_obs_dim),
+                self.episode_step,
+                dtype=np.float32,
+            )
+            return observations, 1.0, done, False, {}
+
+        def get_stats_summary(self):
+            return {
+                "total_tasks": 2,
+                "completed_tasks": 2,
+                "resolved_tasks": 2,
+                "total_energy": 1.0,
+                "total_user_seconds": 4.0,
+                "service_continuity_rate": 1.0,
+                "service_availability_rate": 1.0,
+                "task_completion_rate": 1.0,
+                "task_success_rate": 1.0,
+                "task_resolution_rate": 1.0,
+                "avg_delay": 1.0,
+                "handover_frequency": 0.0,
+            }
+
+    monkeypatch.setattr(
+        compare_baselines,
+        "build_env_for_objective",
+        lambda objective, config, seed, max_steps: TinyTrainingEnv(),
+    )
+    monkeypatch.setattr(
+        compare_baselines,
+        "pdqn_action_mask",
+        lambda env: np.ones((env.num_users, env.max_visible_sats + 1), dtype=bool),
+    )
+    monkeypatch.setattr(
+        compare_baselines,
+        "pdqn_mixed_safe_random_actions",
+        lambda env, algorithm, masks, safe_probability: (
+            np.zeros((env.num_users, 2), dtype=np.float32),
+            np.pad(
+                np.ones((env.num_users, 1), dtype=np.float32),
+                ((0, 0), (0, env.max_visible_sats + 1)),
+            ),
+            np.zeros(env.num_users, dtype=np.int64),
+        ),
+    )
+    monkeypatch.setattr(
+        compare_baselines,
+        "evaluate_pdqn_policy",
+        lambda algorithm, objective, config, episodes, seed, max_steps: {
+            "method": "pdqn",
+            "display_name": "PDQN",
+            "episodes": episodes,
+            "mean_reward": 2.0,
+            "std_reward": 0.0,
+            "episode_metrics": [{"episode": 0, "reward": 2.0}],
+        },
+    )
+
+    result = compare_baselines.train_and_evaluate_pdqn_baseline(
+        config={"save_interval": 2, "log_interval": 1},
+        objective="multi_objective",
+        output_dir=tmp_path,
+        episodes=1,
+        seed=17,
+        max_steps=2,
+        total_timesteps=4,
+        device_name="cpu",
+    )
+
+    artifact_dir = tmp_path / "learned_baselines" / "pdqn"
+    assert (artifact_dir / "checkpoint_2.pt").is_file()
+    assert (artifact_dir / "checkpoint_4.pt").is_file()
+    assert (artifact_dir / "pdqn_model.pt").is_file()
+
+    log_text = Path(result["training_log"]).read_text(encoding="utf-8")
+    assert "Steps: 2/4" in log_text
+    assert "Steps: 4/4" in log_text
+    assert "周期权重已保存" in log_text
+
+    history = json.loads(Path(result["training_history"]).read_text(encoding="utf-8"))
+    assert history["config"]["save_interval"] == 2
+    assert history["config"]["log_interval_steps"] == 2
+    assert history["summary"]["total_steps"] == 4
+    assert history["summary"]["episodes"] == 2
+    assert history["evaluation"] == [{"episode": 0, "reward": 2.0}]

@@ -40,6 +40,7 @@ class AttentionMAPPO(MAPPO):
             dropout=0.1,
             risk_feature_start=config.risk_feature_start,
             risk_feature_dim=config.risk_feature_dim,
+            min_offload_ratio=config.min_effective_offload_ratio,
         )
         self.actor = CandidateAttentionActor(actor_config).to(self.device)
 
@@ -59,6 +60,12 @@ class AttentionMAPPO(MAPPO):
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(), lr=critic_lr, eps=1e-5
         )
+        # Keep the optional representation-learning contract inherited from
+        # MAPPO. Plain AttentionMAPPO leaves these disabled; HAN+Attention
+        # registers its encoder and batch re-encoding callback.
+        self.representation_module: Optional[nn.Module] = None
+        self.representation_optimizer = None
+        self.representation_batch_fn = None
         self.buffer: Optional[MultiAgentRolloutBuffer] = None
         self.train_step = 0
         self._last_train_stats: Dict[str, float] = {}
@@ -70,6 +77,7 @@ class AttentionMAPPO(MAPPO):
         candidate_masks: Optional[np.ndarray] = None,
         satellite_embeddings: Optional[np.ndarray] = None,
         candidate_sat_ids: Optional[np.ndarray] = None,
+        continuous_action_mask: Optional[np.ndarray] = None,
         deterministic: bool = False,
     ) -> Tuple[Dict[str, np.ndarray], np.ndarray, float]:
         observations = np.asarray(observations, dtype=np.float32)
@@ -130,6 +138,22 @@ class AttentionMAPPO(MAPPO):
         ids_tensor = torch.tensor(
             candidate_sat_ids, dtype=torch.long, device=self.device
         )
+        continuous_mask_tensor = None
+        if continuous_action_mask is not None:
+            continuous_action_mask = np.asarray(
+                continuous_action_mask,
+                dtype=np.float32,
+            )
+            if continuous_action_mask.shape != (self.config.num_agents,):
+                raise ValueError(
+                    "continuous_action_mask has an invalid shape: "
+                    f"{continuous_action_mask.shape}"
+                )
+            continuous_mask_tensor = torch.as_tensor(
+                continuous_action_mask,
+                dtype=torch.float32,
+                device=self.device,
+            )
 
         actions = self.actor.sample_all(
             obs_tensor,
@@ -137,6 +161,7 @@ class AttentionMAPPO(MAPPO):
             deterministic=deterministic,
             satellite_features=sat_tensor,
             candidate_sat_ids=ids_tensor,
+            continuous_action_mask=continuous_mask_tensor,
         )
         value = self.critic(obs_tensor, sat_tensor)
         return {
@@ -166,15 +191,29 @@ class AttentionMAPPO(MAPPO):
 
         self.actor.train()
         self.critic.train()
+        representation_before = None
+        if self.representation_module is not None:
+            self.representation_module.train()
+            representation_before = [
+                parameter.detach().clone()
+                for parameter in self.representation_module.parameters()
+                if parameter.requires_grad
+            ]
 
         all_actor_losses = []
         all_critic_losses = []
         all_entropy_losses = []
         all_kl_divs = []
         all_clip_fractions = []
+        all_representation_grad_norms = []
 
         for _ in range(self.config.n_epochs):
-            for batch in self.buffer.get_batches(self.config.batch_size):
+            for batch in self.buffer.get_batches(
+                self.config.batch_size,
+                group_by_time=self.representation_batch_fn is not None,
+            ):
+                if self.representation_batch_fn is not None:
+                    batch = self.representation_batch_fn(batch)
                 obs = batch["observations"]
                 actions_discrete = batch["actions_discrete"]
                 actions_continuous = batch["actions_continuous"]
@@ -185,6 +224,7 @@ class AttentionMAPPO(MAPPO):
                 candidate_masks = batch["candidate_masks"]
                 satellite_embeddings = batch["satellite_embeddings"]
                 candidate_sat_ids = batch["candidate_sat_ids"]
+                continuous_action_masks = batch["continuous_action_masks"]
 
                 if satellite_embeddings is None:
                     raise ValueError(
@@ -204,6 +244,7 @@ class AttentionMAPPO(MAPPO):
                     candidate_masks,
                     satellite_embeddings,
                     candidate_sat_ids,
+                    continuous_action_masks,
                 )
 
                 log_ratio = torch.clamp(new_log_probs - old_log_probs, -20.0, 2.0)
@@ -268,6 +309,8 @@ class AttentionMAPPO(MAPPO):
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
+                if self.representation_optimizer is not None:
+                    self.representation_optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(
                     self.actor.parameters(), self.config.max_grad_norm
@@ -275,8 +318,18 @@ class AttentionMAPPO(MAPPO):
                 nn.utils.clip_grad_norm_(
                     self.critic.parameters(), self.config.max_grad_norm
                 )
+                if self.representation_module is not None:
+                    representation_grad_norm = nn.utils.clip_grad_norm_(
+                        self.representation_module.parameters(),
+                        self.config.max_grad_norm,
+                    )
+                    all_representation_grad_norms.append(
+                        float(representation_grad_norm)
+                    )
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
+                if self.representation_optimizer is not None:
+                    self.representation_optimizer.step()
 
                 with torch.no_grad():
                     raw_log_ratio = new_log_probs - old_log_probs
@@ -301,12 +354,48 @@ class AttentionMAPPO(MAPPO):
                     break
 
         self.train_step += 1
+        representation_delta = 0.0
+        if (
+            self.representation_module is not None
+            and representation_before is not None
+        ):
+            delta_squared = 0.0
+            trainable_parameters = [
+                parameter
+                for parameter in self.representation_module.parameters()
+                if parameter.requires_grad
+            ]
+            for before, after in zip(
+                representation_before,
+                trainable_parameters,
+            ):
+                delta_squared += float(
+                    torch.sum((after.detach() - before) ** 2).item()
+                )
+            representation_delta = float(np.sqrt(delta_squared))
+
+        executed_metapaths = 0
+        if self.representation_module is not None:
+            get_executed_count = getattr(
+                self.representation_module,
+                "get_last_executed_metapath_count",
+                None,
+            )
+            if callable(get_executed_count):
+                executed_metapaths = int(get_executed_count())
+
         stats = {
             "actor_loss": float(np.mean(all_actor_losses)),
             "critic_loss": float(np.mean(all_critic_losses)),
             "entropy": float(np.mean(all_entropy_losses)),
             "kl_divergence": float(np.mean(all_kl_divs)),
             "clip_fraction": float(np.mean(all_clip_fractions)),
+            "han_grad_norm": (
+                float(np.mean(all_representation_grad_norms))
+                if all_representation_grad_norms else 0.0
+            ),
+            "han_parameter_delta": representation_delta,
+            "han_metapaths_executed": executed_metapaths,
             "train_step": self.train_step,
         }
         self._last_train_stats = stats

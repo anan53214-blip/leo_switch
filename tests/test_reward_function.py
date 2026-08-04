@@ -159,13 +159,54 @@ def test_service_interruption_penalty_is_bounded_by_its_weight():
         env.close()
 
 
+def test_load_balance_reward_uses_reachable_jain_fairness(monkeypatch):
+    env = _build_single_user_env(reward_load_balance_weight=0.05)
+
+    try:
+        monkeypatch.setattr(
+            env,
+            "_compute_systemwide_jain_mec_load_fairness",
+            lambda: 0.8,
+        )
+        assert env._compute_load_balance_reward() == pytest.approx(0.04)
+
+        monkeypatch.setattr(
+            env,
+            "_compute_systemwide_jain_mec_load_fairness",
+            lambda: None,
+        )
+        assert env._compute_load_balance_reward() == pytest.approx(0.0)
+
+        monkeypatch.setattr(
+            env,
+            "_compute_systemwide_jain_mec_load_fairness",
+            lambda: 0.8,
+        )
+        # 持续保持公平状态时每步都获得同样的 dense cooperative reward。
+        assert env._compute_load_balance_reward() == pytest.approx(0.04)
+    finally:
+        env.close()
+
+
+def test_load_balance_state_is_reset_at_episode_boundary():
+    env = _build_single_user_env(reward_load_balance_weight=0.05)
+
+    try:
+        env._previous_load_balance_potential = 0.8
+        env.reset(seed=17)
+
+        assert env._previous_load_balance_potential == pytest.approx(0.0)
+    finally:
+        env.close()
+
+
 def test_task_reward_prioritizes_deadline_success_over_energy_savings():
     env = _build_single_user_env()
 
     try:
         success_reward, success_terms = env._compute_task_reward(
             total_delay=1.0,
-            total_energy=8.0,
+            total_energy=0.8,
             max_delay=2.0,
         )
         late_reward, late_terms = env._compute_task_reward(
@@ -206,11 +247,12 @@ def test_failed_task_does_not_receive_additional_delay_or_energy_penalties():
 def test_training_defaults_use_balanced_update_budget():
     config = TrainConfig()
 
-    assert config.n_epochs == 6
-    assert config.batch_size == 256
+    assert config.n_epochs == 4
+    assert config.learning_rate == pytest.approx(1e-4)
+    assert config.batch_size == 512
     assert config.entropy_schedule == "constant"
     assert config.reward_failed_handover_penalty == pytest.approx(0.2)
-    assert REWARD_ENERGY_REFERENCE_J == pytest.approx(10.0)
+    assert REWARD_ENERGY_REFERENCE_J == pytest.approx(1.0)
 
 
 def test_reward_default_weights_are_balanced():
@@ -222,6 +264,7 @@ def test_reward_default_weights_are_balanced():
         "reward_energy_weight": 0.10,
         "reward_interruption_weight": 0.30,
         "reward_failed_handover_penalty": 0.20,
+        "reward_load_balance_weight": 0.05,
     }
 
     for key, value in expected.items():
@@ -244,3 +287,4 @@ def test_comparison_defaults_use_qos_gated_reward_weights():
     assert config["reward_energy_weight"] == pytest.approx(0.10)
     assert config["reward_interruption_weight"] == pytest.approx(0.30)
     assert config["reward_failed_handover_penalty"] == pytest.approx(0.20)
+    assert config["reward_load_balance_weight"] == pytest.approx(0.05)

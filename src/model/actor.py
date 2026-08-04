@@ -43,7 +43,7 @@
 
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical, Beta
+from torch.distributions import Bernoulli, Categorical, Beta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
@@ -72,9 +72,12 @@ class ActorConfig:
     
     # 连续动作参数（Beta 分布，天然支持 [0,1]）
     beta_init_scale: float = 1.0       # Beta 分布初始集中度
+    min_offload_ratio: float = 0.05    # 卸载模式与纯本地模式的显式边界
     
     # 正则化
-    dropout: float = 0.1
+    # PPO 的 old/new log-prob 必须来自同一确定性网络；训练态 Dropout
+    # 会把随机掩码噪声混入 importance ratio。
+    dropout: float = 0.0
     
     def __post_init__(self):
         if self.hidden_dims is None:
@@ -131,19 +134,20 @@ class HybridActor(nn.Module):
             nn.Linear(config.hidden_dims[-1] // 2, config.max_candidates + 1)
         )
         
-        # ---------- 连续动作头（卸载比例，Beta 分布）----------
-        # 输出 Beta 分布的 alpha 和 beta 参数
-        self.offload_alpha_head = nn.Sequential(
-            nn.Linear(config.hidden_dims[-1], config.hidden_dims[-1] // 2),
+        # ---------- 动作条件化连续头（卸载比例，Beta 分布）----------
+        # 每个 handover 动作拥有独立的 alpha/beta；候选卫星的链路、负载和
+        # 表征因此可以直接影响对应目标下的卸载比例。
+        self.offload_action_head = nn.Sequential(
+            nn.Linear(config.hidden_dims[-1] * 2, config.hidden_dims[-1]),
             nn.ReLU(),
-            nn.Linear(config.hidden_dims[-1] // 2, 1),
-            nn.Softplus()  # 确保 > 0
+            nn.Linear(config.hidden_dims[-1], 2),
         )
-        self.offload_beta_head = nn.Sequential(
-            nn.Linear(config.hidden_dims[-1], config.hidden_dims[-1] // 2),
+        # Zero-inflated gate: 0 表示精确纯本地，1 表示进入连续卸载分支。
+        # gate 与 Beta 都按 handover 动作条件化。
+        self.offload_mode_head = nn.Sequential(
+            nn.Linear(config.hidden_dims[-1] * 2, config.hidden_dims[-1]),
             nn.ReLU(),
-            nn.Linear(config.hidden_dims[-1] // 2, 1),
-            nn.Softplus()  # 确保 > 0
+            nn.Linear(config.hidden_dims[-1], 1),
         )
 
         # ---------- 候选卫星嵌入路径（用于增强切换决策）----------
@@ -185,6 +189,74 @@ class HybridActor(nn.Module):
 
         return logits
 
+    def _offload_distribution(
+        self,
+        features: torch.Tensor,
+        candidate_satellite_embeddings: Optional[torch.Tensor],
+    ) -> Beta:
+        action_features = self._offload_action_features(
+            features,
+            candidate_satellite_embeddings,
+        )
+        alpha_beta = torch.nn.functional.softplus(
+            self.offload_action_head(action_features)
+        ) + 1.0
+        return Beta(alpha_beta[..., 0], alpha_beta[..., 1])
+
+    def _offload_action_features(
+        self,
+        features: torch.Tensor,
+        candidate_satellite_embeddings: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        if candidate_satellite_embeddings is not None:
+            candidate_contexts = self.candidate_sat_proj(
+                candidate_satellite_embeddings
+            )
+        else:
+            candidate_contexts = features.unsqueeze(1).expand(
+                -1,
+                self.config.max_candidates,
+                -1,
+            )
+        action_contexts = torch.cat(
+            [features.unsqueeze(1), candidate_contexts],
+            dim=1,
+        )
+        repeated_user = features.unsqueeze(1).expand_as(action_contexts)
+        return torch.cat([repeated_user, action_contexts], dim=-1)
+
+    def _offload_mode_distribution(
+        self,
+        features: torch.Tensor,
+        candidate_satellite_embeddings: Optional[torch.Tensor],
+    ) -> Bernoulli:
+        action_features = self._offload_action_features(
+            features,
+            candidate_satellite_embeddings,
+        )
+        return Bernoulli(logits=self.offload_mode_head(action_features).squeeze(-1))
+
+    def _beta_to_env_ratio(self, beta_value: torch.Tensor) -> torch.Tensor:
+        minimum = float(self.config.min_offload_ratio)
+        return minimum + (1.0 - minimum) * beta_value
+
+    def _env_ratio_to_beta(self, offload_ratio: torch.Tensor) -> torch.Tensor:
+        minimum = float(self.config.min_offload_ratio)
+        return ((offload_ratio - minimum) / max(1.0 - minimum, 1e-6)).clamp(
+            1e-6,
+            1.0 - 1e-6,
+        )
+
+    @staticmethod
+    def _select_action_values(
+        values: torch.Tensor,
+        handover_action: torch.Tensor,
+    ) -> torch.Tensor:
+        return values.gather(
+            1,
+            handover_action.long().unsqueeze(-1),
+        ).squeeze(-1)
+
     def forward(
         self,
         user_embedding: torch.Tensor,
@@ -213,10 +285,11 @@ class HybridActor(nn.Module):
 
         handover_dist = Categorical(logits=handover_logits)
 
-        # 3. 连续动作分布（Beta 分布，天然支持 [0,1]）
-        alpha = self.offload_alpha_head(features) + 1.0  # alpha >= 1
-        beta = self.offload_beta_head(features) + 1.0    # beta >= 1
-        offload_dist = Beta(alpha, beta)
+        # 3. 每个离散动作对应一个卸载 Beta 分布。
+        offload_dist = self._offload_distribution(
+            features,
+            candidate_satellite_embeddings,
+        )
 
         return handover_dist, offload_dist
     
@@ -226,6 +299,7 @@ class HybridActor(nn.Module):
         candidate_mask: Optional[torch.Tensor] = None,
         deterministic: bool = False,
         candidate_satellite_embeddings: Optional[torch.Tensor] = None,
+        continuous_action_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         采样动作
@@ -244,27 +318,75 @@ class HybridActor(nn.Module):
         handover_dist, offload_dist = self.forward(
             user_embedding, candidate_mask, candidate_satellite_embeddings
         )
+        features = self.shared_net(user_embedding)
+        offload_mode_dist = self._offload_mode_distribution(
+            features,
+            candidate_satellite_embeddings,
+        )
         
         if deterministic:
-            # 确定性：选择最高概率/均值
+            # 确定性：handover 取最大概率，执行模式取 Bernoulli 众数。
             handover_action = handover_dist.probs.argmax(dim=-1)
-            offload_action = offload_dist.mean
+            offload_mode = (
+                self._select_action_values(
+                    offload_mode_dist.probs,
+                    handover_action,
+                )
+                >= 0.5
+            ).to(offload_dist.mean.dtype)
+            beta_action = self._select_action_values(
+                offload_dist.mean,
+                handover_action,
+            )
+            expanded_beta = beta_action.detach().unsqueeze(1).expand_as(offload_dist.mean)
         else:
-            # 随机采样
+            # 随机采样显式本地/卸载门控；只有卸载模式才使用 Beta 比例。
             handover_action = handover_dist.sample()
-            offload_action = offload_dist.rsample()  # Beta 分布天然 [0,1]
+            offload_mode_samples = offload_mode_dist.sample()
+            offload_mode = self._select_action_values(
+                offload_mode_samples,
+                handover_action,
+            )
+            beta_samples = offload_dist.rsample()
+            beta_action = self._select_action_values(beta_samples, handover_action)
+            expanded_beta = beta_samples
         
-        # Beta 分布采样值已在 (0,1)，clamp 仅做数值安全
-        offload_action = torch.clamp(offload_action, 1e-6, 1.0 - 1e-6)
+        offload_action = torch.where(
+            offload_mode > 0.5,
+            self._beta_to_env_ratio(beta_action),
+            torch.zeros_like(beta_action),
+        )
         
-        # 计算log概率（使用 clamp 后的 action，与 evaluate 一致）
+        # 联合概率 = handover × execution-mode × conditional Beta。
         handover_log_prob = handover_dist.log_prob(handover_action)
-        offload_log_prob = offload_dist.log_prob(offload_action.detach()).sum(dim=-1)
+        mode_log_prob = self._select_action_values(
+            offload_mode_dist.log_prob(offload_mode_samples)
+            if not deterministic
+            else offload_mode_dist.log_prob(
+                offload_mode.unsqueeze(1).expand_as(offload_mode_dist.probs)
+            ),
+            handover_action,
+        )
+        beta_log_prob = self._select_action_values(
+            offload_dist.log_prob(expanded_beta),
+            handover_action,
+        ) - torch.log(
+            torch.as_tensor(
+                max(1.0 - float(self.config.min_offload_ratio), 1e-6),
+                dtype=beta_action.dtype,
+                device=beta_action.device,
+            )
+        )
+        offload_log_prob = mode_log_prob + offload_mode * beta_log_prob
         
-        # 联合log概率（假设独立）
+        if continuous_action_mask is not None:
+            offload_log_prob = offload_log_prob * continuous_action_mask.to(
+                dtype=offload_log_prob.dtype,
+                device=offload_log_prob.device,
+            )
         log_prob = handover_log_prob + offload_log_prob
         
-        return handover_action, offload_action, log_prob
+        return handover_action, offload_action.unsqueeze(-1), log_prob
     
     def evaluate(
         self,
@@ -273,6 +395,7 @@ class HybridActor(nn.Module):
         offload_action: torch.Tensor,
         candidate_mask: Optional[torch.Tensor] = None,
         candidate_satellite_embeddings: Optional[torch.Tensor] = None,
+        continuous_action_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         评估给定动作的log概率和熵
@@ -293,19 +416,65 @@ class HybridActor(nn.Module):
         handover_dist, offload_dist = self.forward(
             user_embedding, candidate_mask, candidate_satellite_embeddings
         )
+        features = self.shared_net(user_embedding)
+        offload_mode_dist = self._offload_mode_distribution(
+            features,
+            candidate_satellite_embeddings,
+        )
         
-        # Log概率
         handover_log_prob = handover_dist.log_prob(handover_action)
-        # 确保 offload_action 维度匹配 Beta 分布的 event_shape (batch, 1)
-        if offload_action.dim() == 1:
-            offload_action = offload_action.unsqueeze(-1)
-        offload_action = torch.clamp(offload_action, 1e-6, 1.0 - 1e-6)
-        offload_log_prob = offload_dist.log_prob(offload_action).sum(dim=-1)
+        offload_action = offload_action.squeeze(-1)
+        offload_mode = (
+            offload_action >= float(self.config.min_offload_ratio)
+        ).to(offload_dist.mean.dtype)
+        expanded_mode = offload_mode.unsqueeze(1).expand_as(offload_mode_dist.probs)
+        mode_log_prob = self._select_action_values(
+            offload_mode_dist.log_prob(expanded_mode),
+            handover_action,
+        )
+        beta_action = self._env_ratio_to_beta(offload_action)
+        expanded_beta = beta_action.unsqueeze(1).expand_as(offload_dist.mean)
+        beta_log_prob = self._select_action_values(
+            offload_dist.log_prob(expanded_beta),
+            handover_action,
+        ) - torch.log(
+            torch.as_tensor(
+                max(1.0 - float(self.config.min_offload_ratio), 1e-6),
+                dtype=beta_action.dtype,
+                device=beta_action.device,
+            )
+        )
+        offload_log_prob = mode_log_prob + offload_mode * beta_log_prob
+        if continuous_action_mask is not None:
+            continuous_action_mask = continuous_action_mask.to(
+                dtype=offload_log_prob.dtype,
+                device=offload_log_prob.device,
+            )
+            offload_log_prob = offload_log_prob * continuous_action_mask
         log_prob = handover_log_prob + offload_log_prob
         
-        # 熵
         handover_entropy = handover_dist.entropy()
-        offload_entropy = offload_dist.entropy().sum(dim=-1)
+        mode_entropy = self._select_action_values(
+            offload_mode_dist.entropy(),
+            handover_action,
+        )
+        beta_entropy = self._select_action_values(
+            offload_dist.entropy(),
+            handover_action,
+        ) + torch.log(
+            torch.as_tensor(
+                max(1.0 - float(self.config.min_offload_ratio), 1e-6),
+                dtype=offload_dist.mean.dtype,
+                device=offload_dist.mean.device,
+            )
+        )
+        selected_offload_probability = self._select_action_values(
+            offload_mode_dist.probs,
+            handover_action,
+        )
+        offload_entropy = mode_entropy + selected_offload_probability * beta_entropy
+        if continuous_action_mask is not None:
+            offload_entropy = offload_entropy * continuous_action_mask
         entropy = handover_entropy + offload_entropy
         
         return log_prob, entropy
@@ -377,6 +546,7 @@ class MultiAgentActor(nn.Module):
         candidate_masks: Optional[torch.Tensor] = None,
         deterministic: bool = False,
         candidate_satellite_embeddings: Optional[torch.Tensor] = None,
+        continuous_action_mask: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         为所有智能体采样动作
@@ -394,7 +564,11 @@ class MultiAgentActor(nn.Module):
             - 'log_prob': (num_agents,) log概率
         """
         handover, offload, log_prob = self.actor.sample(
-            user_embeddings, candidate_masks, deterministic, candidate_satellite_embeddings
+            user_embeddings,
+            candidate_masks,
+            deterministic,
+            candidate_satellite_embeddings,
+            continuous_action_mask,
         )
 
         return {
@@ -410,6 +584,7 @@ class MultiAgentActor(nn.Module):
         offload_actions: torch.Tensor,
         candidate_masks: Optional[torch.Tensor] = None,
         candidate_satellite_embeddings: Optional[torch.Tensor] = None,
+        continuous_action_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         评估所有智能体的动作
@@ -430,5 +605,6 @@ class MultiAgentActor(nn.Module):
             handover_actions,
             offload_actions.unsqueeze(-1) if offload_actions.dim() == 1 else offload_actions,
             candidate_masks,
-            candidate_satellite_embeddings
+            candidate_satellite_embeddings,
+            continuous_action_mask,
         )

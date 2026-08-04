@@ -346,7 +346,7 @@ def test_on_policy_evaluation_uses_isolated_env_and_fixed_seed():
 
     assert training_env.reset_seeds == []
     assert training_env.step_calls == 0
-    assert eval_env.reset_seeds == [100_007]
+    assert eval_env.reset_seeds == [1_000_007]
     assert eval_env.step_calls == 1
     assert eval_env.closed
     assert trainer.env is training_env

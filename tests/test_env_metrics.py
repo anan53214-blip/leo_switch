@@ -160,7 +160,13 @@ def test_time_point_load_variance_penalizes_single_busy_mec_among_idle_servers()
     try:
         env.reset(seed=11)
 
-        first = env.mec_manager.servers[0]
+        reachable_satellite = env._get_visible_satellites(
+            env.user_manager.users[0]
+        )[0].sat_id
+        env.user_manager.users[1].serving_satellite = (
+            reachable_satellite + 1
+        ) % env.num_satellites
+        first = env.mec_manager.servers[reachable_satellite]
         first.task_queue = [{} for _ in range(3)]
         first.available_freq_ghz = 0.0
 
@@ -217,7 +223,13 @@ def test_env_records_only_active_time_point_load_variance_samples_for_cdf():
         env._record_load_balance_metrics()
         assert env.get_stats_summary()["load_variance_sample_count"] == 0
 
-        first = env.mec_manager.servers[0]
+        reachable_satellite = env._get_visible_satellites(
+            env.user_manager.users[0]
+        )[0].sat_id
+        env.user_manager.users[1].serving_satellite = (
+            reachable_satellite + 1
+        ) % env.num_satellites
+        first = env.mec_manager.servers[reachable_satellite]
         first.task_queue = [{} for _ in range(3)]
         first.available_freq_ghz = 0.0
         env._record_load_balance_metrics()
@@ -312,7 +324,9 @@ def test_external_task_generation_includes_blocked_users():
     try:
         env.reset(seed=11)
         env.user_manager.users[0].state = UserState.BLOCKED
-        env.user_tasks[0] = None
+        env.user_task_queues[0].clear()
+        env._refresh_user_task_head(0)
+        env.stats['total_tasks'] = 0
 
         env._generate_tasks()
 
@@ -328,7 +342,6 @@ def test_blocked_pending_task_expires_as_deadline_violation():
     try:
         env.reset(seed=11)
         env.user_manager.users[0].state = UserState.BLOCKED
-        env._generate_tasks()
         task = env.user_tasks[0]
         task.max_delay = 0.5
 
@@ -348,7 +361,6 @@ def test_expired_pending_task_adds_single_failure_penalty():
     try:
         env.reset(seed=11)
         env.user_manager.users[0].state = UserState.BLOCKED
-        env._generate_tasks()
         task = env.user_tasks[0]
         task.max_delay = 0.5
 
@@ -376,6 +388,11 @@ def test_task_arrivals_use_independent_rng_from_handover_outcomes():
         for _ in range(7):
             env_b.rng.random()
 
+        env_a.user_task_queues = {i: [] for i in range(env_a.num_users)}
+        env_b.user_task_queues = {i: [] for i in range(env_b.num_users)}
+        for user_id in range(env_a.num_users):
+            env_a._refresh_user_task_head(user_id)
+            env_b._refresh_user_task_head(user_id)
         env_a._generate_tasks()
         env_b._generate_tasks()
 

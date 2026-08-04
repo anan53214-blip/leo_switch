@@ -49,9 +49,9 @@ DEFAULT_USER_COUNTS = (20, 25, 30, 35, 40)
 DEFAULT_BASELINES = (
     "attn_mappo",
     "mappo_no_han",
-    "maddpg",
+    # "maddpg",
     "pdqn",
-    "han_maddpg",
+    # "han_maddpg",
     "han_pdqn",
     "random",
     "min_distance",
@@ -61,6 +61,7 @@ DEFAULT_BASELINES = (
 TRAIN_ARTIFACTS = ("training_history.json", "best_model.pt", "final_model.pt")
 METHOD_DISPLAY_NAMES = {
     "han_mappo": "HAN+MAPPO",
+    "han_attn": "HAN+Attn",
     "attn_mappo": "Attn+MAPPO",
     "mappo_no_han": "MAPPO",
     "maddpg": "MADDPG",
@@ -74,6 +75,7 @@ METHOD_DISPLAY_NAMES = {
 }
 LEARNED_REWARD_METHODS = (
     "han_mappo",
+    "han_attn",
     "attn_mappo",
     "mappo_no_han",
     "maddpg",
@@ -84,8 +86,10 @@ LEARNED_REWARD_METHODS = (
 REWARD_CONFIG_KEYS = (
     "reward_delay_weight",
     "reward_energy_weight",
+    "reward_energy_reference_j",
     "reward_interruption_weight",
     "reward_failed_handover_penalty",
+    "reward_load_balance_weight",
 )
 
 
@@ -105,18 +109,22 @@ class MultiUserConfig:
     seed: int = 42
     seeds: tuple[int, ...] = ()
     device: str = "auto"
-    total_timesteps: int = 300_000
-    max_steps: int = 600
-    n_steps: int = 1024
-    eval_interval: int = 50_000
-    eval_episodes: int = 3
-    save_interval: int = 100_000
+    total_timesteps: int = TrainConfig.total_timesteps
+    max_steps: int = TrainConfig.max_steps
+    n_steps: int = TrainConfig.n_steps
+    batch_size: int = TrainConfig.batch_size
+    learning_rate: float = TrainConfig.learning_rate
+    n_epochs: int = TrainConfig.n_epochs
+    eval_interval: int = TrainConfig.eval_interval
+    eval_episodes: int = TrainConfig.eval_episodes
+    save_interval: int = TrainConfig.save_interval
     graph_update_interval: int = 1
     log_interval: int = 1
-    best_model_metric: str = "avg_delay"
-    compare_ranking_metric: str = "avg_delay"
-    compare_episodes: int = 3
-    plot_window: int = 5
+    reward_load_balance_weight: float = TrainConfig.reward_load_balance_weight
+    best_model_metric: str = "reward"
+    compare_ranking_metric: str = "reward"
+    compare_episodes: int = TrainConfig.eval_episodes
+    plot_window: int = 3
     early_stop_patience: int = 0
     baselines: tuple[str, ...] = DEFAULT_BASELINES
     skip_system_train: bool = False
@@ -191,6 +199,12 @@ def build_train_command(
         str(config.max_steps),
         "--n_steps",
         str(config.n_steps),
+        "--batch_size",
+        str(config.batch_size),
+        "--learning_rate",
+        str(config.learning_rate),
+        "--n_epochs",
+        str(config.n_epochs),
         "--eval_interval",
         str(config.eval_interval),
         "--eval_episodes",
@@ -201,6 +215,8 @@ def build_train_command(
         str(config.graph_update_interval),
         "--log_interval",
         str(config.log_interval),
+        "--reward-load-balance-weight",
+        str(config.reward_load_balance_weight),
         "--best-model-metric",
         config.best_model_metric,
         "--save_path",
@@ -288,6 +304,10 @@ def has_training_artifacts(
         "total_timesteps": int(config.total_timesteps),
         "max_steps": int(config.max_steps),
         "n_steps": int(config.n_steps),
+        "batch_size": int(config.batch_size),
+        "learning_rate": float(config.learning_rate),
+        "n_epochs": int(config.n_epochs),
+        "algorithm": "mappo",
         "eval_interval": int(config.eval_interval),
         "eval_episodes": int(config.eval_episodes),
         "save_interval": int(config.save_interval),
@@ -297,7 +317,11 @@ def has_training_artifacts(
         "num_users": int(num_users if num_users is not None else history_config.get("num_users", 0)),
         "seed": int(seed if seed is not None else config.seed),
         **{
-            key: float(getattr(defaults, key))
+            key: float(
+                config.reward_load_balance_weight
+                if key == "reward_load_balance_weight"
+                else getattr(defaults, key)
+            )
             for key in REWARD_CONFIG_KEYS
         },
     }
@@ -407,10 +431,12 @@ def _validate_comparison_schema(compare_dir: Path) -> tuple[float, ...]:
     with summary_json.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     schema_version = int(payload.get("environment_schema_version", 0))
-    if schema_version != 5:
+    if schema_version != ENVIRONMENT_SCHEMA_VERSION:
         raise ValueError(
             f"{summary_json} uses environment schema {schema_version}; "
-            "paper figures require environment_schema_version=5. Re-run this comparison."
+            "paper figures require "
+            f"environment_schema_version={ENVIRONMENT_SCHEMA_VERSION}. "
+            "Re-run this comparison."
         )
     metric_schema_version = int(payload.get("metric_schema_version", 0))
     if metric_schema_version != 2:
@@ -893,7 +919,14 @@ def _load_training_curve(history_path: Path) -> tuple[list[float], list[float]]:
     steps: list[float] = []
     rewards: list[float] = []
     for record in payload.get("training", []):
-        reward = _float_or_none(record.get("mean_reward", record.get("reward")))
+        if bool(record.get("partial_episode", False)):
+            continue
+        reward = _float_or_none(
+            record.get(
+                "mean_reward",
+                record.get("eval_mean_reward", record.get("reward")),
+            )
+        )
         step = _float_or_none(record.get("total_steps", record.get("step")))
         if reward is None or step is None:
             continue
@@ -1108,12 +1141,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Independent training seeds. When omitted, --seed is used for backward compatibility.",
     )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
-    parser.add_argument("--total-timesteps", type=int, default=300_000)
-    parser.add_argument("--max-steps", type=int, default=600)
-    parser.add_argument("--n-steps", type=int, default=1024)
-    parser.add_argument("--eval-interval", type=int, default=50_000)
-    parser.add_argument("--eval-episodes", type=int, default=3)
-    parser.add_argument("--save-interval", type=int, default=100_000)
+    parser.add_argument("--total-timesteps", type=int, default=TrainConfig.total_timesteps)
+    parser.add_argument("--max-steps", type=int, default=TrainConfig.max_steps)
+    parser.add_argument("--n-steps", type=int, default=TrainConfig.n_steps)
+    parser.add_argument(
+        "--batch-size",
+        "--batch_size",
+        dest="batch_size",
+        type=int,
+        default=TrainConfig.batch_size,
+    )
+    parser.add_argument("--learning-rate", type=float, default=TrainConfig.learning_rate)
+    parser.add_argument("--n-epochs", type=int, default=TrainConfig.n_epochs)
+    parser.add_argument("--eval-interval", type=int, default=TrainConfig.eval_interval)
+    parser.add_argument("--eval-episodes", type=int, default=TrainConfig.eval_episodes)
+    parser.add_argument("--save-interval", type=int, default=TrainConfig.save_interval)
     parser.add_argument(
         "--graph-update-interval",
         "--graph_update_interval",
@@ -1121,11 +1163,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         default=1,
     )
-    parser.add_argument("--compare-episodes", type=int, default=3)
-    parser.add_argument("--plot-window", type=int, default=5)
+    parser.add_argument(
+        "--log-interval",
+        "--log_interval",
+        dest="log_interval",
+        type=int,
+        default=TrainConfig.log_interval,
+    )
+    parser.add_argument(
+        "--reward-load-balance-weight",
+        type=float,
+        default=TrainConfig.reward_load_balance_weight,
+        help="Reachable-MEC Jain fairness reward weight; use 0 for ablation.",
+    )
+    parser.add_argument("--compare-episodes", type=int, default=TrainConfig.eval_episodes)
+    parser.add_argument("--plot-window", type=int, default=3)
     parser.add_argument("--early-stop-patience", type=int, default=0)
-    parser.add_argument("--best-model-metric", type=str, default="avg_delay")
-    parser.add_argument("--compare-ranking-metric", type=str, default="avg_delay")
+    parser.add_argument("--best-model-metric", type=str, default="reward")
+    parser.add_argument("--compare-ranking-metric", type=str, default="reward")
     parser.add_argument("--baselines", nargs="+", default=list(DEFAULT_BASELINES))
     parser.add_argument("--force-system-train", action="store_true")
     parser.add_argument("--skip-system-train", action="store_true")
@@ -1169,10 +1224,15 @@ def config_from_args(args: argparse.Namespace) -> MultiUserConfig:
         total_timesteps=args.total_timesteps,
         max_steps=args.max_steps,
         n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        n_epochs=args.n_epochs,
         eval_interval=args.eval_interval,
         eval_episodes=args.eval_episodes,
         save_interval=args.save_interval,
         graph_update_interval=args.graph_update_interval,
+        log_interval=args.log_interval,
+        reward_load_balance_weight=args.reward_load_balance_weight,
         best_model_metric=args.best_model_metric,
         compare_ranking_metric=args.compare_ranking_metric,
         compare_episodes=args.compare_episodes,

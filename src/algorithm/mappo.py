@@ -72,10 +72,12 @@ class MAPPOConfig:
     sat_embed_dim: int = 64             # 卫星嵌入维度（HAN输出维度）
     risk_feature_start: int = 8         # CandidateAttention risk feature offset
     risk_feature_dim: int = 0           # CandidateAttention risk feature width
+    min_effective_offload_ratio: float = 0.05
     
     # ---------- 网络参数 ----------
     actor_hidden_dims: List[int] = field(default_factory=lambda: [256, 128])
     critic_hidden_dims: List[int] = field(default_factory=lambda: [256, 256, 128])
+    actor_dropout: float = 0.0
     
     # ---------- PPO参数 ----------
     clip_range: float = 0.2             # PPO clip范围
@@ -93,13 +95,13 @@ class MAPPOConfig:
     entropy_min_coef_ratio: float = 0.1  # Minimum ratio for linear schedule
     
     # ---------- 优化参数 ----------
-    learning_rate: float = 3e-4         # 学习率（v4: 从5e-5提升至3e-4，增大策略更新步长）
+    learning_rate: float = 1e-4         # 保守更新，降低策略中后期震荡
     actor_lr: Optional[float] = None    # Actor单独学习率（None则用lr）
     critic_lr: Optional[float] = None   # Critic单独学习率
     max_grad_norm: float = 0.5          # 梯度裁剪
     
     # ---------- 训练参数 ----------
-    n_epochs: int = 10                  # 每次更新的epoch数（v4: 从4增至10，充分利用数据）
+    n_epochs: int = 4                   # 每次更新的epoch数
     batch_size: int = 64                # 批次大小
     normalize_advantage: bool = True    # 是否标准化优势
     
@@ -158,6 +160,8 @@ class MAPPO:
             hidden_dims=config.actor_hidden_dims,
             max_candidates=config.max_candidates,
             sat_embed_dim=config.sat_embed_dim,
+            min_offload_ratio=config.min_effective_offload_ratio,
+            dropout=config.actor_dropout,
         )
         self.actor = MultiAgentActor(actor_config, config.num_agents).to(self.device)
         
@@ -234,6 +238,7 @@ class MAPPO:
         candidate_masks: Optional[np.ndarray] = None,
         satellite_embeddings: Optional[np.ndarray] = None,
         candidate_sat_ids: Optional[np.ndarray] = None,
+        continuous_action_mask: Optional[np.ndarray] = None,
         deterministic: bool = False
     ) -> Tuple[Dict[str, np.ndarray], np.ndarray, float]:
         """
@@ -306,6 +311,25 @@ class MAPPO:
                 candidate_masks, dtype=torch.float32, device=self.device
             )
 
+        continuous_mask_tensor = None
+        if continuous_action_mask is not None:
+            continuous_action_mask = np.asarray(
+                continuous_action_mask,
+                dtype=np.float32,
+            )
+            expected_continuous_mask_shape = (self.config.num_agents,)
+            if continuous_action_mask.shape != expected_continuous_mask_shape:
+                raise ValueError(
+                    "continuous_action_mask must have shape "
+                    f"{expected_continuous_mask_shape}, got "
+                    f"{tuple(continuous_action_mask.shape)}"
+                )
+            continuous_mask_tensor = torch.as_tensor(
+                continuous_action_mask,
+                dtype=torch.float32,
+                device=self.device,
+            )
+
         candidate_satellite_embeddings = self._gather_candidate_satellite_embeddings(
             sat_tensor,
             candidate_sat_ids,
@@ -314,7 +338,8 @@ class MAPPO:
         # Actor采样
         actions = self.actor.sample_all(
             obs_tensor, mask_tensor, deterministic=deterministic,
-            candidate_satellite_embeddings=candidate_satellite_embeddings
+            candidate_satellite_embeddings=candidate_satellite_embeddings,
+            continuous_action_mask=continuous_mask_tensor,
         )
         
         # Critic评估
@@ -428,8 +453,12 @@ class MAPPO:
         all_representation_grad_norms = []
         
         for epoch in range(self.config.n_epochs):
+            epoch_kl_divs = []
             # 获取批次数据
-            for batch in self.buffer.get_batches(self.config.batch_size):
+            for batch in self.buffer.get_batches(
+                self.config.batch_size,
+                group_by_time=self.representation_batch_fn is not None,
+            ):
                 if self.representation_batch_fn is not None:
                     batch = self.representation_batch_fn(batch)
                 # 解包数据
@@ -441,6 +470,7 @@ class MAPPO:
                 returns = batch['returns']
                 old_values = batch['values']
                 candidate_masks = batch['candidate_masks']
+                continuous_action_masks = batch['continuous_action_masks']
                 satellite_embeddings = batch['satellite_embeddings']
                 
                 # ---------- 标准化优势 ----------
@@ -459,7 +489,8 @@ class MAPPO:
                     actions_discrete,
                     actions_continuous,
                     candidate_masks,
-                    candidate_satellite_embeddings
+                    candidate_satellite_embeddings,
+                    continuous_action_masks,
                 )
                 
                 # ---------- PPO-Clip损失 ----------
@@ -572,11 +603,13 @@ class MAPPO:
                 all_critic_losses.append(critic_loss.item())
                 all_entropy_losses.append(-entropy_loss.item())  # 转为正熵
                 all_kl_divs.append(approx_kl)
+                epoch_kl_divs.append(approx_kl)
                 all_clip_fractions.append(clip_fraction)
             
-            # 早停检查：当前 epoch 的平均 KL 超过阈值则停止
-            if self.config.target_kl is not None and all_kl_divs:
-                if all_kl_divs[-1] > 1.5 * self.config.target_kl:
+            # 早停检查必须使用当前 epoch 的所有 mini-batch 平均 KL。
+            # 使用最后一个 batch 会因抽样波动漏掉整体策略偏移。
+            if self.config.target_kl is not None and epoch_kl_divs:
+                if float(np.mean(epoch_kl_divs)) > 1.5 * self.config.target_kl:
                     break
         
         self.train_step += 1
