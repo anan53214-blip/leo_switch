@@ -50,6 +50,67 @@ def test_mec_completion_time_is_interpolated_inside_current_slot():
     assert completed[0]["total_delay"] == pytest.approx(0.25)
 
 
+def test_mec_limits_processing_to_two_slots_and_preserves_fcfs_order():
+    server = MECServer(
+        satellite_id=0,
+        config=MECConfig(
+            satellite_cpu_freq_ghz=5.0,
+            satellite_num_cores=2,
+            mec_max_concurrent_tasks=2,
+            max_queue_size=6,
+        ),
+    )
+    for task_id in range(3):
+        _enqueue(
+            server,
+            user_id=task_id,
+            task_id=task_id,
+            cycles=5e9,
+        )
+
+    first_completed = server.process_queue(current_time=0.0, time_step=1.0)
+
+    assert [task["task_id"] for task in first_completed] == [0, 1]
+    assert [task["task_id"] for task in server.task_queue] == [2]
+    assert server.task_queue[0]["status"] == "processing"
+    assert server.task_queue[0]["start_processing_time"] == pytest.approx(1.0)
+
+    second_completed = server.process_queue(current_time=1.0, time_step=1.0)
+
+    assert [task["task_id"] for task in second_completed] == [2]
+    assert second_completed[0]["queue_wait"] == pytest.approx(1.0)
+    assert second_completed[0]["finish_time"] == pytest.approx(1.5)
+
+
+def test_queued_mec_task_can_timeout_without_consuming_a_processing_slot():
+    server = MECServer(
+        satellite_id=0,
+        config=MECConfig(
+            satellite_cpu_freq_ghz=1.0,
+            satellite_num_cores=1,
+            mec_max_concurrent_tasks=1,
+            max_queue_size=3,
+        ),
+    )
+    _enqueue(server, user_id=0, task_id=1, cycles=10e9)
+    assert server.enqueue_task(
+        user_id=1,
+        task_id=2,
+        offload_cycles=1e9,
+        offload_data_bits=0.0,
+        max_delay=0.5,
+        arrival_time=0.0,
+    )
+
+    completed = server.process_queue(current_time=0.0, time_step=1.0)
+
+    timed_out = next(task for task in completed if task["task_id"] == 2)
+    assert timed_out["status"] == "timeout"
+    assert timed_out["start_processing_time"] is None
+    assert timed_out["processing_time"] == pytest.approx(0.0)
+    assert timed_out["queue_wait"] == pytest.approx(1.0)
+
+
 def test_environment_processes_mec_over_slot_start_time():
     env = LEOSatelliteEnv(
         EnvConfig(
@@ -122,6 +183,8 @@ def test_migration_is_all_or_nothing_and_preserves_progress():
     assert old_server.task_queue == []
     assert new_server.task_queue[0]["upload_delay"] == pytest.approx(0.6)
     assert new_server.task_queue[0]["remaining_cycles"] == pytest.approx(0.4e9)
+    assert new_server.task_queue[0]["status"] == "queued"
+    assert new_server.task_queue[0]["start_processing_time"] is None
 
 
 def _target_visibility(sat_id: int) -> VisibilityInfo:
@@ -397,7 +460,8 @@ def test_terminal_step_flushes_rewards_created_during_environment_update():
     )
     try:
         env.reset(seed=7)
-        env._execute_user_action = lambda user, handover, offload: 1.0
+        env._execute_user_handover = lambda user, handover: 1.0
+        env._execute_user_task = lambda user, offload, allocation: 0.0
 
         def create_completion_reward():
             env.pending_rewards[0] = env.pending_rewards.get(0, 0.0) + 2.0

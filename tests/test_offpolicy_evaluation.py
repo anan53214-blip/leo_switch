@@ -12,6 +12,11 @@ from src.algorithm.maddpg import MADDPGAlgorithm, MADDPGConfig
 from src.algorithm.replay_buffer import MultiAgentReplayBuffer
 from scripts import compare_system_baselines as compare_baselines
 from scripts.train import HANMADDPGTrainer
+from scripts.validate_offload_bimodality import (
+    ElevationJointGreedyPolicy,
+    StayJointGreedyPolicy,
+    paired_method_deltas,
+)
 
 
 def test_raw_pdqn_action_mask_applies_the_same_pre_handover_gate():
@@ -69,6 +74,153 @@ def test_raw_dqn_action_mask_keeps_only_stay_bins_for_safe_users():
 
     assert masks[0].tolist() == [True, True, True, False, False, False, False, False, False]
     assert masks[1].tolist() == [True] * 9
+
+
+def test_handover_actionability_reports_gate_blocked_load_relief():
+    users = [
+        SimpleNamespace(user_id=0, serving_satellite=0),
+        SimpleNamespace(user_id=1, serving_satellite=0),
+    ]
+    current_server = SimpleNamespace(
+        satellite_id=0,
+        queue_length=3,
+        task_queue=[
+            {"status": "processing", "remaining_cycles": 10e9},
+            {"status": "processing", "remaining_cycles": 10e9},
+            {"status": "queued", "remaining_cycles": 10e9},
+        ],
+        total_capacity_ghz=10.0,
+        utilization=0.5,
+        is_full=False,
+        config=SimpleNamespace(mec_max_concurrent_tasks=2),
+    )
+    target_server = SimpleNamespace(
+        satellite_id=1,
+        queue_length=0,
+        task_queue=[],
+        total_capacity_ghz=10.0,
+        utilization=0.0,
+        is_full=False,
+        config=SimpleNamespace(mec_max_concurrent_tasks=2),
+    )
+    servers = {0: current_server, 1: target_server}
+
+    def handover_mask(max_candidates, apply_pre_handover_gate):
+        del max_candidates
+        if apply_pre_handover_gate:
+            return np.asarray([[1, 0], [1, 1]], dtype=bool)
+        return np.asarray([[1, 1], [1, 1]], dtype=bool)
+
+    env = SimpleNamespace(
+        num_users=2,
+        max_visible_sats=1,
+        user_manager=SimpleNamespace(users=users),
+        config=SimpleNamespace(pre_handover_rvt_sec=60.0),
+        mec_manager=SimpleNamespace(
+            get_server=lambda sat_id: servers.get(sat_id),
+            prepare_user_task_migration=lambda **kwargs: SimpleNamespace(
+                feasible=True,
+                failure_reason=None,
+            ),
+        ),
+        get_pre_handover_mask=lambda: np.asarray([False, True], dtype=bool),
+        get_handover_action_mask=handover_mask,
+        _get_handover_candidates=lambda user: [
+            SimpleNamespace(sat_id=1)
+        ],
+        _get_satellite_visibility=lambda user, sat_id: SimpleNamespace(
+            is_visible=True,
+            rvt_seconds=120.0 if user.user_id == 0 else 20.0,
+        ),
+        _check_handover_link_feasibility=lambda candidate: (True, None),
+    )
+    accumulator = compare_baselines.HandoverActionabilityAccumulator()
+
+    accumulator.observe(env)
+    summary = accumulator.summary()
+
+    assert summary["pre_handover_gate_open_rate"] == 0.5
+    assert summary["ungated_feasible_switch_user_rate"] == 1.0
+    assert summary["gated_feasible_switch_user_rate"] == 0.5
+    assert summary["gate_block_share_of_feasible_switch_user_steps"] == 0.5
+    assert summary["congestion_relief_opportunity_user_rate"] == 1.0
+    assert summary["gate_blocked_congestion_relief_user_rate"] == 0.5
+    assert summary["mean_positive_queue_reduction_tasks"] == 3.0
+    assert summary["mean_positive_workload_wait_reduction_sec"] == 3.0
+    assert summary["mean_serving_satellite_hhi"] == 1.0
+    assert summary["mean_effective_serving_satellites"] == 1.0
+    assert summary["gate_open_reason_rates"] == {"low_rvt": 1.0}
+    assert summary["raw_candidate_status_rates"] == {"legal": 1.0}
+
+
+def test_handover_ablation_policies_restrict_only_satellite_selection():
+    visible = [
+        SimpleNamespace(sat_id=1, elevation_deg=50.0),
+        SimpleNamespace(sat_id=2, elevation_deg=70.0),
+    ]
+    connected = SimpleNamespace(user_id=0, serving_satellite=0)
+    disconnected = SimpleNamespace(user_id=0, serving_satellite=-1)
+    env = SimpleNamespace(
+        max_visible_sats=2,
+        _get_satellite_visibility=lambda user, sat_id: SimpleNamespace(
+            is_visible=True,
+            elevation_deg=60.0,
+        ),
+    )
+    legal = np.asarray([1, 1, 1], dtype=bool)
+    stay = StayJointGreedyPolicy("multi_objective", [0.0, 1.0])
+    elevation = ElevationJointGreedyPolicy(
+        "multi_objective",
+        [0.0, 1.0],
+    )
+
+    assert stay._handover_candidate_actions(
+        env,
+        connected,
+        visible,
+        legal,
+    ) == [0]
+    assert stay._handover_candidate_actions(
+        env,
+        disconnected,
+        visible,
+        legal,
+    ) == [0, 1, 2]
+    assert elevation._handover_candidate_actions(
+        env,
+        connected,
+        visible,
+        legal,
+    ) == [2]
+
+
+def test_handover_ablation_uses_paired_episode_deltas():
+    methods = [
+        {
+            "method": "joint",
+            "episode_metrics": [
+                {"reward": 3.0, "task_success_rate": 0.8},
+                {"reward": 5.0, "task_success_rate": 0.9},
+            ],
+        },
+        {
+            "method": "stay",
+            "episode_metrics": [
+                {"reward": 1.0, "task_success_rate": 0.7},
+                {"reward": 2.0, "task_success_rate": 0.7},
+            ],
+        },
+    ]
+
+    rows = paired_method_deltas(methods)
+
+    assert len(rows) == 1
+    assert rows[0]["control"] == "stay"
+    assert rows[0]["reward_delta_mean"] == 2.5
+    assert np.isclose(
+        rows[0]["task_success_rate_delta_mean"],
+        0.15,
+    )
 
 
 class _FakeEnv:

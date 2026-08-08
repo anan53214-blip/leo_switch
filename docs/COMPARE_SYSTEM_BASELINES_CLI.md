@@ -103,7 +103,7 @@ avg_delay
 avg_success_delay
 p95_success_delay
 total_energy
-service_continuity_rate
+successful_task_throughput
 service_availability_rate
 handover_failure_rate
 load_balance_coefficient
@@ -117,6 +117,15 @@ task_success_rate
 task_failure_rate
 task_settlement_rate
 ```
+
+其中论文对比使用的成功任务吞吐量定义为：
+
+```text
+successful_task_throughput = completed_tasks / total_user_seconds * 60
+```
+
+单位是 `tasks / user-minute`。原始的 `service_continuity_rate` 仍会保留在
+CSV/JSON 中用于兼容旧实验，但不再作为论文主图指标。
 
 | 参数 | 默认值 | 用法 |
 | --- | --- | --- |
@@ -225,7 +234,7 @@ reward_components_vs_steps.png
 reward_components_per_task_vs_steps.png
 additional_metrics_episode_comparison.png
 delay_energy_tradeoff.png
-success_continuity_tradeoff.png
+success_throughput_tradeoff.png
 performance_radar.png
 reward_distribution.png
 ```

@@ -72,6 +72,20 @@ suite_manifest.json
 
 注意：不加后缀时会覆盖这些默认输出文件。
 
+如果原实验仍在运行，建议把阶段性聚合结果写入单独目录，避免回写原目录中的
+`u*/comparison_summary.csv`：
+
+```bash
+python scripts/run_multiuser_scaling_suite.py \
+  --run-id multiuser_single_seed_150k_20260804 \
+  --user-counts 20 25 30 35 \
+  --aggregate-only \
+  --aggregate-output-dir results/baseline_compare/multiuser_scaling_multiuser_single_seed_150k_20260804_partial_u20_u35
+```
+
+`--aggregate-output-dir` 只改变聚合产物的写入位置；输入仍从 `--run-id`
+对应的原 suite 目录读取。相对路径从项目根目录解析。
+
 ### 2.2 只生成某几个算法的对比图
 
 使用 `--include-methods` 过滤要画的算法。
@@ -175,6 +189,7 @@ results\baseline_compare\multiuser_scaling_multiuser_6_7\u40\comparison_summary.
 | `--run-id` | 指定多用户 suite 的运行 ID；目录为 `results\baseline_compare\multiuser_scaling_<run_id>` |
 | `--user-counts` | 指定要聚合的用户数目录，例如 `20 25 30 35 40` |
 | `--aggregate-only` | 只读取已有 CSV 并重新生成聚合图，不训练、不评估 |
+| `--aggregate-output-dir` | 将聚合 CSV 和图片写到单独目录，避免改动输入 suite |
 | `--include-methods` | 只保留指定算法的方法名 |
 | `--output-suffix` | 给输出文件增加后缀，避免覆盖默认图 |
 
@@ -251,7 +266,7 @@ reward_curve_vs_baselines.png
 training_qos_metrics_vs_steps.png
 reward_components_vs_steps.png
 delay_energy_tradeoff.png
-success_continuity_tradeoff.png
+success_throughput_tradeoff.png
 performance_radar.png
 paper_baseline_dashboard.png
 ```

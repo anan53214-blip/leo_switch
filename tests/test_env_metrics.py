@@ -501,6 +501,7 @@ def test_mec_server_uses_all_cores_when_processing_queue():
         config=MECConfig(
             satellite_cpu_freq_ghz=5.0,
             satellite_num_cores=4,
+            mec_max_concurrent_tasks=4,
             max_queue_size=10,
         ),
     )

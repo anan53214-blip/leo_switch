@@ -12,7 +12,7 @@ TRAINING_QOS_STEP_METRICS = [
     ("mean_reward", "Reward", "Mean Episode Reward", 1.0),
     ("avg_success_delay", "Successful-Task Delay", "Average Delay (ms)", 1000.0),
     ("p95_success_delay", "P95 Successful-Task Delay", "P95 Delay (ms)", 1000.0),
-    ("service_continuity_rate", "Service Continuity", "Rate (%)", 100.0),
+    ("successful_task_throughput", "Successful Task Throughput", "Tasks / User-Minute", 1.0),
     ("task_success_rate", "Task Success", "Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation", "Rate (%)", 100.0),
     ("handovers_per_user_minute", "Handover Frequency", "Handovers / User-Minute", 1.0),
@@ -32,7 +32,7 @@ REWARD_COMPONENT_STEP_METRICS = [
 ]
 
 RADAR_METRICS = [
-    ("service_continuity_rate", "Continuity", True),
+    ("successful_task_throughput", "Throughput", True),
     ("task_success_rate", "Task\nSuccess", True),
     ("avg_success_delay", "Low\nDelay", False),
     ("p95_success_delay", "Low P95\nDelay", False),

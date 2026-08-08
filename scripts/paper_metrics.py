@@ -16,7 +16,7 @@ PRIMARY_COMPARE_METRICS = (
     ("p95_success_delay", "P95 Successful-Task Delay"),
     ("task_success_rate", "Task Success"),
     ("deadline_violation_rate", "Deadline Violation"),
-    ("service_continuity_rate", "Service Continuity"),
+    ("successful_task_throughput", "Successful Task Throughput"),
     ("energy_per_successful_task", "Energy per Successful Task"),
 )
 
@@ -25,7 +25,7 @@ FIXED_CORE_METRICS = (
     ("p95_success_delay", "P95 Successful-Task Delay", "P95 Delay (ms)"),
     ("task_success_rate", "Task Success Rate", "Task Success Rate (%)"),
     ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)"),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)"),
+    ("successful_task_throughput", "Successful Task Throughput", "Tasks / User-Minute"),
     ("energy_per_successful_task", "Energy per Successful Task", "Energy / Successful Task"),
 )
 
@@ -41,7 +41,7 @@ CORE_SCALING_METRICS = (
     ("p95_success_delay", "P95 Successful-Task Delay", "P95 Delay (ms)", 1000.0),
     ("task_success_rate", "Task Success Rate", "Task Success Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)", 100.0),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)", 100.0),
+    ("successful_task_throughput", "Successful Task Throughput", "Tasks / User-Minute", 1.0),
     ("handover_failure_rate", "Handover Failure Rate", "Handover Failure Rate (%)", 100.0),
 )
 
@@ -56,7 +56,7 @@ COMBINED_SCALING_METRICS = (
     ("avg_success_delay", "Successful-Task Delay", "Average Delay (ms)", 1000.0),
     ("task_success_rate", "Task Success Rate", "Task Success Rate (%)", 100.0),
     ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)", 100.0),
-    ("service_continuity_rate", "Service Continuity Rate", "Service Continuity Rate (%)", 100.0),
+    ("successful_task_throughput", "Successful Task Throughput", "Tasks / User-Minute", 1.0),
     ("energy_per_successful_task", "Energy per Successful Task", "Energy / Successful Task", 1.0),
     ("jain_mec_load_fairness", "MEC Load Jain Fairness", "Jain Fairness Index", 1.0),
 )
@@ -81,7 +81,7 @@ HIGHER_IS_BETTER = {
     "p95_success_delay": False,
     "task_success_rate": True,
     "deadline_violation_rate": False,
-    "service_continuity_rate": True,
+    "successful_task_throughput": True,
     "handover_failure_rate": False,
     "blocked_time_ratio": False,
     "handovers_per_user_minute": False,
@@ -127,6 +127,12 @@ def derive_paper_metrics(record: Mapping[str, object]) -> dict[str, object]:
     derived.setdefault(
         "handovers_per_user_minute",
         60.0 * committed_handovers / total_user_seconds
+        if total_user_seconds > 0.0
+        else 0.0,
+    )
+    derived.setdefault(
+        "successful_task_throughput",
+        60.0 * completed_tasks / total_user_seconds
         if total_user_seconds > 0.0
         else 0.0,
     )

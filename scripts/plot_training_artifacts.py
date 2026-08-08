@@ -32,13 +32,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.load_balance_metrics import normalize_load_balance_metrics
+from scripts.paper_metrics import derive_paper_metrics
 
 
 HistorySpec = Tuple[Optional[str], Path]
 DEFAULT_SELECTION_METRIC = "reward"
 PRIMARY_COMPARE_METRICS = (
     ("avg_delay", "Average Delay"),
-    ("service_continuity_rate", "Service Continuity"),
+    ("successful_task_throughput", "Successful Task Throughput"),
     ("task_completion_rate", "Task Completion"),
     ("mec_load_fairness", "Load Balance Coef."),
 )
@@ -48,6 +49,7 @@ HIGHER_IS_BETTER = {
     "avg_delay": False,
     "total_energy": False,
     "service_continuity_rate": True,
+    "successful_task_throughput": True,
     "service_availability_rate": True,
     "handover_failure_rate": False,
     "load_balance_variance": False,
@@ -99,6 +101,7 @@ CSV_FIELDS = [
     "handover_failure_rate",
     "forced_termination_rate",
     "service_continuity_rate",
+    "successful_task_throughput",
     "service_availability_rate",
     "task_completion_rate",
     "task_success_rate",
@@ -289,7 +292,7 @@ def method_from_history(
     selected = _best_record(evaluation_records or training_records, metric)
     if selected is None:
         raise ValueError(f"No training or evaluation records in: {history_path}")
-    selected = normalize_load_balance_metrics(selected)
+    selected = derive_paper_metrics(normalize_load_balance_metrics(selected))
 
     method_name = _method_name(config, history_path)
     display_name = label or pretty_method_name(method_name, is_system=is_system)
@@ -326,6 +329,7 @@ def method_from_history(
             max(0.0, 1.0 - service_continuity_rate),
         ),
         "service_continuity_rate": service_continuity_rate,
+        "total_user_seconds": _float(selected, "total_user_seconds"),
         "service_availability_rate": _float(selected, "service_availability_rate", service_continuity_rate),
         "task_completion_rate": _float(selected, "task_completion_rate"),
         "task_success_rate": _float(selected, "task_success_rate", _float(selected, "task_completion_rate")),
@@ -363,13 +367,13 @@ def method_from_history(
         "training_history": str(history_path),
         "source": f"training_history_{source_section}_best_{metric}",
     }
-    return normalize_load_balance_metrics(method)
+    return derive_paper_metrics(normalize_load_balance_metrics(method))
 
 
 def _normalize_summary_methods(summary_path: Path) -> Tuple[List[Dict[str, Any]], Optional[Path], Dict[str, Any]]:
     payload = _load_json(summary_path)
     methods = [
-        normalize_load_balance_metrics(method)
+        derive_paper_metrics(normalize_load_balance_metrics(method))
         for method in payload.get("methods", [])
     ]
     for method in methods:
@@ -392,7 +396,10 @@ def _append_path(paths: List[Path], path: Optional[Path]) -> None:
 
 
 def annotate_priority_metrics(methods: Sequence[Dict[str, Any]], metric_name: str) -> List[Dict[str, Any]]:
-    annotated = [normalize_load_balance_metrics(method) for method in methods]
+    annotated = [
+        derive_paper_metrics(normalize_load_balance_metrics(method))
+        for method in methods
+    ]
     for method in annotated:
         method["selection_metric"] = metric_name
         method["selection_score"] = compute_model_selection_score(method, metric_name)
@@ -461,6 +468,7 @@ def _training_xy(history_path: Optional[Path], metric_key: str = "mean_reward") 
     for record in records:
         if "total_steps" not in record:
             continue
+        record = derive_paper_metrics(record)
         value = _record_reward(record) if metric_key == "mean_reward" else _float(record, metric_key, np.nan)
         if np.isfinite(value):
             pairs.append((_float(record, "total_steps"), value))
@@ -502,7 +510,7 @@ def plot_method_comparison(methods: Sequence[Dict[str, Any]], output_dir: Path) 
         ("avg_delay", "Average Delay", "Average Delay", 1.0),
         ("task_success_rate", "Task Success Rate", "Task Success Rate (%)", 100.0),
         ("deadline_violation_rate", "Deadline Violation Rate", "Deadline Violation Rate (%)", 100.0),
-        ("service_continuity_rate", "Service Continuity", "Service Continuity (%)", 100.0),
+        ("successful_task_throughput", "Successful Task Throughput", "Tasks / User-Minute", 1.0),
         ("energy_per_successful_task", "Energy per Successful Task", "Energy per Successful Task", 1.0),
         ("mec_load_fairness", "MEC Load Fairness", "MEC Load Fairness", 1.0),
     ]
@@ -568,7 +576,7 @@ def plot_step_metric_curves(history_path: Optional[Path], output_dir: Path, wind
             [
                 ("avg_delay", "Average Delay", 1.0),
                 ("task_completion_rate", "Task Completion (%)", 100.0),
-                ("service_continuity_rate", "Service Continuity (%)", 100.0),
+                ("successful_task_throughput", "Successful Task Throughput", 1.0),
                 ("mec_load_fairness", "MEC Load Fairness", 1.0),
             ],
         ),
@@ -637,21 +645,24 @@ def plot_success_continuity_scatter(methods: Sequence[Dict[str, Any]], output_di
         return None
     fig, ax = plt.subplots(figsize=(8.5, 6.2))
     for index, method in enumerate(ordered):
+        method = derive_paper_metrics(method)
+        x_value = _float(method, "task_success_rate", _float(method, "task_completion_rate")) * 100.0
+        y_value = _float(method, "successful_task_throughput")
         ax.scatter(
-            _float(method, "task_success_rate", _float(method, "task_completion_rate")) * 100.0,
-            _float(method, "service_continuity_rate") * 100.0,
+            x_value,
+            y_value,
             s=150 if method.get("is_system") else 90,
             color=_method_color(index, method),
             edgecolor="#303030",
         )
-        ax.annotate(str(method.get("display_name", method.get("method", ""))), (_float(method, "task_success_rate", _float(method, "task_completion_rate")) * 100.0, _float(method, "service_continuity_rate") * 100.0), xytext=(6, 6), textcoords="offset points")
-    ax.set_title("Success-Continuity Trade-off")
+        ax.annotate(str(method.get("display_name", method.get("method", ""))), (x_value, y_value), xytext=(6, 6), textcoords="offset points")
+    ax.set_title("Success-Throughput Trade-off")
     ax.set_xlabel("Task Success Rate (%)")
-    ax.set_ylabel("Service Continuity Rate (%)")
+    ax.set_ylabel("Successful Tasks / User-Minute")
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
     fig.tight_layout()
-    return _save(fig, output_dir / "success_continuity_tradeoff.png")
+    return _save(fig, output_dir / "success_throughput_tradeoff.png")
 
 
 def plot_performance_radar(methods: Sequence[Dict[str, Any]], output_dir: Path) -> Optional[Path]:
@@ -661,7 +672,7 @@ def plot_performance_radar(methods: Sequence[Dict[str, Any]], output_dir: Path) 
     specs = [
         ("avg_delay", "Delay", False),
         ("task_success_rate", "Task", True),
-        ("service_continuity_rate", "Continuity", True),
+        ("successful_task_throughput", "Throughput", True),
         ("mec_load_fairness", "Load", True),
         ("energy_per_successful_task", "Energy", False),
     ]
@@ -750,7 +761,7 @@ def plot_additional_metric_curves(methods: Sequence[Dict[str, Any]], output_dir:
     specs = [
         ("avg_delay", "Average Delay", 1.0),
         ("task_completion_rate", "Task Completion (%)", 100.0),
-        ("service_continuity_rate", "Service Continuity (%)", 100.0),
+        ("successful_task_throughput", "Successful Task Throughput", 1.0),
         ("mec_load_fairness", "MEC Load Fairness", 1.0),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 7))
@@ -758,7 +769,10 @@ def plot_additional_metric_curves(methods: Sequence[Dict[str, Any]], output_dir:
         for index, method in enumerate(plottable):
             records = list(method.get("episode_metrics", []) or [])
             episodes = [int(record.get("episode", idx + 1)) for idx, record in enumerate(records)]
-            values = [_float(record, key) * scale for record in records]
+            values = [
+                _float(derive_paper_metrics(record), key) * scale
+                for record in records
+            ]
             ax.plot(episodes, values, label=str(method.get("display_name", method.get("method", ""))), color=_method_color(index, method))
         ax.set_title(title)
         ax.set_xlabel("Episode")

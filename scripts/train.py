@@ -82,7 +82,7 @@ from src.algorithm.pdqn import PDQNAlgorithm, PDQNConfig
 
 MODEL_SCHEMA_VERSION = 5
 GEOMETRY_SCHEMA_VERSION = 3
-ENVIRONMENT_SCHEMA_VERSION = 9
+ENVIRONMENT_SCHEMA_VERSION = 13
 EVALUATION_SEED_OFFSET = 1_000_000
 
 
@@ -100,7 +100,7 @@ BEST_MODEL_METRIC_CHOICES = (
     "avg_success_delay",
     "p95_success_delay",
     "total_energy",
-    "service_continuity_rate",
+    "successful_task_throughput",
     "service_availability_rate",
     "handover_failure_rate",
     "load_balance_coefficient",
@@ -121,7 +121,7 @@ BEST_MODEL_METRIC_LABELS = {
     "avg_success_delay": "successful-task average delay",
     "p95_success_delay": "successful-task P95 delay",
     "total_energy": "energy per resolved task",
-    "service_continuity_rate": "service continuity",
+    "successful_task_throughput": "successful task throughput",
     "service_availability_rate": "service availability",
     "handover_failure_rate": "handover failure rate",
     "load_balance_coefficient": "load balance coefficient",
@@ -187,8 +187,8 @@ def compute_model_selection_score(record: Dict[str, Any], metric_name: str) -> f
         if float(record.get("completed_tasks", 0.0)) <= 0.0:
             return float("-inf")
         return -energy_per_successful_task(record)
-    if metric_name == "service_continuity_rate":
-        return _bounded_unit_score(record.get("service_continuity_rate", 0.0))
+    if metric_name == "successful_task_throughput":
+        return float(derive_paper_metrics(record).get("successful_task_throughput", 0.0))
     if metric_name == "service_availability_rate":
         return _bounded_unit_score(record.get("service_availability_rate", 0.0))
     if metric_name == "handover_failure_rate":
@@ -263,6 +263,9 @@ class TrainConfig:
     satellite_antenna_gain_db: float = EnvConfig.satellite_antenna_gain_db
     user_tx_power_dbm: float = EnvConfig.user_tx_power_dbm
     user_antenna_gain_db: float = EnvConfig.user_antenna_gain_db
+    user_pa_efficiency: float = EnvConfig.user_pa_efficiency
+    user_circuit_power_w: float = EnvConfig.user_circuit_power_w
+    ofdma_uplink_sharing: bool = EnvConfig.ofdma_uplink_sharing
     noise_temperature_k: float = EnvConfig.noise_temperature_k
     noise_figure_db: float = EnvConfig.noise_figure_db
     rain_attenuation_db: float = EnvConfig.rain_attenuation_db
@@ -273,6 +276,7 @@ class TrainConfig:
     satellite_cpu_freq_ghz: float = EnvConfig.satellite_cpu_freq_ghz
     satellite_max_cpu_freq_ghz: float = EnvConfig.satellite_max_cpu_freq_ghz
     satellite_num_cores: int = EnvConfig.satellite_num_cores
+    mec_max_concurrent_tasks: int = EnvConfig.mec_max_concurrent_tasks
     max_queue_size: int = EnvConfig.max_queue_size
     user_cpu_freq_ghz: float = EnvConfig.user_cpu_freq_ghz
     user_max_cpu_freq_ghz: float = EnvConfig.user_max_cpu_freq_ghz
@@ -1237,6 +1241,7 @@ class HANMAPPOTrainer:
             'forced_termination_rate': summary_env_stats.get('forced_termination_rate', 0.0),
             'service_availability_rate': summary_env_stats.get('service_availability_rate', 0.0),
             'service_continuity_rate': summary_env_stats.get('service_continuity_rate', 0.0),
+            'successful_task_throughput': summary_env_stats.get('successful_task_throughput', 0.0),
             'total_tasks': env_stats.get('total_tasks', 0),
             'completed_tasks': env_stats.get('completed_tasks', 0),
             'deadline_violations': env_stats.get('deadline_violations', 0),
@@ -1357,6 +1362,7 @@ class HANMAPPOTrainer:
                 'forced_termination_rate': rollout_stats.get('forced_termination_rate', 0),
                 'service_availability_rate': rollout_stats.get('service_availability_rate', 0),
                 'service_continuity_rate': rollout_stats.get('service_continuity_rate', 0),
+                'successful_task_throughput': derive_paper_metrics(rollout_stats).get('successful_task_throughput', 0.0),
                 'total_tasks': rollout_stats.get('total_tasks', 0),
                 'completed_tasks': rollout_stats.get('completed_tasks', 0),
                 'deadline_violations': rollout_stats.get('deadline_violations', 0),
@@ -1466,7 +1472,7 @@ class HANMAPPOTrainer:
         self.logger.info(
             "  Env | "
             f"HO: {rollout_stats.get('handover_success_rate', 0):.2%} | "
-            f"Cont: {rollout_stats.get('service_continuity_rate', 0):.2%} | "
+            f"Throughput: {derive_paper_metrics(rollout_stats).get('successful_task_throughput', 0.0):.2f}/user-min | "
             f"Task: {rollout_stats.get('task_completion_rate', 0):.2%} | "
             f"Resolved: {rollout_stats.get('task_resolution_rate', 0):.2%} | "
             f"Delay: {rollout_stats.get('avg_delay', 0):.3f}s | "
@@ -1631,6 +1637,7 @@ class HANMAPPOTrainer:
             'forced_termination_rate': summary_env_stats.get('forced_termination_rate', 0.0),
             'service_availability_rate': summary_env_stats.get('service_availability_rate', 0.0),
             'service_continuity_rate': summary_env_stats.get('service_continuity_rate', 0.0),
+            'successful_task_throughput': summary_env_stats.get('successful_task_throughput', 0.0),
             'resolved_tasks': summary_env_stats.get('resolved_tasks', 0),
             'pending_tasks': summary_env_stats.get('pending_tasks', 0),
             'total_tasks': eval_env_stats.get('total_tasks', 0),
@@ -1695,7 +1702,7 @@ class HANMAPPOTrainer:
                 f"score = {self.best_model_score:.4f}, "
                 f"delay = {eval_record['avg_delay']:.3f}s, "
                 f"completion = {eval_record['task_completion_rate']:.2%}, "
-                f"continuity = {eval_record['service_continuity_rate']:.2%}, "
+                f"throughput = {eval_record['successful_task_throughput']:.2f}/user-min, "
                 f"mec_fairness = {eval_record['mec_load_fairness']:.3f}"
             )
             self._save_checkpoint(best=True)
@@ -2230,6 +2237,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'forced_termination_rate': summary.get('forced_termination_rate', 0.0),
             'service_availability_rate': summary.get('service_availability_rate', 0.0),
             'service_continuity_rate': summary.get('service_continuity_rate', 0.0),
+            'successful_task_throughput': summary.get('successful_task_throughput', 0.0),
             'total_tasks': env_stats.get('total_tasks', 0),
             'completed_tasks': env_stats.get('completed_tasks', 0),
             'deadline_violations': env_stats.get('deadline_violations', 0),
@@ -2455,6 +2463,7 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
             'forced_termination_rate': summary.get('forced_termination_rate', 0.0),
             'service_availability_rate': summary.get('service_availability_rate', 0.0),
             'service_continuity_rate': summary.get('service_continuity_rate', 0.0),
+            'successful_task_throughput': summary.get('successful_task_throughput', 0.0),
             'resolved_tasks': summary.get('resolved_tasks', 0),
             'pending_tasks': summary.get('pending_tasks', 0),
             'total_tasks': eval_env_stats.get('total_tasks', 0),

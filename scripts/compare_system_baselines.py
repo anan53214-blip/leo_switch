@@ -68,6 +68,7 @@ from scripts.load_balance_metrics import (
     normalize_load_balance_metrics,
     summarize_load_variance_samples,
 )
+from scripts.task_offload_diagnostics import HandoverActionabilityAccumulator
 from scripts.paper_metrics import (
     PRIMARY_COMPARE_METRICS as PAPER_PRIMARY_COMPARE_METRICS,
     SUCCESS_DEPENDENT_METRICS,
@@ -195,6 +196,7 @@ SUMMARY_METRIC_KEYS = [
     "reconnections",
     "failed_handovers",
     "service_continuity_rate",
+    "successful_task_throughput",
     "service_availability_rate",
     "task_completion_rate",
     "task_success_rate",
@@ -234,6 +236,7 @@ HIGHER_IS_BETTER = {
     "reward": True,
     "handover_success_rate": True,
     "service_continuity_rate": True,
+    "successful_task_throughput": True,
     "service_availability_rate": True,
     "task_completion_rate": True,
     "task_success_rate": True,
@@ -939,7 +942,7 @@ def action_diagnostics(
 
 
 def ensure_action_diagnostic_fields(method: Dict) -> Dict:
-    normalized = normalize_load_balance_metrics(method)
+    normalized = derive_paper_metrics(normalize_load_balance_metrics(method))
     normalized.pop("mec_activity_score", None)
     normalized.pop("mec_load_mean", None)
     normalized.pop("service_downtime_rate", None)
@@ -1168,11 +1171,13 @@ class JointGreedyPolicy(BasePolicy):
         self.name = "joint_greedy"
         self._planned_queue_increments: Dict[int, int] = {}
         self._planned_cycle_increments: Dict[int, float] = {}
+        self._planned_uplink_increments: Dict[int, int] = {}
 
     def begin_episode(self, env: LEOSatelliteEnv) -> None:
         del env
         self._planned_queue_increments = defaultdict(int)
         self._planned_cycle_increments = defaultdict(float)
+        self._planned_uplink_increments = defaultdict(int)
 
     def _effective_target_for_action(self, env: LEOSatelliteEnv, user, handover_action: int, visible_sats: Sequence[object]):
         if handover_action > 0 and len(visible_sats) >= handover_action:
@@ -1228,6 +1233,7 @@ class JointGreedyPolicy(BasePolicy):
         target_vis,
         offload_ratio: float,
         predicted_queue_len: int,
+        predicted_uplink_users: int,
     ) -> tuple[float, float]:
         if task is None:
             return 0.0, 0.0
@@ -1252,15 +1258,22 @@ class JointGreedyPolicy(BasePolicy):
 
         offload_cycles = offload_ratio * task.computation
         offload_bits = offload_ratio * task.data_size
+        uplink_bandwidth_mhz = (
+            float(env.config.bandwidth_mhz) / max(predicted_uplink_users, 1)
+            if env.config.ofdma_uplink_sharing
+            else float(env.config.bandwidth_mhz)
+        )
         upload_delay, download_delay = env.offload_calc.compute_transmission_delay(
             offload_bits,
             target_vis.distance_km,
             target_vis.elevation_deg,
+            bandwidth_mhz=uplink_bandwidth_mhz,
         )
         upload_energy = env.offload_calc.compute_transmission_energy(
             offload_bits,
             target_vis.distance_km,
             target_vis.elevation_deg,
+            bandwidth_mhz=uplink_bandwidth_mhz,
         )
 
         existing_cycles = active_queue_remaining_cycles(server)
@@ -1292,6 +1305,16 @@ class JointGreedyPolicy(BasePolicy):
             if target_server is not None and target_sat_id is not None and target_sat_id >= 0
             else 0
         )
+        predicted_uplink_users = (
+            self._planned_uplink_increments[target_sat_id] + 1
+            if (
+                offload_ratio >= float(env.config.min_effective_offload_ratio)
+                and target_server is not None
+                and target_sat_id is not None
+                and target_sat_id >= 0
+            )
+            else 1
+        )
 
         score = 0.0
         if user.state == UserState.BLOCKED and target_vis is None:
@@ -1305,13 +1328,31 @@ class JointGreedyPolicy(BasePolicy):
             target_vis,
             offload_ratio,
             predicted_queue_len,
+            predicted_uplink_users,
         )
         score += task_value
         return score, extra_cycles
 
+    def _handover_candidate_actions(
+        self,
+        env: LEOSatelliteEnv,
+        user,
+        visible_sats: Sequence[object],
+        legal_mask: np.ndarray,
+    ) -> List[int]:
+        del user
+        return [
+            action
+            for action in range(
+                min(len(visible_sats), env.max_visible_sats) + 1
+            )
+            if legal_mask[action]
+        ]
+
     def select_actions(self, env: LEOSatelliteEnv) -> np.ndarray:
         self._planned_queue_increments = defaultdict(int)
         self._planned_cycle_increments = defaultdict(float)
+        self._planned_uplink_increments = defaultdict(int)
         actions = np.zeros((env.num_users, 2), dtype=np.float32)
 
         order = list(range(env.num_users))
@@ -1326,11 +1367,12 @@ class JointGreedyPolicy(BasePolicy):
             user = env.user_manager.users[user_id]
             visible_sats = env._get_handover_candidates(user)
             legal_mask = env.get_handover_action_mask()[user_id]
-            candidate_actions = [
-                action
-                for action in range(min(len(visible_sats), env.max_visible_sats) + 1)
-                if legal_mask[action]
-            ]
+            candidate_actions = self._handover_candidate_actions(
+                env,
+                user,
+                visible_sats,
+                legal_mask,
+            )
 
             best_score = -float("inf")
             best_handover = 0
@@ -1360,9 +1402,15 @@ class JointGreedyPolicy(BasePolicy):
             target_vis = self._effective_target_for_action(env, user, int(best_handover), visible_sats)
             target_sat_id = target_vis.sat_id if target_vis is not None else user.serving_satellite
             target_server = env.mec_manager.get_server(target_sat_id) if target_sat_id is not None and target_sat_id >= 0 else None
-            if task is not None and best_offload > 0.0 and target_server is not None:
+            if (
+                task is not None
+                and best_offload > 0.0
+                and best_cycles > 0.0
+                and target_server is not None
+            ):
                 self._planned_queue_increments[target_sat_id] += 1
                 self._planned_cycle_increments[target_sat_id] += best_cycles
+                self._planned_uplink_increments[target_sat_id] += 1
 
         return actions
 
@@ -2482,6 +2530,9 @@ def train_and_evaluate_pdqn_baseline(
                     "handovers_per_user_minute": summary.get("handovers_per_user_minute", 0.0),
                     "blocked_time_ratio": summary.get("blocked_time_ratio", 0.0),
                     "service_continuity_rate": summary.get("service_continuity_rate", 0.0),
+                    "successful_task_throughput": summary.get("successful_task_throughput", 0.0),
+                    "total_user_seconds": summary.get("total_user_seconds", 0.0),
+                    "completed_tasks": summary.get("completed_tasks", 0.0),
                     "task_completion_rate": summary.get("task_completion_rate", 0.0),
                     "task_success_rate": summary.get("task_success_rate", 0.0),
                     "mec_load_fairness": summary.get("mec_load_fairness", summary.get("active_load_balance_score", summary.get("avg_load_balance_score", 0.0))),
@@ -2662,6 +2713,7 @@ def evaluate_policy(
     max_steps: Optional[int],
     seed_offset: int = EVALUATION_SEED_OFFSET,
     collect_task_trace: bool = False,
+    collect_handover_actionability: bool = False,
 ) -> Dict:
     evaluation_config = dict(config)
     if collect_task_trace:
@@ -2676,6 +2728,11 @@ def evaluate_policy(
     summaries: List[Dict] = []
     action_batches: List[np.ndarray] = []
     task_trace: List[Dict] = []
+    handover_actionability = (
+        HandoverActionabilityAccumulator()
+        if collect_handover_actionability
+        else None
+    )
 
     for episode_idx in range(episodes):
         policy.begin_episode(env)
@@ -2684,6 +2741,8 @@ def evaluate_policy(
         episode_reward = 0.0
 
         while not done:
+            if handover_actionability is not None:
+                handover_actionability.observe(env)
             actions = policy.select_actions(env)
             action_batches.append(np.asarray(actions, dtype=np.float32).copy())
             _, reward, terminated, truncated, _ = env.step(
@@ -2723,6 +2782,8 @@ def evaluate_policy(
     )
     if collect_task_trace:
         result["task_trace"] = task_trace
+    if handover_actionability is not None:
+        result["handover_actionability"] = handover_actionability.summary()
     return result
 
 
@@ -3511,6 +3572,7 @@ def save_results_csv(output_dir: Path, methods: Sequence[Dict]) -> Path:
         "reconnections",
         "failed_handovers",
         "service_continuity_rate",
+        "successful_task_throughput",
         "service_availability_rate",
         "task_completion_rate",
         "task_success_rate",
@@ -3562,6 +3624,7 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
     rows = []
     for method in order_methods(methods):
         for record in method.get("episode_metrics", []):
+            record = derive_paper_metrics(record)
             row = {
                 "method": method.get("method", ""),
                 "display_name": method.get("display_name", method.get("method", "")),
@@ -3582,6 +3645,7 @@ def save_episode_metrics_csv(output_dir: Path, methods: Sequence[Dict]) -> Optio
                 "total_handovers": float(record.get("total_handovers", 0.0)),
                 "failed_handovers": float(record.get("failed_handovers", 0.0)),
                 "service_continuity_rate": float(record.get("service_continuity_rate", 0.0)),
+                "successful_task_throughput": float(record.get("successful_task_throughput", 0.0)),
                 "service_availability_rate": float(record.get("service_availability_rate", 0.0)),
                 "task_completion_rate": float(record.get("task_completion_rate", 0.0)),
                 "task_success_rate": float(record.get("task_success_rate", record.get("task_completion_rate", 0.0))),
@@ -4571,9 +4635,10 @@ def plot_success_continuity_scatter(
     styles = build_method_styles(ordered)
     fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=220)
     for method in ordered:
+        method = derive_paper_metrics(method)
         style = styles[str(method.get("method", ""))]
         x_value = float(method.get("task_success_rate", method.get("task_completion_rate", 0.0))) * 100.0
-        y_value = float(method.get("service_continuity_rate", 0.0)) * 100.0
+        y_value = float(method.get("successful_task_throughput", 0.0))
         load_balance = float(
             method.get(
                 "jain_mec_load_fairness",
@@ -4605,17 +4670,17 @@ def plot_success_continuity_scatter(
             color=PAPER_COLORS["dark"],
         )
     ax.set_xlabel("Task Success Rate (%)")
-    ax.set_ylabel("Service Continuity Rate (%)")
-    ax.set_title("Success-Continuity Trade-off (marker size: Jain fairness)")
+    ax.set_ylabel("Successful Tasks / User-Minute")
+    ax.set_title("Success-Throughput Trade-off (marker size: Jain fairness)")
     ax.set_xlim(left=0.0, right=max(100.0, ax.get_xlim()[1]))
-    ax.set_ylim(bottom=0.0, top=max(100.0, ax.get_ylim()[1]))
+    ax.set_ylim(bottom=0.0)
     style_axes_frame(ax)
     fig.tight_layout()
     return save_figure(
         fig,
         figure_output_path(
             output_dir,
-            "success_continuity_tradeoff.png",
+            "success_throughput_tradeoff.png",
             output_suffix,
         ),
     )
@@ -4751,9 +4816,9 @@ def plot_paper_dashboard(
     draw_metric_bar_panel(
         ax_energy,
         methods,
-        metric_key="service_continuity_rate",
-        title="Service Continuity Rate",
-        ylabel="Service Continuity Rate (%)",
+        metric_key="successful_task_throughput",
+        title="Successful Task Throughput",
+        ylabel="Tasks / User-Minute",
         compact=True,
     )
     add_panel_label(ax_energy, "(c)")
@@ -5239,7 +5304,7 @@ def main() -> None:
     if tradeoff_plot is not None:
         print(f"Delay-energy trade-off figure: {tradeoff_plot}")
     if reliability_plot is not None:
-        print(f"Success-continuity trade-off figure: {reliability_plot}")
+        print(f"Success-throughput trade-off figure: {reliability_plot}")
     if radar_plot is not None:
         print(f"Performance radar figure: {radar_plot}")
     if reward_distribution_plot is not None:

@@ -167,6 +167,22 @@ def build_task_type_offload_summary(rows: Sequence[Dict]) -> List[Dict]:
                 95,
             ),
             "mean_energy_j": _mean(row.get("total_energy_j") for row in settled),
+            "mean_local_energy_j": _mean(
+                row.get("local_energy_j") for row in settled
+            ),
+            "mean_upload_energy_j": _mean(
+                row.get("upload_energy_j") for row in settled
+            ),
+            "mean_uplink_bandwidth_mhz": _mean(
+                row.get("uplink_bandwidth_mhz")
+                for row in attempts
+                if row.get("mec_admission_accepted")
+            ),
+            "mean_uplink_concurrent_users": _mean(
+                row.get("uplink_concurrent_users")
+                for row in attempts
+                if row.get("mec_admission_accepted")
+            ),
             "mean_task_reward": _mean(row.get("task_reward") for row in settled),
         })
     return summary
@@ -212,6 +228,23 @@ def build_bimodality_summary(rows: Sequence[Dict]) -> List[Dict]:
             "middle_share": len(middle) / max(len(group), 1),
             "success_rate": sum(bool(row.get("success")) for row in settled) / max(len(settled), 1),
             "mean_task_reward": _mean(row.get("task_reward") for row in settled),
+            "mean_energy_j": _mean(row.get("total_energy_j") for row in settled),
+            "mean_local_energy_j": _mean(
+                row.get("local_energy_j") for row in settled
+            ),
+            "mean_upload_energy_j": _mean(
+                row.get("upload_energy_j") for row in settled
+            ),
+            "mean_uplink_bandwidth_mhz": _mean(
+                row.get("uplink_bandwidth_mhz")
+                for row in attempts
+                if row.get("mec_admission_accepted")
+            ),
+            "mean_uplink_concurrent_users": _mean(
+                row.get("uplink_concurrent_users")
+                for row in attempts
+                if row.get("mec_admission_accepted")
+            ),
             "mec_rejection_rate": len(rejections) / max(len(attempts), 1),
         })
     return result
@@ -364,3 +397,359 @@ def save_task_offload_diagnostics(output_dir: Path, methods: Sequence[Dict]) -> 
     if deadline is not None:
         paths["deadline_miss_reasons"] = deadline
     return paths
+
+def active_queue_remaining_cycles(server) -> float:
+    if server is None:
+        return 0.0
+    return float(
+        sum(
+            task.get("remaining_cycles", 0.0)
+            for task in server.task_queue
+            if task.get("status") in ("queued", "processing")
+        )
+    )
+
+
+class HandoverActionabilityAccumulator:
+    """Read-only diagnostics for whether users can act on satellite load."""
+
+    def __init__(self) -> None:
+        self.steps = 0
+        self.user_steps = 0
+        self.connected_user_steps = 0
+        self.gate_open_user_steps = 0
+        self.raw_candidate_targets = 0
+        self.raw_candidate_user_steps = 0
+        self.ungated_legal_targets = 0
+        self.gated_legal_targets = 0
+        self.ungated_feasible_user_steps = 0
+        self.gated_feasible_user_steps = 0
+        self.gate_blocked_feasible_user_steps = 0
+        self.load_comparison_user_steps = 0
+        self.lower_load_candidate_user_steps = 0
+        self.congestion_relief_user_steps = 0
+        self.gate_blocked_congestion_relief_user_steps = 0
+        self.avoidable_full_queue_user_steps = 0
+        self.queue_advantage_sum = 0.0
+        self.positive_queue_advantage_sum = 0.0
+        self.wait_advantage_sum_sec = 0.0
+        self.positive_wait_advantage_sum_sec = 0.0
+        self.concentration_steps = 0
+        self.hhi_sum = 0.0
+        self.effective_serving_satellites_sum = 0.0
+        self.max_serving_share_sum = 0.0
+        self.occupied_satellites_sum = 0.0
+        self.gate_reason_counts: Dict[str, int] = defaultdict(int)
+        self.candidate_status_counts: Dict[str, int] = defaultdict(int)
+
+    @staticmethod
+    def _safe_rate(numerator: float, denominator: float) -> float:
+        return float(numerator / denominator) if denominator > 0 else 0.0
+
+    @staticmethod
+    def _estimated_wait_sec(server) -> float:
+        if server is None:
+            return 0.0
+        capacity_hz = max(float(server.total_capacity_ghz) * 1e9, 1e-9)
+        return active_queue_remaining_cycles(server) / capacity_hz
+
+    @staticmethod
+    def _gate_reason(env, user) -> str:
+        if int(user.serving_satellite) < 0:
+            return "disconnected"
+        visibility = env._get_satellite_visibility(
+            user,
+            int(user.serving_satellite),
+        )
+        if visibility is None or not visibility.is_visible:
+            return "current_link_unavailable"
+        threshold = float(
+            getattr(env.config, "pre_handover_rvt_sec", 60.0)
+        )
+        if float(visibility.rvt_seconds) < threshold:
+            return "low_rvt"
+        server = env.mec_manager.get_server(int(user.serving_satellite))
+        if server is not None and float(server.utilization) >= 0.95:
+            return "high_utilization"
+        return "other"
+
+    def observe(self, env) -> None:
+        """Sample current state before policy selection without mutating it."""
+        self.steps += 1
+        self.user_steps += int(env.num_users)
+
+        pre_handover = np.asarray(
+            env.get_pre_handover_mask(),
+            dtype=bool,
+        )
+        gated_mask = np.asarray(
+            env.get_handover_action_mask(
+                env.max_visible_sats,
+                apply_pre_handover_gate=True,
+            ),
+            dtype=bool,
+        )
+        ungated_mask = np.asarray(
+            env.get_handover_action_mask(
+                env.max_visible_sats,
+                apply_pre_handover_gate=False,
+            ),
+            dtype=bool,
+        )
+
+        serving_counts: Dict[int, int] = defaultdict(int)
+        for user in env.user_manager.users:
+            if int(user.serving_satellite) >= 0:
+                serving_counts[int(user.serving_satellite)] += 1
+        connected = sum(serving_counts.values())
+        if connected > 0:
+            shares = np.asarray(
+                [count / connected for count in serving_counts.values()],
+                dtype=np.float64,
+            )
+            hhi = float(np.sum(np.square(shares)))
+            self.concentration_steps += 1
+            self.hhi_sum += hhi
+            self.effective_serving_satellites_sum += 1.0 / max(hhi, 1e-12)
+            self.max_serving_share_sum += float(np.max(shares))
+            self.occupied_satellites_sum += float(len(serving_counts))
+
+        for user_id, user in enumerate(env.user_manager.users):
+            gate_open = bool(pre_handover[user_id])
+            if gate_open:
+                self.gate_open_user_steps += 1
+                self.gate_reason_counts[self._gate_reason(env, user)] += 1
+
+            candidates = env._get_handover_candidates(user)[
+                : env.max_visible_sats
+            ]
+            self.raw_candidate_targets += len(candidates)
+            if candidates:
+                self.raw_candidate_user_steps += 1
+            ungated_indices = [
+                index
+                for index in range(1, len(candidates) + 1)
+                if ungated_mask[user_id, index]
+            ]
+            gated_indices = [
+                index
+                for index in range(1, len(candidates) + 1)
+                if gated_mask[user_id, index]
+            ]
+            self.ungated_legal_targets += len(ungated_indices)
+            self.gated_legal_targets += len(gated_indices)
+
+            ungated_index_set = set(ungated_indices)
+            for index, candidate in enumerate(candidates, start=1):
+                if index in ungated_index_set:
+                    self.candidate_status_counts["legal"] += 1
+                    continue
+                link_feasible, failure_reason = (
+                    env._check_handover_link_feasibility(candidate)
+                )
+                if not link_feasible:
+                    self.candidate_status_counts[
+                        str(failure_reason or "radio_infeasible")
+                    ] += 1
+                    continue
+                migration_plan = (
+                    env.mec_manager.prepare_user_task_migration(
+                        user_id=int(user.user_id),
+                        old_sat_id=int(user.serving_satellite),
+                        new_sat_id=int(candidate.sat_id),
+                    )
+                )
+                self.candidate_status_counts[
+                    "migration_feasible"
+                    if migration_plan.feasible
+                    else str(
+                        migration_plan.failure_reason
+                        or "migration_infeasible"
+                    )
+                ] += 1
+
+            if ungated_indices:
+                self.ungated_feasible_user_steps += 1
+            if gated_indices:
+                self.gated_feasible_user_steps += 1
+            if ungated_indices and not gate_open:
+                self.gate_blocked_feasible_user_steps += 1
+
+            serving_satellite = int(user.serving_satellite)
+            if serving_satellite < 0:
+                continue
+            self.connected_user_steps += 1
+            current_server = env.mec_manager.get_server(serving_satellite)
+            if current_server is None or not ungated_indices:
+                continue
+
+            legal_target_servers = [
+                env.mec_manager.get_server(candidates[index - 1].sat_id)
+                for index in ungated_indices
+            ]
+            legal_target_servers = [
+                server for server in legal_target_servers if server is not None
+            ]
+            if not legal_target_servers:
+                continue
+
+            best_server = min(
+                legal_target_servers,
+                key=lambda server: (
+                    int(server.queue_length),
+                    self._estimated_wait_sec(server),
+                    int(server.satellite_id),
+                ),
+            )
+            current_queue = int(current_server.queue_length)
+            best_queue = int(best_server.queue_length)
+            queue_advantage = float(current_queue - best_queue)
+            wait_advantage = (
+                self._estimated_wait_sec(current_server)
+                - self._estimated_wait_sec(best_server)
+            )
+            self.load_comparison_user_steps += 1
+            self.queue_advantage_sum += queue_advantage
+            self.wait_advantage_sum_sec += wait_advantage
+
+            if queue_advantage > 0.0 or wait_advantage > 0.0:
+                self.lower_load_candidate_user_steps += 1
+                self.positive_queue_advantage_sum += max(
+                    queue_advantage,
+                    0.0,
+                )
+                self.positive_wait_advantage_sum_sec += max(
+                    wait_advantage,
+                    0.0,
+                )
+
+            max_concurrent = max(
+                int(current_server.config.mec_max_concurrent_tasks),
+                1,
+            )
+            current_congested = (
+                current_queue >= max_concurrent
+                or bool(current_server.is_full)
+                or float(current_server.utilization) >= 0.95
+            )
+            has_relief = current_congested and (
+                best_queue < current_queue
+                or self._estimated_wait_sec(best_server)
+                < self._estimated_wait_sec(current_server)
+            )
+            if has_relief:
+                self.congestion_relief_user_steps += 1
+                if not gate_open:
+                    self.gate_blocked_congestion_relief_user_steps += 1
+            if bool(current_server.is_full) and not bool(best_server.is_full):
+                self.avoidable_full_queue_user_steps += 1
+
+    def summary(self) -> Dict[str, object]:
+        comparison_count = self.load_comparison_user_steps
+        lower_load_count = self.lower_load_candidate_user_steps
+        feasible_count = self.ungated_feasible_user_steps
+        reason_rates = {
+            reason: self._safe_rate(count, self.gate_open_user_steps)
+            for reason, count in sorted(self.gate_reason_counts.items())
+        }
+        candidate_status_rates = {
+            status: self._safe_rate(count, self.raw_candidate_targets)
+            for status, count in sorted(self.candidate_status_counts.items())
+        }
+        return {
+            "sample_steps": int(self.steps),
+            "user_step_samples": int(self.user_steps),
+            "connected_user_step_samples": int(self.connected_user_steps),
+            "pre_handover_gate_open_rate": self._safe_rate(
+                self.gate_open_user_steps,
+                self.user_steps,
+            ),
+            "mean_raw_candidate_targets_per_user": self._safe_rate(
+                self.raw_candidate_targets,
+                self.user_steps,
+            ),
+            "raw_candidate_user_rate": self._safe_rate(
+                self.raw_candidate_user_steps,
+                self.user_steps,
+            ),
+            "mean_ungated_legal_targets_per_user": self._safe_rate(
+                self.ungated_legal_targets,
+                self.user_steps,
+            ),
+            "mean_gated_legal_targets_per_user": self._safe_rate(
+                self.gated_legal_targets,
+                self.user_steps,
+            ),
+            "ungated_feasible_switch_user_rate": self._safe_rate(
+                feasible_count,
+                self.user_steps,
+            ),
+            "gated_feasible_switch_user_rate": self._safe_rate(
+                self.gated_feasible_user_steps,
+                self.user_steps,
+            ),
+            "gate_blocked_feasible_switch_user_rate": self._safe_rate(
+                self.gate_blocked_feasible_user_steps,
+                self.user_steps,
+            ),
+            "gate_block_share_of_feasible_switch_user_steps": self._safe_rate(
+                self.gate_blocked_feasible_user_steps,
+                feasible_count,
+            ),
+            "lower_load_candidate_user_rate": self._safe_rate(
+                lower_load_count,
+                comparison_count,
+            ),
+            "mean_current_minus_best_candidate_queue": self._safe_rate(
+                self.queue_advantage_sum,
+                comparison_count,
+            ),
+            "mean_positive_queue_reduction_tasks": self._safe_rate(
+                self.positive_queue_advantage_sum,
+                lower_load_count,
+            ),
+            "mean_current_minus_best_candidate_wait_sec": self._safe_rate(
+                self.wait_advantage_sum_sec,
+                comparison_count,
+            ),
+            "mean_positive_workload_wait_reduction_sec": self._safe_rate(
+                self.positive_wait_advantage_sum_sec,
+                lower_load_count,
+            ),
+            "congestion_relief_opportunity_user_rate": self._safe_rate(
+                self.congestion_relief_user_steps,
+                self.connected_user_steps,
+            ),
+            "gate_blocked_congestion_relief_user_rate": self._safe_rate(
+                self.gate_blocked_congestion_relief_user_steps,
+                self.connected_user_steps,
+            ),
+            "gate_block_share_of_congestion_relief_opportunities": (
+                self._safe_rate(
+                    self.gate_blocked_congestion_relief_user_steps,
+                    self.congestion_relief_user_steps,
+                )
+            ),
+            "avoidable_full_queue_user_rate": self._safe_rate(
+                self.avoidable_full_queue_user_steps,
+                self.connected_user_steps,
+            ),
+            "mean_serving_satellite_hhi": self._safe_rate(
+                self.hhi_sum,
+                self.concentration_steps,
+            ),
+            "mean_effective_serving_satellites": self._safe_rate(
+                self.effective_serving_satellites_sum,
+                self.concentration_steps,
+            ),
+            "mean_max_serving_satellite_share": self._safe_rate(
+                self.max_serving_share_sum,
+                self.concentration_steps,
+            ),
+            "mean_occupied_serving_satellites": self._safe_rate(
+                self.occupied_satellites_sum,
+                self.concentration_steps,
+            ),
+            "gate_open_reason_rates": reason_rates,
+            "raw_candidate_status_rates": candidate_status_rates,
+        }

@@ -132,6 +132,7 @@ class MultiUserConfig:
     force_system_train: bool = False
     reuse_learned_checkpoints: bool = False
     aggregate_only: bool = False
+    aggregate_output_dir: str = ""
     include_methods: tuple[str, ...] = ()
     output_suffix: str = ""
     dry_run: bool = False
@@ -632,7 +633,9 @@ def aggregate_user_summaries(
     include_methods: Sequence[str] = (),
     output_suffix: str = "",
     seeds: Sequence[int] = (),
+    output_dir: Optional[Path] = None,
 ) -> tuple[list[dict[str, str]], Path]:
+    artifact_dir = output_dir or suite_dir
     seed_values = tuple(seeds) or (42,)
     seed_rows: list[dict[str, str]] = []
     expected_reward_config: Optional[tuple[float, ...]] = None
@@ -664,15 +667,15 @@ def aggregate_user_summaries(
         seed_rows.extend(user_seed_rows)
         aggregated_user_rows = _aggregate_seed_rows(user_seed_rows)
         _write_csv(
-            suite_dir / f"u{num_users}" / "comparison_seed_records.csv",
+            artifact_dir / f"u{num_users}" / "comparison_seed_records.csv",
             user_seed_rows,
         )
         _write_csv(
-            suite_dir / f"u{num_users}" / "comparison_summary.csv",
+            artifact_dir / f"u{num_users}" / "comparison_summary.csv",
             aggregated_user_rows,
         )
         _plot_fixed_user_seed_summary(
-            suite_dir / f"u{num_users}",
+            artifact_dir / f"u{num_users}",
             user_seed_rows,
             aggregated_user_rows,
             output_suffix=output_suffix,
@@ -685,10 +688,10 @@ def aggregate_user_summaries(
 
     rows = _aggregate_seed_rows(seed_rows)
     _write_csv(
-        suite_dir / suffixed_filename("multiuser_seed_records.csv", output_suffix),
+        artifact_dir / suffixed_filename("multiuser_seed_records.csv", output_suffix),
         seed_rows,
     )
-    output_csv = suite_dir / suffixed_filename("multiuser_summary.csv", output_suffix)
+    output_csv = artifact_dir / suffixed_filename("multiuser_summary.csv", output_suffix)
     _write_csv(output_csv, rows)
     return rows, output_csv
 
@@ -708,106 +711,6 @@ def _method_order(rows: Sequence[dict[str, str]]) -> list[str]:
     ordered = [name for name in preferred if name in present]
     ordered.extend(sorted(name for name in present if name and name not in ordered))
     return ordered
-
-
-def _apply_service_continuity_zoom(
-    ax,
-    rows: Sequence[dict[str, str]],
-    method_names: Sequence[str],
-    metric_key: str,
-    scale: float,
-) -> None:
-    if metric_key != "service_continuity_rate":
-        return
-
-    values_by_method: dict[str, list[float]] = {}
-    for display_name in method_names:
-        values = [
-            float(row[metric_key]) * scale
-            for row in rows
-            if row.get("display_name") == display_name
-            and _float_or_none(row.get(metric_key)) is not None
-        ]
-        if values:
-            values_by_method[display_name] = values
-
-    all_values = [value for values in values_by_method.values() for value in values]
-    high_values = [value for value in all_values if value >= 80.0]
-    if len(high_values) < 2:
-        return
-
-    high_min = min(high_values)
-    high_max = max(high_values)
-    y_min = max(0.0, high_min - 2.5)
-    y_max = min(100.5, high_max + 1.0)
-    if y_max - y_min < 8.0:
-        y_min = max(0.0, y_max - 8.0)
-
-    clipped = {
-        name: values
-        for name, values in values_by_method.items()
-        if min(values) < y_min
-    }
-    if not clipped:
-        return
-
-    ax.set_ylim(y_min, y_max)
-    ax.text(
-        0.02,
-        0.04,
-        "Zoomed y-axis",
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=8.5,
-        color="#333333",
-        bbox={
-            "boxstyle": "round,pad=0.25",
-            "facecolor": "white",
-            "edgecolor": "#999999",
-            "alpha": 0.82,
-        },
-    )
-    inset = ax.inset_axes([0.10, 0.13, 0.38, 0.30])
-    lines_by_label = {line.get_label(): line for line in ax.get_lines()}
-    low_min = min(min(values) for values in clipped.values())
-    low_max = max(max(values) for values in clipped.values())
-    low_margin = max((low_max - low_min) * 0.20, 1.0)
-    for display_name, values in clipped.items():
-        method_rows = [
-            row for row in rows
-            if row.get("display_name") == display_name
-            and _float_or_none(row.get(metric_key)) is not None
-        ]
-        method_rows.sort(key=lambda row: int(row["num_users"]))
-        x_values = [int(row["num_users"]) for row in method_rows]
-        line = lines_by_label.get(display_name)
-        inset.plot(
-            x_values,
-            values,
-            marker=line.get_marker() if line is not None else "o",
-            color=line.get_color() if line is not None else None,
-            linewidth=1.4,
-            markersize=3.0,
-            label=display_name,
-        )
-    inset.set_title("Below-axis methods", fontsize=7.5, pad=2)
-    inset.set_ylim(max(0.0, low_min - low_margin), min(100.0, low_max + low_margin))
-    inset.set_xticks(sorted({int(row["num_users"]) for row in rows})[::2])
-    inset.tick_params(axis="both", labelsize=7, length=2)
-    inset.grid(True, alpha=0.25, linestyle="--", linewidth=0.6)
-    inset.set_facecolor("white")
-    for spine in inset.spines.values():
-        spine.set_edgecolor("#888888")
-        spine.set_linewidth(0.8)
-    mark_kwargs = {
-        "transform": ax.transAxes,
-        "color": "#333333",
-        "clip_on": False,
-        "linewidth": 1.0,
-    }
-    ax.plot((-0.012, 0.012), (-0.015, 0.015), **mark_kwargs)
-    ax.plot((0.988, 1.012), (-0.015, 0.015), **mark_kwargs)
 
 
 def setup_plot_style() -> None:
@@ -885,7 +788,6 @@ def plot_scaling_metrics(
         ax.set_xlabel("Number of Users")
         ax.set_ylabel(ylabel)
         ax.set_xticks(sorted({int(row["num_users"]) for row in rows}))
-        _apply_service_continuity_zoom(ax, rows, method_names, metric_key, scale)
 
     for ax in axes.flat[metric_count:]:
         ax.axis("off")
@@ -904,7 +806,7 @@ def plot_scaling_metrics(
             fig.subplots_adjust(top=0.76)
         else:
             fig.legend(handles, labels, loc="upper center", ncol=min(5, len(labels)), frameon=True)
-            fig.subplots_adjust(top=0.88)
+            fig.subplots_adjust(top=0.88, hspace=0.38)
     output_path = suite_dir / suffixed_filename(filename, output_suffix)
     fig.savefig(output_path)
     plt.close(fig)
@@ -1072,13 +974,17 @@ def generate_aggregate_artifacts(
     project_root: Path,
     config: MultiUserConfig,
     suite_dir: Path,
+    output_dir: Optional[Path] = None,
 ) -> list[Path]:
+    artifact_dir = output_dir or suite_dir
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     summary_rows, summary_csv = aggregate_user_summaries(
         suite_dir,
         config.user_counts,
         include_methods=config.include_methods,
         output_suffix=config.output_suffix,
         seeds=effective_seeds(config),
+        output_dir=artifact_dir,
     )
     generated: list[Path] = [summary_csv]
 
@@ -1086,7 +992,7 @@ def generate_aggregate_artifacts(
         project_root,
         config.run_id,
         config.user_counts,
-        suite_dir,
+        artifact_dir,
         seeds=effective_seeds(config),
         include_methods=config.include_methods,
         output_suffix=config.output_suffix,
@@ -1095,7 +1001,7 @@ def generate_aggregate_artifacts(
         generated.append(reward_plot)
     core_plot = plot_scaling_metrics(
         summary_rows,
-        suite_dir,
+        artifact_dir,
         CORE_SCALING_METRICS,
         "multiuser_core_metrics.png",
         output_suffix=config.output_suffix,
@@ -1104,7 +1010,7 @@ def generate_aggregate_artifacts(
         generated.append(core_plot)
     resource_plot = plot_scaling_metrics(
         summary_rows,
-        suite_dir,
+        artifact_dir,
         RESOURCE_SCALING_METRICS,
         "multiuser_resource_metrics.png",
         output_suffix=config.output_suffix,
@@ -1113,14 +1019,14 @@ def generate_aggregate_artifacts(
         generated.append(resource_plot)
     combined_plot = plot_scaling_metrics(
         summary_rows,
-        suite_dir,
+        artifact_dir,
         COMBINED_SCALING_METRICS,
         "multiuser_combined_metrics.png",
         output_suffix=config.output_suffix,
     )
     if combined_plot is not None:
         generated.append(combined_plot)
-    manifest = write_manifest(suite_dir, config, generated)
+    manifest = write_manifest(artifact_dir, config, generated)
     generated.append(manifest)
     return generated
 
@@ -1209,6 +1115,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Only rebuild suite-level CSV, figures, and manifest from existing u*/comparison_summary.csv files.",
     )
+    parser.add_argument(
+        "--aggregate-output-dir",
+        type=str,
+        default="",
+        help=(
+            "Write aggregate CSVs and figures to this directory while reading existing "
+            "u*/comparison_summary files from the suite selected by --run-id. "
+            "Relative paths are resolved from the project root."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args(argv)
 
@@ -1244,6 +1160,7 @@ def config_from_args(args: argparse.Namespace) -> MultiUserConfig:
         force_system_train=args.force_system_train,
         reuse_learned_checkpoints=args.reuse_learned_checkpoints,
         aggregate_only=args.aggregate_only,
+        aggregate_output_dir=str(getattr(args, "aggregate_output_dir", "")),
         include_methods=tuple(getattr(args, "include_methods", [])),
         output_suffix=normalize_output_suffix(getattr(args, "output_suffix", "")),
         dry_run=args.dry_run,
@@ -1343,9 +1260,26 @@ def main() -> None:
         print(f"Output suffix: {config.output_suffix}")
 
     suite_dir = build_paths(PROJECT_ROOT, config.run_id, config.user_counts[0]).suite_dir
+    aggregate_output_dir = (
+        Path(config.aggregate_output_dir)
+        if config.aggregate_output_dir
+        else suite_dir
+    )
+    if not aggregate_output_dir.is_absolute():
+        aggregate_output_dir = PROJECT_ROOT / aggregate_output_dir
+    if aggregate_output_dir != suite_dir:
+        print(f"Aggregate output dir: {aggregate_output_dir}")
     if config.aggregate_only:
-        generated = generate_aggregate_artifacts(PROJECT_ROOT, config, suite_dir)
-        summary_csv = suite_dir / suffixed_filename("multiuser_summary.csv", config.output_suffix)
+        generated = generate_aggregate_artifacts(
+            PROJECT_ROOT,
+            config,
+            suite_dir,
+            output_dir=aggregate_output_dir,
+        )
+        summary_csv = aggregate_output_dir / suffixed_filename(
+            "multiuser_summary.csv",
+            config.output_suffix,
+        )
         print(f"Multi-user summary CSV: {summary_csv}")
         for artifact in generated:
             print(f"Generated artifact: {artifact}")
@@ -1362,8 +1296,16 @@ def main() -> None:
         return
 
     assert first_paths is not None
-    generated = generate_aggregate_artifacts(PROJECT_ROOT, config, first_paths.suite_dir)
-    summary_csv = first_paths.suite_dir / suffixed_filename("multiuser_summary.csv", config.output_suffix)
+    generated = generate_aggregate_artifacts(
+        PROJECT_ROOT,
+        config,
+        first_paths.suite_dir,
+        output_dir=aggregate_output_dir,
+    )
+    summary_csv = aggregate_output_dir / suffixed_filename(
+        "multiuser_summary.csv",
+        config.output_suffix,
+    )
 
     print(f"Multi-user summary CSV: {summary_csv}")
     for artifact in generated:

@@ -27,11 +27,12 @@ class MECConfig:
     # 卫星MEC参数
     satellite_cpu_freq_ghz: float = 5.0       # 卫星CPU频率 (GHz) - 降低以增加竞争
     satellite_max_cpu_freq_ghz: float = 8.0   # 最大CPU频率 (GHz)
-    satellite_num_cores: int = 4              # CPU核心数 - 减半
+    satellite_num_cores: int = 2              # CPU核心数，总算力 5 GHz × 2 = 10 Gcycle/s
+    mec_max_concurrent_tasks: int = 2          # 最多同时处理的任务数，其余任务FCFS等待
     max_queue_size: int = 6                   # 最大任务队列长度 - 大幅缩小，迫使智能选择
     
     # 用户本地计算参数
-    user_cpu_freq_ghz: float = 0.5            # 用户设备CPU频率 (GHz) - 资源受限终端
+    user_cpu_freq_ghz: float = 1.0            # 用户设备CPU频率 (GHz)
     user_max_cpu_freq_ghz: float = 1.5        # 最大CPU频率 (GHz)
     
     # 能耗参数
@@ -276,7 +277,7 @@ class MECServer:
     
     def process_queue(self, current_time: float, time_step: float) -> List[Dict]:
         """
-        按时间步处理队列中的任务（FCFS，多用户共享 CPU）
+        按时间步处理队列中的任务（FCFS，有限并行槽共享 CPU）
         
         Args:
             current_time: 当前仿真时间 (秒)
@@ -293,8 +294,32 @@ class MECServer:
             self.current_load = 0.0
             return completed_this_step
         
-        # 统计正在处理的任务数（共享 CPU）
-        active_tasks = [t for t in self.task_queue if t['status'] in ('queued', 'processing')]
+        max_concurrent = max(int(self.config.mec_max_concurrent_tasks), 1)
+        processing_tasks = [
+            task for task in self.task_queue
+            if task['status'] == 'processing'
+        ]
+
+        # 正常调度不会超过并行槽。迁移或外部恢复若带来额外 processing
+        # 任务，则按队列顺序保留前 max_concurrent 个，其余重新进入 FCFS。
+        for task in processing_tasks[max_concurrent:]:
+            task['status'] = 'queued'
+            task['start_processing_time'] = None
+        processing_tasks = processing_tasks[:max_concurrent]
+
+        available_slots = max_concurrent - len(processing_tasks)
+        if available_slots > 0:
+            for task in self.task_queue:
+                if available_slots <= 0:
+                    break
+                if task['status'] != 'queued':
+                    continue
+                task['status'] = 'processing'
+                task['start_processing_time'] = current_time
+                processing_tasks.append(task)
+                available_slots -= 1
+
+        active_tasks = processing_tasks
         num_active = len(active_tasks)
         
         if num_active == 0:
@@ -326,10 +351,6 @@ class MECServer:
         processing_rate_cycles_per_sec = freq_per_task_ghz * 1e9
 
         for task in active_tasks:
-            if task['status'] == 'queued':
-                task['status'] = 'processing'
-                task['start_processing_time'] = current_time
-            
             # 处理计算
             remaining_before = max(float(task['remaining_cycles']), 0.0)
             task['remaining_cycles'] -= cycles_per_task
@@ -383,14 +404,48 @@ class MECServer:
                     
                     completed_this_step.append(task)
                     tasks_to_remove.append(task)
+
+        # queued 任务不占用 CPU，但仍会随墙钟时间累计等待并可能超时。
+        for task in self.task_queue:
+            if task['status'] != 'queued' or task in tasks_to_remove:
+                continue
+            elapsed = slot_end - float(task['arrival_time']) + float(task['upload_delay'])
+            if elapsed <= float(task['max_delay']):
+                continue
+            task['status'] = 'timeout'
+            task['total_delay'] = elapsed
+            task['queue_wait'] = max(
+                slot_end - float(task['arrival_time']),
+                0.0,
+            )
+            task['processing_time'] = 0.0
+            task['deadline_met'] = False
+            task['finish_time'] = slot_end
+            completed_this_step.append(task)
+            tasks_to_remove.append(task)
         
         # 移除已完成/超时的任务
         for t in tasks_to_remove:
             self.task_queue.remove(t)
         
-        # 更新可用资源
-        remaining_active = len([t for t in self.task_queue if t['status'] in ('queued', 'processing')])
-        if remaining_active == 0:
+        # 在 slot 末尾立即按 FCFS 补充空闲槽，使下一时隙的处理状态与观测一致。
+        remaining_processing = [
+            task for task in self.task_queue
+            if task['status'] == 'processing'
+        ]
+        available_slots = max_concurrent - len(remaining_processing)
+        if available_slots > 0:
+            for task in self.task_queue:
+                if available_slots <= 0:
+                    break
+                if task['status'] != 'queued':
+                    continue
+                task['status'] = 'processing'
+                task['start_processing_time'] = slot_end
+                remaining_processing.append(task)
+                available_slots -= 1
+
+        if not remaining_processing:
             self.available_freq_ghz = self.total_capacity_ghz
             self.current_load = 0.0
         else:
@@ -512,7 +567,11 @@ class OffloadingCalculator:
         """
         # 上传时延
         upload_delay = self.channel.compute_transmission_delay(
-            data_size_bits, distance_km, elevation_deg, 'uplink'
+            data_size_bits,
+            distance_km,
+            elevation_deg,
+            'uplink',
+            bandwidth_mhz,
         )
         
         # 下载数据量 (结果通常比输入小)
@@ -530,18 +589,20 @@ class OffloadingCalculator:
         data_size_bits: float,
         distance_km: float,
         elevation_deg: float,
-        tx_power_w: Optional[float] = None
+        tx_power_w: Optional[float] = None,
+        bandwidth_mhz: Optional[float] = None,
     ) -> float:
         """
-        计算传输能耗
-        
-        E_trans = P_tx * T_upload
-        
+        计算用户终端实际上传取电能耗
+
+        E_trans = (P_RF / eta_PA + P_circuit) * T_airtime
+
         Args:
             data_size_bits: 上传数据量 (bits)
             distance_km: 距离 (km)
             elevation_deg: 仰角 (度)
-            tx_power_w: 发射功率 (W)
+            tx_power_w: 天线辐射功率 (W)
+            bandwidth_mhz: OFDMA实际分配的上行带宽 (MHz)
             
         Returns:
             传输能耗 (焦耳)
@@ -550,14 +611,32 @@ class OffloadingCalculator:
             tx_power_w = self.channel._dbm_to_watt(
                 self.channel.config.user_tx_power_dbm
             )
-        
-        # 上传时延
-        upload_delay, _ = self.compute_transmission_delay(
-            data_size_bits, distance_km, elevation_deg
+
+        pa_efficiency = float(self.channel.config.user_pa_efficiency)
+        if not 0.0 < pa_efficiency <= 1.0:
+            raise ValueError("user_pa_efficiency必须位于(0, 1]区间")
+        circuit_power_w = max(
+            float(self.channel.config.user_circuit_power_w),
+            0.0,
         )
-        
-        # 传输能耗 = 功率 * 时间
-        energy = tx_power_w * upload_delay
+
+        # 电池只在实际发射比特期间供电；传播时延仍计入任务时延，但不计入
+        # 本批数据的终端发射能耗。
+        upload_rate_bps = self.channel.compute_channel_capacity(
+            distance_km,
+            elevation_deg,
+            'uplink',
+            bandwidth_mhz,
+        )
+        upload_airtime = (
+            float(data_size_bits) / upload_rate_bps
+            if upload_rate_bps > 0.0
+            else float('inf')
+        )
+        terminal_draw_power_w = (
+            float(tx_power_w) / pa_efficiency + circuit_power_w
+        )
+        energy = terminal_draw_power_w * upload_airtime
         
         return energy
     
@@ -925,6 +1004,10 @@ class MECManager:
 
         for task in current_tasks:
             task['upload_delay'] += float(handover_delay)
+            # 迁移保留已经完成的 cycles，但必须重新参加目标 MEC 的 FCFS
+            # 调度，不能携带 processing 状态绕过目标服务器的并行槽上限。
+            task['status'] = 'queued'
+            task['start_processing_time'] = None
         old_server.task_queue = [
             task for task in old_server.task_queue
             if task['user_id'] != plan.user_id

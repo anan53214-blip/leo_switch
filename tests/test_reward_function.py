@@ -10,7 +10,10 @@ from src.environment.gym_env import (
     TASK_FAILURE_PENALTY,
     TASK_SUCCESS_REWARD,
 )
-from src.environment.mec import MECConfig
+from src.environment.channel import ChannelConfig
+from src.environment.mec import MECConfig, OffloadingCalculator
+from src.environment.task import Task
+from src.environment.user import UserState
 
 
 def test_custom_composite_scores_are_not_model_selection_metrics():
@@ -26,10 +29,87 @@ def test_task_success_rate_can_be_used_as_selection_metric():
     assert compute_model_selection_score(record, "task_success_rate") == pytest.approx(0.73)
 
 
-def test_default_local_cpu_matches_constrained_terminal_scenario():
+def test_default_compute_capacity_matches_confirmed_environment():
     config = MECConfig()
 
-    assert config.user_cpu_freq_ghz == pytest.approx(0.5)
+    assert config.user_cpu_freq_ghz == pytest.approx(1.0)
+    assert config.satellite_cpu_freq_ghz == pytest.approx(5.0)
+    assert config.satellite_num_cores == 2
+    assert config.mec_max_concurrent_tasks == 2
+
+
+def test_upload_energy_uses_terminal_battery_draw_and_excludes_propagation():
+    channel_config = ChannelConfig(
+        bandwidth_mhz=10.0,
+        user_tx_power_dbm=30.0,
+        user_pa_efficiency=0.5,
+        user_circuit_power_w=0.25,
+    )
+    calculator = OffloadingCalculator(
+        mec_config=MECConfig(),
+        channel_config=channel_config,
+    )
+    data_size_bits = 2e6
+    bandwidth_mhz = 5.0
+    distance_km = 900.0
+    elevation_deg = 60.0
+
+    rate_bps = calculator.channel.compute_channel_capacity(
+        distance_km,
+        elevation_deg,
+        "uplink",
+        bandwidth_mhz,
+    )
+    expected_airtime = data_size_bits / rate_bps
+    expected_battery_power = 1.0 / 0.5 + 0.25
+    upload_delay, _ = calculator.compute_transmission_delay(
+        data_size_bits,
+        distance_km,
+        elevation_deg,
+        bandwidth_mhz=bandwidth_mhz,
+    )
+    energy = calculator.compute_transmission_energy(
+        data_size_bits,
+        distance_km,
+        elevation_deg,
+        bandwidth_mhz=bandwidth_mhz,
+    )
+
+    assert energy == pytest.approx(expected_battery_power * expected_airtime)
+    assert upload_delay > expected_airtime
+    assert energy < expected_battery_power * upload_delay
+
+
+def test_ofdma_narrower_uplink_bandwidth_increases_delay_and_terminal_energy():
+    calculator = OffloadingCalculator(
+        mec_config=MECConfig(),
+        channel_config=ChannelConfig(
+            bandwidth_mhz=10.0,
+            user_pa_efficiency=0.38,
+            user_circuit_power_w=0.05,
+        ),
+    )
+    arguments = (8e6, 800.0, 45.0)
+
+    full_delay, _ = calculator.compute_transmission_delay(
+        *arguments,
+        bandwidth_mhz=10.0,
+    )
+    shared_delay, _ = calculator.compute_transmission_delay(
+        *arguments,
+        bandwidth_mhz=5.0,
+    )
+    full_energy = calculator.compute_transmission_energy(
+        *arguments,
+        bandwidth_mhz=10.0,
+    )
+    shared_energy = calculator.compute_transmission_energy(
+        *arguments,
+        bandwidth_mhz=5.0,
+    )
+
+    assert shared_delay > full_delay
+    assert shared_energy > full_energy
 
 
 def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
@@ -42,6 +122,47 @@ def _build_single_user_env(**overrides) -> LEOSatelliteEnv:
     params.update(overrides)
     config = EnvConfig(**params)
     return LEOSatelliteEnv(config)
+
+
+def test_same_satellite_offloaders_receive_equal_ofdma_uplink_shares():
+    env = _build_single_user_env(
+        num_users=2,
+        bandwidth_mhz=10.0,
+        ofdma_uplink_sharing=True,
+    )
+
+    try:
+        env.reset(seed=7)
+        sat_id = 0
+        server = env.mec_manager.get_server(sat_id)
+        assert server is not None
+        server.task_queue.clear()
+        for user_id, user in enumerate(env.user_manager.users):
+            user.serving_satellite = sat_id
+            user.state = UserState.CONNECTED
+            task = Task(
+                task_id=100 + user_id,
+                user_id=user_id,
+                data_size=5e6,
+                computation=1e9,
+                max_delay=5.0,
+                creation_time=env.current_time,
+            )
+            env.user_task_queues[user_id] = [task]
+            env.user_tasks[user_id] = task
+
+        allocations = env._plan_ofdma_uplink_allocations(
+            np.asarray([1.0, 0.5], dtype=np.float32)
+        )
+
+        assert allocations[0].admission_allowed
+        assert allocations[1].admission_allowed
+        assert allocations[0].concurrent_users == 2
+        assert allocations[1].concurrent_users == 2
+        assert allocations[0].bandwidth_mhz == pytest.approx(5.0)
+        assert allocations[1].bandwidth_mhz == pytest.approx(5.0)
+    finally:
+        env.close()
 
 
 def test_interruption_weight_changes_successful_handover_reward():
@@ -217,12 +338,37 @@ def test_task_reward_prioritizes_deadline_success_over_energy_savings():
 
         assert success_terms["reward_task_success"] == pytest.approx(TASK_SUCCESS_REWARD)
         assert success_terms["penalty_delay"] == pytest.approx(-0.3)
-        assert success_terms["penalty_energy"] == pytest.approx(-0.08)
+        assert success_terms["penalty_energy"] == pytest.approx(
+            -0.4 * 0.8 / 1.8
+        )
         assert late_terms["penalty_task_failure"] == pytest.approx(-TASK_FAILURE_PENALTY)
         assert late_terms["penalty_delay"] == pytest.approx(0.0)
         assert late_terms["penalty_energy"] == pytest.approx(0.0)
         assert late_reward == pytest.approx(-TASK_FAILURE_PENALTY)
         assert success_reward > late_reward
+    finally:
+        env.close()
+
+
+def test_energy_reward_uses_smooth_monotonic_normalization_without_hard_clip():
+    env = _build_single_user_env()
+
+    try:
+        _, one_joule_terms = env._compute_task_reward(
+            total_delay=0.5,
+            total_energy=1.0,
+            max_delay=2.0,
+        )
+        _, seven_joule_terms = env._compute_task_reward(
+            total_delay=0.5,
+            total_energy=7.0,
+            max_delay=2.0,
+        )
+
+        assert one_joule_terms["penalty_energy"] == pytest.approx(-0.2)
+        assert seven_joule_terms["penalty_energy"] == pytest.approx(-0.35)
+        assert seven_joule_terms["penalty_energy"] < one_joule_terms["penalty_energy"]
+        assert seven_joule_terms["penalty_energy"] > -0.4
     finally:
         env.close()
 
@@ -261,7 +407,7 @@ def test_reward_default_weights_are_balanced():
 
     expected = {
         "reward_delay_weight": 0.60,
-        "reward_energy_weight": 0.10,
+        "reward_energy_weight": 0.40,
         "reward_interruption_weight": 0.30,
         "reward_failed_handover_penalty": 0.20,
         "reward_load_balance_weight": 0.05,
@@ -284,7 +430,7 @@ def test_comparison_defaults_use_qos_gated_reward_weights():
     )
 
     assert config["reward_delay_weight"] == pytest.approx(0.60)
-    assert config["reward_energy_weight"] == pytest.approx(0.10)
+    assert config["reward_energy_weight"] == pytest.approx(0.40)
     assert config["reward_interruption_weight"] == pytest.approx(0.30)
     assert config["reward_failed_handover_penalty"] == pytest.approx(0.20)
     assert config["reward_load_balance_weight"] == pytest.approx(0.05)

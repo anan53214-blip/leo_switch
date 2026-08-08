@@ -88,6 +88,9 @@ class EnvConfig:
     satellite_antenna_gain_db: float = 34.0
     user_tx_power_dbm: float = 24.0
     user_antenna_gain_db: float = 38.5
+    user_pa_efficiency: float = 0.38
+    user_circuit_power_w: float = 0.05
+    ofdma_uplink_sharing: bool = True
     noise_temperature_k: float = 354.81
     noise_figure_db: float = 2.0
     rain_attenuation_db: float = 0.0
@@ -99,9 +102,10 @@ class EnvConfig:
     # MEC/终端计算参数
     satellite_cpu_freq_ghz: float = 5.0
     satellite_max_cpu_freq_ghz: float = 8.0
-    satellite_num_cores: int = 4
+    satellite_num_cores: int = 2
+    mec_max_concurrent_tasks: int = 2
     max_queue_size: int = 6
-    user_cpu_freq_ghz: float = 0.5
+    user_cpu_freq_ghz: float = 1.0
     user_max_cpu_freq_ghz: float = 1.5
     kappa: float = 1e-27
     user_idle_power_w: float = 0.05
@@ -120,7 +124,7 @@ class EnvConfig:
     
     # QoS 门控奖励：成功/失败固定为 +1/-1，并加入可消融的协作公平性项
     reward_delay_weight: float = 0.60
-    reward_energy_weight: float = 0.10
+    reward_energy_weight: float = 0.40
     reward_energy_reference_j: float = REWARD_ENERGY_REFERENCE_J
     reward_interruption_weight: float = 0.30
     reward_failed_handover_penalty: float = 0.20
@@ -130,6 +134,15 @@ class EnvConfig:
     
     # 随机种子
     seed: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class UplinkAllocation:
+    """同一时隙内单个用户的OFDMA上行准入与等分带宽结果。"""
+
+    admission_allowed: bool
+    bandwidth_mhz: float
+    concurrent_users: int
 
 
 def build_env_config(source: Any = None, **overrides: Any) -> EnvConfig:
@@ -933,20 +946,39 @@ class LEOSatelliteEnv(gym.Env):
         # 当前动作只处理生成该动作的观测中已经可见的任务。
         self._step_handover_interruption_seconds.fill(0.0)
         
-        # 2. 执行每个用户的动作
-        user_rewards = []
+        parsed_handover_actions = np.asarray([
+            int(np.clip(
+                np.round(actions[user_id, 0]),
+                0,
+                self.handover_action_dim - 1,
+            ))
+            for user_id in range(self.num_users)
+        ], dtype=np.int64)
+        parsed_offload_ratios = np.asarray([
+            float(np.clip(actions[user_id, 1], 0.0, 1.0))
+            for user_id in range(self.num_users)
+        ], dtype=np.float32)
+
+        # 2.1 先统一结算切换，使OFDMA分组使用所有用户切换后的真实服务卫星。
+        user_rewards = np.zeros(self.num_users, dtype=np.float32)
         for user_id in range(self.num_users):
             user = self.user_manager.users[user_id]
-            action = actions[user_id]
-            
-            # 解析动作
-            handover_action = int(np.clip(np.round(action[0]), 0, self.handover_action_dim - 1))
-            offload_ratio = float(np.clip(action[1], 0.0, 1.0))
-            
-            # 执行动作并计算奖励
-            reward = self._execute_user_action(user, handover_action, offload_ratio)
-            
-            user_rewards.append(reward)
+            user_rewards[user_id] += self._execute_user_handover(
+                user,
+                int(parsed_handover_actions[user_id]),
+            )
+
+        # 2.2 基于同一时隙全部用户的真实目标卫星做批量准入；同星实际准入
+        # 上传的用户等分总上行带宽，避免逐用户执行产生带宽顺序依赖。
+        uplink_allocations = self._plan_ofdma_uplink_allocations(
+            parsed_offload_ratios
+        )
+        for user_id in range(self.num_users):
+            user_rewards[user_id] += self._execute_user_task(
+                self.user_manager.users[user_id],
+                float(parsed_offload_ratios[user_id]),
+                uplink_allocations.get(user_id),
+            )
         
         # 3. 更新环境状态（处理 MEC 队列，产生本步任务结算奖励）
         self._update_environment()
@@ -1054,7 +1086,11 @@ class LEOSatelliteEnv(gym.Env):
             'local_cpu_queue_wait_sec': 0.0,
             'local_compute_delay_sec': 0.0,
             'local_branch_delay_sec': 0.0,
+            'local_energy_j': 0.0,
             'upload_delay_sec': 0.0,
+            'upload_energy_j': 0.0,
+            'uplink_bandwidth_mhz': 0.0,
+            'uplink_concurrent_users': 0,
             'mec_queue_wait_sec': 0.0,
             'mec_processing_delay_sec': 0.0,
             'download_delay_sec': 0.0,
@@ -1249,28 +1285,15 @@ class LEOSatelliteEnv(gym.Env):
                 self.stats['total_tasks'] += 1
                 self._trace_task_created(task)
 
-    def _execute_user_action(
+    def _execute_user_handover(
         self,
         user: User,
         handover_action: int,
-        offload_ratio: float
     ) -> float:
-        """
-        执行单个用户的动作
-        
-        Args:
-            user: 用户对象
-            handover_action: 切换动作
-            offload_ratio: 卸载比例
-            
-        Returns:
-            该用户的奖励
-        """
+        """执行单用户切换子动作，并返回切换相关即时奖励。"""
         reward = 0.0
-        
-        # ========== 处理切换 ==========
         visible_sats = self._get_handover_candidates(user)
-        
+
         if handover_action > 0:
             if len(visible_sats) >= handover_action:
                 target_sat = visible_sats[handover_action - 1]
@@ -1285,8 +1308,74 @@ class LEOSatelliteEnv(gym.Env):
                 if not current_visible:
                     # stay 动作不替策略自动选择目标；旧链路失效后进入阻塞。
                     self._block_user(user, user.serving_satellite)
-        
-        # ========== 处理任务卸载 ==========
+        return reward
+
+    def _plan_ofdma_uplink_allocations(
+        self,
+        offload_ratios: np.ndarray,
+    ) -> Dict[int, UplinkAllocation]:
+        """按当前服务卫星批量准入，并为同星新上传用户等分上行带宽。
+
+        当前环境将上传时延作为任务入队时确定的固定开销，因此这里共享的是
+        本决策时隙中新准入的上传请求；跨时隙无线传输队列不在本模型范围内。
+        """
+        candidates_by_satellite: Dict[int, List[int]] = {}
+        minimum = float(self.config.min_effective_offload_ratio)
+        for user_id in range(self.num_users):
+            user = self.user_manager.users[user_id]
+            task = self.user_tasks.get(user_id)
+            ratio = float(np.clip(offload_ratios[user_id], 0.0, 1.0))
+            if (
+                task is None
+                or user.state != UserState.CONNECTED
+                or ratio < minimum
+                or user.serving_satellite < 0
+            ):
+                continue
+            candidates_by_satellite.setdefault(
+                int(user.serving_satellite),
+                [],
+            ).append(user_id)
+
+        allocations: Dict[int, UplinkAllocation] = {}
+        total_bandwidth_mhz = max(float(self.config.bandwidth_mhz), 1e-9)
+        for sat_id, candidate_ids in candidates_by_satellite.items():
+            server = self.mec_manager.get_server(sat_id)
+            available_slots = (
+                max(
+                    int(server.config.max_queue_size) - int(server.queue_length),
+                    0,
+                )
+                if server is not None
+                else 0
+            )
+            # 保持既有环境的稳定user-id准入顺序，只把准入判断从逐用户执行
+            # 提前为同一时隙的原子批次。
+            admitted_ids = candidate_ids[:available_slots]
+            admitted = set(admitted_ids)
+            concurrent_users = len(admitted_ids)
+            shared_bandwidth_mhz = (
+                total_bandwidth_mhz / max(concurrent_users, 1)
+                if self.config.ofdma_uplink_sharing
+                else total_bandwidth_mhz
+            )
+            for user_id in candidate_ids:
+                allowed = user_id in admitted
+                allocations[user_id] = UplinkAllocation(
+                    admission_allowed=allowed,
+                    bandwidth_mhz=shared_bandwidth_mhz if allowed else 0.0,
+                    concurrent_users=concurrent_users if allowed else 0,
+                )
+        return allocations
+
+    def _execute_user_task(
+        self,
+        user: User,
+        offload_ratio: float,
+        uplink_allocation: Optional[UplinkAllocation] = None,
+    ) -> float:
+        """执行单用户任务子动作，并使用本时隙联合OFDMA分配。"""
+        reward = 0.0
         task = self.user_tasks[user.user_id]
         if task is not None:
             # 本地计算不依赖卫星连接。阻塞用户请求卸载时退化为完整本地
@@ -1302,8 +1391,31 @@ class LEOSatelliteEnv(gym.Env):
                 requested_offload_ratio=offload_ratio,
                 effective_offload_ratio=effective_ratio,
             )
-            reward += self._execute_offloading(user, task, effective_ratio)
+            allocation = uplink_allocation or UplinkAllocation(
+                admission_allowed=True,
+                bandwidth_mhz=float(self.config.bandwidth_mhz),
+                concurrent_users=1,
+            )
+            reward += self._execute_offloading(
+                user,
+                task,
+                effective_ratio,
+                uplink_bandwidth_mhz=allocation.bandwidth_mhz,
+                uplink_concurrent_users=allocation.concurrent_users,
+                admission_allowed=allocation.admission_allowed,
+            )
             self._pop_user_task(user.user_id)
+        return reward
+
+    def _execute_user_action(
+        self,
+        user: User,
+        handover_action: int,
+        offload_ratio: float,
+    ) -> float:
+        """兼容直接单用户调用；正式step使用先切换、后联合分配的两阶段路径。"""
+        reward = self._execute_user_handover(user, handover_action)
+        reward += self._execute_user_task(user, offload_ratio)
         return reward
 
     def _compute_mec_loads(self) -> np.ndarray:
@@ -1441,11 +1553,17 @@ class LEOSatelliteEnv(gym.Env):
         if float(total_delay) > max_delay:
             return self._compute_task_failure_reward()
 
-        energy_ratio = np.clip(
-            float(total_energy)
-            / max(float(self.config.reward_energy_reference_j), 1e-6),
-            0.0,
-            1.0,
+        energy_j = max(float(total_energy), 0.0)
+        energy_reference_j = max(
+            float(self.config.reward_energy_reference_j),
+            1e-6,
+        )
+        # R1-B：平滑、有界且严格单调的能耗归一化。不同于硬 clip，
+        # 任意两个有限正能耗仍保持可区分，同时 energy_ratio 始终小于 1。
+        energy_ratio = (
+            energy_j / (energy_j + energy_reference_j)
+            if np.isfinite(energy_j)
+            else 1.0
         )
         penalty_delay = -float(self.config.reward_delay_weight) * float(delay_ratio)
         penalty_energy = -float(self.config.reward_energy_weight) * float(energy_ratio)
@@ -1650,7 +1768,11 @@ class LEOSatelliteEnv(gym.Env):
         self,
         user: User,
         task: Task,
-        offload_ratio: float
+        offload_ratio: float,
+        *,
+        uplink_bandwidth_mhz: Optional[float] = None,
+        uplink_concurrent_users: int = 1,
+        admission_allowed: bool = True,
     ) -> float:
         """
         执行任务卸载（支持卫星资源竞争与排队）
@@ -1664,6 +1786,9 @@ class LEOSatelliteEnv(gym.Env):
             user: 用户
             task: 任务
             offload_ratio: 卸载比例
+            uplink_bandwidth_mhz: 当前OFDMA批次分配给该用户的上行带宽
+            uplink_concurrent_users: 同星同批次实际准入的上传用户数
+            admission_allowed: 当前时隙批量准入结果
             
         Returns:
             本步可立即发放的任务结算奖励；MEC 入队任务完成后延迟发放
@@ -1703,13 +1828,17 @@ class LEOSatelliteEnv(gym.Env):
             raise RuntimeError(f"服务卫星 {sat_id} 缺少 MEC 服务器")
 
         # 上传前准入；拒绝时不产生传输开销，也不预先占用部分本地 CPU。
-        if server.is_full:
+        if not admission_allowed or server.is_full:
             self._trace_task_update(
                 user.user_id,
                 task.task_id,
                 mec_admission_attempted=True,
                 mec_admission_rejected=True,
-                mec_rejection_reason='queue_full_pre_admission',
+                mec_rejection_reason=(
+                    'queue_full_batch_pre_admission'
+                    if not admission_allowed
+                    else 'queue_full_pre_admission'
+                ),
                 actual_offload_ratio=0.0,
                 execution_mode='local_fallback',
             )
@@ -1737,6 +1866,7 @@ class LEOSatelliteEnv(gym.Env):
                 ),
                 local_compute_delay_sec=local_compute_delay,
                 local_branch_delay_sec=local_delay,
+                local_energy_j=local_energy,
             )
         
         # ========== 卸载部分（入队处理） ==========
@@ -1746,12 +1876,18 @@ class LEOSatelliteEnv(gym.Env):
             
             # 计算上传/下载时延（固定，与排队无关）
             upload_delay, download_delay = self.offload_calc.compute_transmission_delay(
-                offload_data_bits, vis_info.distance_km, vis_info.elevation_deg
+                offload_data_bits,
+                vis_info.distance_km,
+                vis_info.elevation_deg,
+                bandwidth_mhz=uplink_bandwidth_mhz,
             )
             
-            # 传输能耗
+            # 终端实际取电能耗：功放输入与射频/基带固定功耗，不含传播等待。
             upload_energy = self.offload_calc.compute_transmission_energy(
-                offload_data_bits, vis_info.distance_km, vis_info.elevation_deg
+                offload_data_bits,
+                vis_info.distance_km,
+                vis_info.elevation_deg,
+                bandwidth_mhz=uplink_bandwidth_mhz,
             )
             self.stats['total_energy'] += upload_energy
             
@@ -1762,6 +1898,16 @@ class LEOSatelliteEnv(gym.Env):
                 mec_admission_attempted=True,
                 upload_delay_sec=upload_delay,
                 download_delay_sec=download_delay,
+                upload_energy_j=upload_energy,
+                uplink_bandwidth_mhz=float(
+                    uplink_bandwidth_mhz
+                    if uplink_bandwidth_mhz is not None
+                    else self.config.bandwidth_mhz
+                ),
+                uplink_concurrent_users=max(
+                    int(uplink_concurrent_users),
+                    1,
+                ),
             )
             enqueued = server.enqueue_task(
                 user_id=user.user_id,
@@ -1787,6 +1933,11 @@ class LEOSatelliteEnv(gym.Env):
                     ),
                 )
                 task.offload_ratio = offload_ratio
+                task.allocated_bandwidth = float(
+                    uplink_bandwidth_mhz
+                    if uplink_bandwidth_mhz is not None
+                    else self.config.bandwidth_mhz
+                ) * 1e6
                 task.local_delay = local_delay
                 task.local_energy = local_energy
                 task.transmission_energy = upload_energy
@@ -1953,6 +2104,7 @@ class LEOSatelliteEnv(gym.Env):
             local_cpu_queue_wait_sec=local_cpu_queue_wait,
             local_compute_delay_sec=local_compute_delay,
             local_branch_delay_sec=total_delay,
+            local_energy_j=local_energy,
             critical_branch='local',
         )
         return task_reward

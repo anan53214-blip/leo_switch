@@ -36,8 +36,10 @@ class ChannelConfig:
     satellite_antenna_gain_db: float = 34.0  # 卫星天线增益 (dB)，相控阵
     
     # 接收端参数 (用户终端)
-    user_tx_power_dbm: float = 24.0          # 用户发射功率 (dBm)，2W卫星终端
+    user_tx_power_dbm: float = 24.0          # 天线辐射功率 (dBm)，约0.251 W
     user_antenna_gain_db: float = 38.5       # 用户天线增益 (dB)，相控阵终端
+    user_pa_efficiency: float = 0.38         # 用户功率放大器效率
+    user_circuit_power_w: float = 0.05       # 上行射频/基带固定取电功率 (W)
     
     # 噪声参数
     noise_temperature_k: float = 354.81      # 等效噪声温度 (K)
@@ -247,7 +249,8 @@ class SatelliteChannel:
         self,
         distance_km: float,
         elevation_deg: float,
-        user_tx_power_dbm: Optional[float] = None
+        user_tx_power_dbm: Optional[float] = None,
+        bandwidth_mhz: Optional[float] = None,
     ) -> float:
         """
         计算上行链路SNR（用户→卫星）
@@ -258,6 +261,7 @@ class SatelliteChannel:
             distance_km: 星地距离 (km)
             elevation_deg: 仰角 (度)
             user_tx_power_dbm: 用户发射功率 (dBm)，None时使用默认值
+            bandwidth_mhz: 实际分配带宽 (MHz)，None时使用系统总带宽
             
         Returns:
             SNR (线性值)
@@ -280,8 +284,15 @@ class SatelliteChannel:
             path_loss
         )
         
-        # SNR = P_rx / N
-        snr = received_power / self.noise_power_w
+        bandwidth_hz = (
+            float(bandwidth_mhz) * 1e6
+            if bandwidth_mhz is not None
+            else self.bandwidth_hz
+        )
+        noise_power_w = self.noise_psd * max(bandwidth_hz, 1e-12)
+
+        # SNR = P_rx / (N0 * B)
+        snr = received_power / noise_power_w
         
         return max(snr, 1e-10)  # 避免0值
     
@@ -289,7 +300,8 @@ class SatelliteChannel:
         self,
         distance_km: float,
         elevation_deg: float,
-        sat_tx_power_dbm: Optional[float] = None
+        sat_tx_power_dbm: Optional[float] = None,
+        bandwidth_mhz: Optional[float] = None,
     ) -> float:
         """
         计算下行链路SNR（卫星→用户）
@@ -298,6 +310,7 @@ class SatelliteChannel:
             distance_km: 星地距离 (km)
             elevation_deg: 仰角 (度)
             sat_tx_power_dbm: 卫星发射功率 (dBm)，None时使用默认值
+            bandwidth_mhz: 实际分配带宽 (MHz)，None时使用系统总带宽
             
         Returns:
             SNR (线性值)
@@ -319,8 +332,15 @@ class SatelliteChannel:
             path_loss
         )
         
+        bandwidth_hz = (
+            float(bandwidth_mhz) * 1e6
+            if bandwidth_mhz is not None
+            else self.bandwidth_hz
+        )
+        noise_power_w = self.noise_psd * max(bandwidth_hz, 1e-12)
+
         # SNR
-        snr = received_power / self.noise_power_w
+        snr = received_power / noise_power_w
         
         return max(snr, 1e-10)
     
@@ -371,9 +391,17 @@ class SatelliteChannel:
         """
         # SNR
         if link_type == 'uplink':
-            snr = self.compute_snr_uplink(distance_km, elevation_deg)
+            snr = self.compute_snr_uplink(
+                distance_km,
+                elevation_deg,
+                bandwidth_mhz=bandwidth_mhz,
+            )
         else:
-            snr = self.compute_snr_downlink(distance_km, elevation_deg)
+            snr = self.compute_snr_downlink(
+                distance_km,
+                elevation_deg,
+                bandwidth_mhz=bandwidth_mhz,
+            )
         
         # 带宽
         if bandwidth_mhz is not None:
@@ -415,7 +443,8 @@ class SatelliteChannel:
         data_size_bits: float,
         distance_km: float,
         elevation_deg: float,
-        link_type: str = 'uplink'
+        link_type: str = 'uplink',
+        bandwidth_mhz: Optional[float] = None,
     ) -> float:
         """
         计算传输时延
@@ -432,13 +461,17 @@ class SatelliteChannel:
             distance_km: 星地距离 (km)
             elevation_deg: 仰角 (度)
             link_type: 链路类型
+            bandwidth_mhz: 实际分配带宽 (MHz)，None时使用系统总带宽
             
         Returns:
             传输时延 (秒)
         """
         # 传输速率
         data_rate_bps = self.compute_channel_capacity(
-            distance_km, elevation_deg, link_type
+            distance_km,
+            elevation_deg,
+            link_type,
+            bandwidth_mhz,
         )
         
         # 传输时延

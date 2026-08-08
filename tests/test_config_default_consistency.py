@@ -19,11 +19,18 @@ from src.environment.gym_env import EnvConfig, build_env_config
 
 REWARD_DEFAULTS = {
     "reward_delay_weight": 0.60,
-    "reward_energy_weight": 0.10,
+    "reward_energy_weight": 0.40,
     "reward_energy_reference_j": 1.0,
     "reward_interruption_weight": 0.30,
     "reward_failed_handover_penalty": 0.20,
     "reward_load_balance_weight": 0.05,
+}
+
+RADIO_ENERGY_DEFAULTS = {
+    "user_tx_power_dbm": 24.0,
+    "user_pa_efficiency": 0.38,
+    "user_circuit_power_w": 0.05,
+    "ofdma_uplink_sharing": True,
 }
 
 TRAINING_DEFAULTS = {
@@ -55,13 +62,23 @@ def test_environment_defaults_match_reference_training():
     config = EnvConfig()
 
     assert config.max_steps == TRAINING_DEFAULTS["max_steps"]
+    assert config.user_cpu_freq_ghz == pytest.approx(1.0)
+    assert config.satellite_cpu_freq_ghz == pytest.approx(5.0)
+    assert config.satellite_num_cores == 2
+    assert config.mec_max_concurrent_tasks == 2
     assert_defaults(config, REWARD_DEFAULTS)
+    assert_defaults(config, RADIO_ENERGY_DEFAULTS)
 
 
 def test_training_defaults_match_reference_training():
     config = TrainConfig()
 
+    assert config.user_cpu_freq_ghz == pytest.approx(1.0)
+    assert config.satellite_cpu_freq_ghz == pytest.approx(5.0)
+    assert config.satellite_num_cores == 2
+    assert config.mec_max_concurrent_tasks == 2
     assert_defaults(config, REWARD_DEFAULTS)
+    assert_defaults(config, RADIO_ENERGY_DEFAULTS)
     assert_defaults(config, TRAINING_DEFAULTS)
     assert config.algorithm == "mappo"
     assert config.exp_name.startswith("han_mappo")
