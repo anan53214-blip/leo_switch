@@ -130,12 +130,12 @@ def derive_paper_metrics(record: Mapping[str, object]) -> dict[str, object]:
         if total_user_seconds > 0.0
         else 0.0,
     )
-    derived.setdefault(
-        "successful_task_throughput",
-        60.0 * completed_tasks / total_user_seconds
-        if total_user_seconds > 0.0
-        else 0.0,
-    )
+    if record.get("successful_task_throughput") in (None, ""):
+        derived["successful_task_throughput"] = (
+            60.0 * completed_tasks / total_user_seconds
+            if total_user_seconds > 0.0
+            else 0.0
+        )
     derived.setdefault(
         "energy_per_successful_task",
         total_energy / completed_tasks if completed_tasks > 0.0 else 0.0,

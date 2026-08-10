@@ -15,6 +15,7 @@ from scripts.run_multiuser_scaling_suite import (
     MultiUserConfig,
     _aggregate_seed_rows,
     _aggregate_training_curves,
+    _fixed_user_methods,
     _plot_fixed_user_seed_summary,
     _read_comparison_rows,
     _validate_comparison_schema,
@@ -79,6 +80,18 @@ def test_derived_energy_and_handover_metrics_use_paper_denominators():
     assert result["blocked_time_ratio"] == pytest.approx(0.2)
     assert result["handovers_per_user_minute"] == pytest.approx(2.0)
     assert result["successful_task_throughput"] == pytest.approx(1.5)
+
+
+def test_derived_throughput_replaces_blank_csv_value():
+    result = derive_paper_metrics(
+        {
+            "successful_task_throughput": "",
+            "completed_tasks": "8",
+            "total_user_seconds": "40",
+        }
+    )
+
+    assert result["successful_task_throughput"] == pytest.approx(12.0)
 
 
 def test_paper_metric_set_uses_throughput_instead_of_service_continuity():
@@ -483,6 +496,64 @@ def test_fixed_user_aggregate_forwards_output_suffix(tmp_path, monkeypatch):
     assert captured_suffixes == ["no_han"] * 6
 
 
+def test_fixed_user_methods_rebase_copied_server_history(tmp_path, monkeypatch):
+    local_history = (
+        tmp_path
+        / "results"
+        / "full_train_latency_priority_multiuser_u20_test"
+        / "training_history.json"
+    )
+    local_history.parent.mkdir(parents=True)
+    local_history.write_text('{"training": []}', encoding="utf-8")
+    monkeypatch.setattr(
+        "scripts.run_multiuser_scaling_suite.PROJECT_ROOT",
+        tmp_path,
+    )
+
+    methods = _fixed_user_methods(
+        [
+            {
+                "method": "han_mappo",
+                "display_name": "HAN+MAPPO",
+                "is_system": "True",
+                "training_history": (
+                    "/home/runner/LEO_switch/results/"
+                    "full_train_latency_priority_multiuser_u20_test/"
+                    "training_history.json"
+                ),
+            }
+        ],
+        [
+            {
+                "method": "han_mappo",
+                "display_name": "HAN+MAPPO",
+                "is_system": "True",
+            }
+        ],
+    )
+
+    assert methods[0]["training_history_paths"] == [str(local_history)]
+
+
+def test_fixed_user_aggregate_removes_obsolete_continuity_plot(tmp_path, monkeypatch):
+    legacy_plot = tmp_path / "success_continuity_tradeoff.png"
+    legacy_plot.write_bytes(b"obsolete")
+
+    for name in (
+        "plot_method_comparison",
+        "plot_training_curve_vs_baselines",
+        "plot_paper_dashboard",
+        "plot_delay_energy_tradeoff",
+        "plot_success_continuity_scatter",
+        "plot_performance_radar",
+    ):
+        monkeypatch.setattr(compare, name, lambda *_args, **_kwargs: None)
+
+    _plot_fixed_user_seed_summary(tmp_path, [], [])
+
+    assert not legacy_plot.exists()
+
+
 def test_multiuser_aggregate_can_write_to_separate_output_dir(
     tmp_path,
     monkeypatch,
@@ -533,6 +604,77 @@ def test_multiuser_aggregate_can_write_to_separate_output_dir(
     assert output_csv.exists()
     assert (output_dir / "u20" / "comparison_summary.csv").exists()
     assert summary_csv.read_text(encoding="utf-8") == original_csv
+
+
+@pytest.mark.parametrize("include_json_methods", [True, False])
+def test_in_place_aggregate_is_idempotent(
+    tmp_path,
+    monkeypatch,
+    include_json_methods,
+):
+    user_dir = tmp_path / "u20"
+    user_dir.mkdir(parents=True)
+    (user_dir / "comparison_summary.csv").write_text(
+            (
+                "method,display_name,completed_tasks,total_user_seconds,"
+                "avg_success_delay,avg_success_delay_ci_low,"
+                "avg_success_delay_sample_count\n"
+                "han_mappo,HAN+MAPPO,8,40,1.25,1.0,1\n"
+        ),
+        encoding="utf-8",
+    )
+
+    defaults = TrainConfig()
+    reward_config = {
+        "reward_delay_weight": defaults.reward_delay_weight,
+        "reward_energy_weight": defaults.reward_energy_weight,
+        "reward_energy_reference_j": defaults.reward_energy_reference_j,
+        "reward_interruption_weight": defaults.reward_interruption_weight,
+        "reward_failed_handover_penalty": defaults.reward_failed_handover_penalty,
+        "reward_load_balance_weight": defaults.reward_load_balance_weight,
+    }
+    payload = {
+        "environment_schema_version": ENVIRONMENT_SCHEMA_VERSION,
+        "metric_schema_version": 2,
+        "env_config": reward_config,
+    }
+    if include_json_methods:
+        payload["methods"] = [
+            {
+                "method": "han_mappo",
+                "display_name": "HAN+MAPPO",
+                "completed_tasks": 8,
+                "total_user_seconds": 40,
+                "avg_success_delay": 1.25,
+                "episode_metrics": [{"episode": 1}],
+            }
+        ]
+    (user_dir / "comparison_summary.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "scripts.run_multiuser_scaling_suite._plot_fixed_user_seed_summary",
+        lambda *_args, **_kwargs: [],
+    )
+
+    aggregate_user_summaries(tmp_path, [20])
+    first_header = (user_dir / "comparison_summary.csv").read_text(
+        encoding="utf-8"
+    ).splitlines()[0]
+    aggregate_user_summaries(tmp_path, [20])
+    second_header = (user_dir / "comparison_summary.csv").read_text(
+        encoding="utf-8"
+    ).splitlines()[0]
+    seed_header = (user_dir / "comparison_seed_records.csv").read_text(
+        encoding="utf-8"
+    ).splitlines()[0]
+
+    assert second_header == first_header
+    assert "_ci_low_ci_low" not in second_header
+    assert "_sample_count_ci_low" not in second_header
+    assert "episode_metrics" not in seed_header
+    assert "successful_task_throughput" in seed_header
 
 
 def test_fixed_and_multiuser_paper_plots_accept_seed_level_confidence_data(

@@ -460,23 +460,62 @@ def _read_comparison_rows(
     num_users: int,
     seed: int,
 ) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    with summary_csv.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            method = row.get("method", "")
-            normalized = {
-                key: str(value)
-                for key, value in derive_paper_metrics(row).items()
+    source_rows: list[dict[str, object]] = []
+    summary_json = summary_csv.with_suffix(".json")
+    if summary_json.exists():
+        with summary_json.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        methods = payload.get("methods", [])
+        if isinstance(methods, list):
+            source_rows = [
+                {
+                    key: value
+                    for key, value in method.items()
+                    if value is None or isinstance(value, (str, int, float, bool))
+                }
+                for method in methods
+                if isinstance(method, dict)
+            ]
+
+    if not source_rows:
+        seed_records_csv = summary_csv.parent / "comparison_seed_records.csv"
+        source_csv = seed_records_csv if seed_records_csv.exists() else summary_csv
+        with source_csv.open("r", encoding="utf-8", newline="") as handle:
+            source_rows = list(csv.DictReader(handle))
+        if source_csv == summary_csv:
+            derived_sample_counts = {
+                f"{metric_key}_sample_count"
+                for metric_key in SUCCESS_DEPENDENT_METRICS
             }
-            normalized["num_users"] = str(num_users)
-            normalized["seed"] = str(seed)
-            normalized["display_name"] = method_display_name(method, row.get("display_name", ""))
-            completed_tasks = _float_or_none(normalized.get("completed_tasks"))
-            if completed_tasks is None or completed_tasks <= 0.0:
-                for metric_key in SUCCESS_DEPENDENT_METRICS:
-                    normalized[metric_key] = ""
-            rows.append(normalized)
+            source_rows = [
+                {
+                    key: value
+                    for key, value in row.items()
+                    if key != "seed_count"
+                    and not key.endswith(("_ci_low", "_ci_high"))
+                    and key not in derived_sample_counts
+                }
+                for row in source_rows
+            ]
+
+    rows: list[dict[str, str]] = []
+    for row in source_rows:
+        method = str(row.get("method", ""))
+        normalized = {
+            key: str(value)
+            for key, value in derive_paper_metrics(row).items()
+        }
+        normalized["num_users"] = str(num_users)
+        normalized["seed"] = str(seed)
+        normalized["display_name"] = method_display_name(
+            method,
+            str(row.get("display_name", "")),
+        )
+        completed_tasks = _float_or_none(normalized.get("completed_tasks"))
+        if completed_tasks is None or completed_tasks <= 0.0:
+            for metric_key in SUCCESS_DEPENDENT_METRICS:
+                normalized[metric_key] = ""
+        rows.append(normalized)
     return rows
 
 
@@ -559,12 +598,32 @@ def _fixed_user_methods(
         }
         method["seed_metrics"] = records
         method["training_history_paths"] = [
-            str(row["training_history"])
+            str(_resolve_local_training_history(row["training_history"]))
             for row in records
             if row.get("training_history")
         ]
         methods.append(method)
     return methods
+
+
+def _resolve_local_training_history(path_value: object) -> Path:
+    """Rebase a copied server history path onto this checkout when available."""
+    path = Path(str(path_value))
+    if path.exists():
+        return path
+
+    parts = [
+        part
+        for part in str(path_value).replace("\\", "/").split("/")
+        if part
+    ]
+    lowered = [part.lower() for part in parts]
+    if "results" in lowered:
+        results_index = len(lowered) - 1 - lowered[::-1].index("results")
+        candidate = PROJECT_ROOT.joinpath(*parts[results_index:])
+        if candidate.exists():
+            return candidate
+    return path
 
 
 def _plot_fixed_user_seed_summary(
@@ -581,6 +640,9 @@ def _plot_fixed_user_seed_summary(
         plot_success_continuity_scatter,
         plot_training_curve_vs_baselines,
     )
+
+    if not output_suffix:
+        (user_dir / "success_continuity_tradeoff.png").unlink(missing_ok=True)
 
     methods = _fixed_user_methods(seed_rows, aggregated_rows)
     generated: list[Path] = []
