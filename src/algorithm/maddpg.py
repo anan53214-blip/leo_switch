@@ -30,13 +30,29 @@ class MADDPGConfig:
     replay_size: int = 50_000
     warmup_steps: int = 1_000
     grad_clip_norm: float = 1.0
+    normalize_actor_observations: bool = False
+    normalize_critic_observations: bool = False
+    critic_huber_beta: float | None = None
+    reward_scale: float = 1.0
+    raise_on_nonfinite_loss: bool = False
     seed: int | None = None
     device: str = "cpu"
 
 
 class MADDPGActor(nn.Module):
-    def __init__(self, obs_dim: int, handover_dim: int, hidden_dims: Sequence[int] = (256, 128)):
+    def __init__(
+        self,
+        obs_dim: int,
+        handover_dim: int,
+        hidden_dims: Sequence[int] = (256, 128),
+        normalize_observations: bool = False,
+    ):
         super().__init__()
+        self.obs_norm = (
+            nn.LayerNorm(int(obs_dim))
+            if normalize_observations
+            else nn.Identity()
+        )
         layers = []
         in_dim = int(obs_dim)
         for hidden_dim in hidden_dims:
@@ -47,7 +63,7 @@ class MADDPGActor(nn.Module):
         self.offload_head = nn.Linear(in_dim, 1)
 
     def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        features = self.trunk(obs)
+        features = self.trunk(self.obs_norm(obs))
         handover_logits = self.handover_head(features)
         offload = torch.sigmoid(self.offload_head(features)).squeeze(-1)
         return handover_logits, offload
@@ -60,8 +76,14 @@ class HANCentralizedCritic(nn.Module):
         obs_dim: int,
         action_feature_dim: int,
         hidden_dims: Sequence[int] = (512, 256, 128),
+        normalize_observations: bool = False,
     ):
         super().__init__()
+        self.obs_norm = (
+            nn.LayerNorm(int(obs_dim))
+            if normalize_observations
+            else nn.Identity()
+        )
         input_dim = int(num_agents) * (int(obs_dim) + int(action_feature_dim))
         layers = []
         in_dim = input_dim
@@ -80,9 +102,10 @@ class HANCentralizedCritic(nn.Module):
         del sat_embeddings
         if observations.dim() != 3 or action_features.dim() != 3:
             raise ValueError("MADDPG critic expects batched tensors shaped (batch, agents, dim).")
+        normalized_observations = self.obs_norm(observations)
         joint_input = torch.cat(
             [
-                observations.reshape(observations.shape[0], -1),
+                normalized_observations.reshape(observations.shape[0], -1),
                 action_features.reshape(action_features.shape[0], -1),
             ],
             dim=-1,
@@ -151,19 +174,31 @@ class MADDPGAlgorithm:
         self.train_step = 0
         self.rng = np.random.default_rng(config.seed)
 
-        self.actor = MADDPGActor(self.obs_dim, self.handover_dim, config.actor_hidden_dims).to(self.device)
-        self.target_actor = MADDPGActor(self.obs_dim, self.handover_dim, config.actor_hidden_dims).to(self.device)
+        self.actor = MADDPGActor(
+            self.obs_dim,
+            self.handover_dim,
+            config.actor_hidden_dims,
+            normalize_observations=config.normalize_actor_observations,
+        ).to(self.device)
+        self.target_actor = MADDPGActor(
+            self.obs_dim,
+            self.handover_dim,
+            config.actor_hidden_dims,
+            normalize_observations=config.normalize_actor_observations,
+        ).to(self.device)
         self.critic = HANCentralizedCritic(
             self.num_agents,
             self.obs_dim,
             self.action_feature_dim,
             config.critic_hidden_dims,
+            normalize_observations=config.normalize_critic_observations,
         ).to(self.device)
         self.target_critic = HANCentralizedCritic(
             self.num_agents,
             self.obs_dim,
             self.action_feature_dim,
             config.critic_hidden_dims,
+            normalize_observations=config.normalize_critic_observations,
         ).to(self.device)
         self.target_actor.load_state_dict(self.actor.state_dict())
         self.target_critic.load_state_dict(self.critic.state_dict())
@@ -231,6 +266,7 @@ class MADDPGAlgorithm:
         next_mask_b = batch["next_masks"]
         if reward_b.dim() == 2:
             reward_b = reward_b.mean(dim=1)
+        reward_b = reward_b * float(self.config.reward_scale)
 
         with torch.no_grad():
             next_action_b = maddpg_actor_action_features(self.target_actor, next_obs_b, next_mask_b)
@@ -238,19 +274,37 @@ class MADDPGAlgorithm:
             target = reward_b + self.config.gamma * (1.0 - done_b) * target_q
 
         q_values = self.critic(obs_b, action_b)
-        critic_loss = F.mse_loss(q_values, target)
+        td_error = target - q_values
+        if self.config.critic_huber_beta is None:
+            critic_loss = F.mse_loss(q_values, target)
+        else:
+            critic_loss = F.smooth_l1_loss(
+                q_values,
+                target,
+                beta=max(float(self.config.critic_huber_beta), 1e-6),
+            )
+        if self.config.raise_on_nonfinite_loss and not torch.isfinite(critic_loss):
+            raise FloatingPointError("MADDPG critic loss became non-finite.")
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
-        nn.utils.clip_grad_norm_(self.critic.parameters(), self.config.grad_clip_norm)
+        critic_grad_norm = nn.utils.clip_grad_norm_(
+            self.critic.parameters(),
+            self.config.grad_clip_norm,
+        )
         self.critic_optimizer.step()
 
         for param in self.critic.parameters():
             param.requires_grad_(False)
         actor_action_b = maddpg_actor_action_features(self.actor, obs_b, mask_b)
         actor_loss = -self.critic(obs_b, actor_action_b).mean()
+        if self.config.raise_on_nonfinite_loss and not torch.isfinite(actor_loss):
+            raise FloatingPointError("MADDPG actor loss became non-finite.")
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
-        nn.utils.clip_grad_norm_(self.actor.parameters(), self.config.grad_clip_norm)
+        actor_grad_norm = nn.utils.clip_grad_norm_(
+            self.actor.parameters(),
+            self.config.grad_clip_norm,
+        )
         self.actor_optimizer.step()
         for param in self.critic.parameters():
             param.requires_grad_(True)
@@ -261,6 +315,11 @@ class MADDPGAlgorithm:
         return {
             "actor_loss": float(actor_loss.detach().cpu().item()),
             "critic_loss": float(critic_loss.detach().cpu().item()),
+            "q_mean": float(q_values.detach().mean().cpu().item()),
+            "target_q_mean": float(target.detach().mean().cpu().item()),
+            "td_abs_mean": float(td_error.detach().abs().mean().cpu().item()),
+            "actor_grad_norm": float(actor_grad_norm.detach().cpu().item()),
+            "critic_grad_norm": float(critic_grad_norm.detach().cpu().item()),
         }
 
     def save(self, path) -> None:

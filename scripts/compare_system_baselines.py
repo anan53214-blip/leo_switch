@@ -17,6 +17,7 @@ import json
 import logging
 import random
 import sys
+import time
 from collections import defaultdict, deque
 from dataclasses import asdict
 from datetime import datetime
@@ -1829,6 +1830,21 @@ def train_and_evaluate_dqn_baseline(
 
 
 def maddpg_action_mask(env: LEOSatelliteEnv) -> np.ndarray:
+    if hasattr(env, "get_handover_action_mask"):
+        masks = np.asarray(
+            env.get_handover_action_mask(env.max_visible_sats),
+            dtype=bool,
+        )
+        expected_shape = (env.num_users, env.max_visible_sats + 1)
+        if masks.shape != expected_shape:
+            raise ValueError(
+                "Environment returned an incompatible MADDPG action mask: "
+                f"expected {expected_shape}, got {masks.shape}."
+            )
+        masks[:, 0] = True
+        return masks
+
+    # Backward-compatible fallback for lightweight/legacy environments.
     masks = np.zeros((env.num_users, env.max_visible_sats + 1), dtype=bool)
     masks[:, 0] = True
     for user_id, user in enumerate(env.user_manager.users):
@@ -1907,10 +1923,37 @@ def train_and_evaluate_maddpg_baseline(
     device_name: str,
 ) -> Dict:
     device = torch.device(resolve_device(device_name))
+    checkpoint_dir = output_dir / "learned_baselines" / "maddpg"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    log_path = checkpoint_dir / "maddpg_training.log"
+    logger = logging.getLogger(
+        f"{__name__}.raw_maddpg.{seed}.{id(output_dir)}"
+    )
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    for existing_handler in list(logger.handlers):
+        existing_handler.close()
+        logger.removeHandler(existing_handler)
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s"
+    )
+    file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+
     env = build_env_for_objective(objective, config, seed=seed, max_steps=max_steps)
     obs_dim = int(env.user_obs_dim)
     num_agents = int(env.num_users)
     handover_dim = int(env.max_visible_sats + 1)
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     maddpg_config = MADDPGConfig(
         num_agents=num_agents,
@@ -1918,17 +1961,30 @@ def train_and_evaluate_maddpg_baseline(
         max_candidates=handover_dim - 1,
         actor_hidden_dims=(256, 128),
         critic_hidden_dims=(512, 256, 128),
-        actor_lr=5e-4,
-        critic_lr=1e-3,
+        actor_lr=1e-4,
+        critic_lr=3e-4,
         gamma=0.99,
-        tau=0.01,
+        tau=0.005,
         noise_start=0.35,
         noise_final=0.05,
-        noise_decay_steps=max(int(total_timesteps * 0.7), 1),
+        noise_decay_steps=max(
+            int(
+                config.get(
+                    "maddpg_noise_decay_steps",
+                    int(total_timesteps * 0.7),
+                )
+            ),
+            1,
+        ),
         batch_size=128,
         replay_size=50_000,
         warmup_steps=min(1_000, max(64, total_timesteps // 20)),
         grad_clip_norm=1.0,
+        normalize_actor_observations=False,
+        normalize_critic_observations=True,
+        critic_huber_beta=1.0,
+        reward_scale=1.0,
+        raise_on_nonfinite_loss=True,
         seed=int(seed),
         device=str(device),
     )
@@ -1941,16 +1997,24 @@ def train_and_evaluate_maddpg_baseline(
         mask_dim=algo.handover_dim,
         device=str(device),
     )
-    random.seed(seed)
-    torch.manual_seed(seed)
     training_records: List[Dict] = []
     evaluation_records: List[Dict] = []
     recent_episode_rewards: deque = deque(maxlen=10)
     recent_actor_losses: deque = deque(maxlen=100)
     recent_critic_losses: deque = deque(maxlen=100)
+    recent_q_means: deque = deque(maxlen=100)
+    recent_target_q_means: deque = deque(maxlen=100)
+    recent_td_errors: deque = deque(maxlen=100)
+    recent_actor_grad_norms: deque = deque(maxlen=100)
+    recent_critic_grad_norms: deque = deque(maxlen=100)
     eval_interval_episodes = 10
     train_eval_episodes = max(
-        int(config.get("eval_episodes", TrainConfig.eval_episodes)),
+        int(
+            config.get(
+                "maddpg_train_eval_episodes",
+                config.get("eval_episodes", TrainConfig.eval_episodes),
+            )
+        ),
         1,
     )
     best_eval_reward = -float("inf")
@@ -1961,8 +2025,55 @@ def train_and_evaluate_maddpg_baseline(
     episode_reward = 0.0
     episode_length = 0
     episode_count = 0
+    last_episode_reward: Optional[float] = None
+
+    episode_step_budget = max(
+        int(
+            max_steps
+            if max_steps is not None
+            else getattr(env.config, "max_steps", EnvConfig.max_steps)
+        ),
+        1,
+    )
+    log_interval_steps = max(
+        int(config.get("log_interval", TrainConfig.log_interval))
+        * episode_step_budget,
+        1,
+    )
+    training_started_at = time.monotonic()
+
+    logger.info("=" * 60)
+    logger.info("开始训练纯 MADDPG 基线")
+    logger.info(
+        "用户数: %d | 观测维度: %d | handover维度: %d | "
+        "总步数: %d | warmup: %d | batch: %d | "
+        "日志间隔: %d steps | device: %s | "
+        "actor_lr: %.1e | critic_lr: %.1e | tau: %.3f | reward_scale: %.2f",
+        num_agents,
+        obs_dim,
+        handover_dim,
+        int(total_timesteps),
+        int(algo.config.warmup_steps),
+        int(algo.config.batch_size),
+        log_interval_steps,
+        device,
+        algo.config.actor_lr,
+        algo.config.critic_lr,
+        algo.config.tau,
+        algo.config.reward_scale,
+    )
+    logger.info("=" * 60)
 
     observations, _ = env.reset(seed=seed)
+    expected_observation_shape = (num_agents, obs_dim)
+    if observations.shape != expected_observation_shape:
+        raise ValueError(
+            "Environment returned an incompatible MADDPG observation: "
+            f"expected {expected_observation_shape}, got {observations.shape}."
+        )
+    if not np.all(np.isfinite(observations)):
+        raise ValueError("Environment returned non-finite MADDPG observations.")
+
     for step_idx in range(max(int(total_timesteps), 0)):
         noise_std = algo._noise_std()
         masks = maddpg_action_mask(env)
@@ -1994,9 +2105,15 @@ def train_and_evaluate_maddpg_baseline(
             if stats:
                 recent_actor_losses.append(float(stats.get("actor_loss", 0.0)))
                 recent_critic_losses.append(float(stats.get("critic_loss", 0.0)))
+                recent_q_means.append(float(stats.get("q_mean", 0.0)))
+                recent_target_q_means.append(float(stats.get("target_q_mean", 0.0)))
+                recent_td_errors.append(float(stats.get("td_abs_mean", 0.0)))
+                recent_actor_grad_norms.append(float(stats.get("actor_grad_norm", 0.0)))
+                recent_critic_grad_norms.append(float(stats.get("critic_grad_norm", 0.0)))
 
         if done:
             episode_count += 1
+            last_episode_reward = float(episode_reward)
             recent_episode_rewards.append(episode_reward)
             record = {
                 "update": episode_count,
@@ -2008,8 +2125,19 @@ def train_and_evaluate_maddpg_baseline(
                 "exploration_noise": float(noise_std),
                 "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
                 "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
+                "q_mean": float(np.mean(recent_q_means)) if recent_q_means else 0.0,
+                "target_q_mean": float(np.mean(recent_target_q_means)) if recent_target_q_means else 0.0,
+                "td_abs_mean": float(np.mean(recent_td_errors)) if recent_td_errors else 0.0,
+                "actor_grad_norm": float(np.mean(recent_actor_grad_norms)) if recent_actor_grad_norms else 0.0,
+                "critic_grad_norm": float(np.mean(recent_critic_grad_norms)) if recent_critic_grad_norms else 0.0,
             }
             if episode_count % eval_interval_episodes == 0:
+                logger.info(
+                    "开始周期评估: Steps=%d | Episodes=%d | EvalEpisodes=%d",
+                    step_idx + 1,
+                    episode_count,
+                    train_eval_episodes,
+                )
                 eval_result = evaluate_maddpg_policy(
                     algorithm=algo,
                     objective=objective,
@@ -2028,6 +2156,12 @@ def train_and_evaluate_maddpg_baseline(
                     "eval_episodes": train_eval_episodes,
                 }
                 evaluation_records.append(eval_record)
+                logger.info(
+                    "周期评估完成: Steps=%d | MeanReward=%.3f | StdReward=%.3f",
+                    step_idx + 1,
+                    record["eval_mean_reward"],
+                    record["eval_std_reward"],
+                )
                 if record["eval_mean_reward"] > best_eval_reward:
                     best_eval_reward = record["eval_mean_reward"]
                     best_actor_state = clone_state_dict(algo.actor)
@@ -2038,6 +2172,65 @@ def train_and_evaluate_maddpg_baseline(
             observations, _ = env.reset(seed=seed + step_idx + 1)
             episode_reward = 0.0
             episode_length = 0
+
+        completed_steps = step_idx + 1
+        if (
+            completed_steps % log_interval_steps == 0
+            or completed_steps == int(total_timesteps)
+        ):
+            elapsed_seconds = max(time.monotonic() - training_started_at, 1e-9)
+            steps_per_second = completed_steps / elapsed_seconds
+            remaining_seconds = (
+                max(int(total_timesteps) - completed_steps, 0)
+                / max(steps_per_second, 1e-9)
+            )
+            logger.info(
+                "Steps: %d/%d | Episodes: %d | LastEpReward: %.3f | "
+                "RecentReward: %.3f | ActorLoss: %.6f | CriticLoss: %.6f | "
+                "Q: %.4f | TargetQ: %.4f | TDAbs: %.4f | "
+                "ActorGrad: %.4f | CriticGrad: %.4f | "
+                "Noise: %.4f | Replay: %d | FPS: %.2f | ETA: %.1f min",
+                completed_steps,
+                int(total_timesteps),
+                episode_count,
+                last_episode_reward if last_episode_reward is not None else episode_reward,
+                (
+                    float(np.mean(recent_episode_rewards))
+                    if recent_episode_rewards
+                    else 0.0
+                ),
+                (
+                    float(np.mean(recent_actor_losses))
+                    if recent_actor_losses
+                    else 0.0
+                ),
+                (
+                    float(np.mean(recent_critic_losses))
+                    if recent_critic_losses
+                    else 0.0
+                ),
+                float(np.mean(recent_q_means)) if recent_q_means else 0.0,
+                (
+                    float(np.mean(recent_target_q_means))
+                    if recent_target_q_means
+                    else 0.0
+                ),
+                float(np.mean(recent_td_errors)) if recent_td_errors else 0.0,
+                (
+                    float(np.mean(recent_actor_grad_norms))
+                    if recent_actor_grad_norms
+                    else 0.0
+                ),
+                (
+                    float(np.mean(recent_critic_grad_norms))
+                    if recent_critic_grad_norms
+                    else 0.0
+                ),
+                float(noise_std),
+                len(replay),
+                steps_per_second,
+                remaining_seconds / 60.0,
+            )
 
     if episode_length > 0:
         episode_count += 1
@@ -2050,9 +2243,14 @@ def train_and_evaluate_maddpg_baseline(
                 "mean_reward": episode_reward,
                 "recent_mean_reward": float(np.mean(recent_episode_rewards)),
                 "mean_length": float(episode_length),
-                "exploration_noise": float(algo.config.noise_final),
+                "exploration_noise": float(algo._noise_std()),
                 "actor_loss": float(np.mean(recent_actor_losses)) if recent_actor_losses else 0.0,
                 "critic_loss": float(np.mean(recent_critic_losses)) if recent_critic_losses else 0.0,
+                "q_mean": float(np.mean(recent_q_means)) if recent_q_means else 0.0,
+                "target_q_mean": float(np.mean(recent_target_q_means)) if recent_target_q_means else 0.0,
+                "td_abs_mean": float(np.mean(recent_td_errors)) if recent_td_errors else 0.0,
+                "actor_grad_norm": float(np.mean(recent_actor_grad_norms)) if recent_actor_grad_norms else 0.0,
+                "critic_grad_norm": float(np.mean(recent_critic_grad_norms)) if recent_critic_grad_norms else 0.0,
                 "partial_episode": True,
             }
         )
@@ -2107,8 +2305,6 @@ def train_and_evaluate_maddpg_baseline(
     )
     result["trained_timesteps"] = int(total_timesteps)
     result["best_training_eval_reward"] = float(best_eval_reward)
-    checkpoint_dir = output_dir / "learned_baselines" / "maddpg"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     history_path = checkpoint_dir / "training_history.json"
     checkpoint_path = checkpoint_dir / "maddpg_model.pt"
     final_checkpoint_path = checkpoint_dir / "maddpg_final_model.pt"
@@ -2173,6 +2369,12 @@ def train_and_evaluate_maddpg_baseline(
                     "noise_decay_steps": algo.config.noise_decay_steps,
                     "warmup_steps": algo.config.warmup_steps,
                     "batch_size": algo.config.batch_size,
+                    "normalize_actor_observations": algo.config.normalize_actor_observations,
+                    "normalize_critic_observations": algo.config.normalize_critic_observations,
+                    "critic_huber_beta": algo.config.critic_huber_beta,
+                    "reward_scale": algo.config.reward_scale,
+                    "raise_on_nonfinite_loss": algo.config.raise_on_nonfinite_loss,
+                    "log_interval_steps": log_interval_steps,
                     "train_eval_interval_episodes": eval_interval_episodes,
                     "train_eval_episodes": train_eval_episodes,
                     "best_training_eval_reward": float(best_eval_reward),
@@ -2194,6 +2396,8 @@ def train_and_evaluate_maddpg_baseline(
         )
     result["checkpoint"] = str(checkpoint_path)
     result["training_history"] = str(history_path)
+    result["training_log"] = str(log_path)
+    logger.info("MADDPG 训练与评估完成，最佳权重: %s", checkpoint_path)
     return result
 
 
@@ -4996,6 +5200,24 @@ def parse_args() -> argparse.Namespace:
                         help="Training steps for the DQN baseline. Defaults to --total-timesteps.")
     parser.add_argument("--maddpg-timesteps", type=int, default=None,
                         help="Training steps for the MADDPG baseline. Defaults to --total-timesteps.")
+    parser.add_argument(
+        "--maddpg-train-eval-episodes",
+        type=int,
+        default=None,
+        help=(
+            "Episodes per in-training MADDPG evaluation. Defaults to the "
+            "system run's eval_episodes setting."
+        ),
+    )
+    parser.add_argument(
+        "--maddpg-noise-decay-steps",
+        type=int,
+        default=None,
+        help=(
+            "Override the MADDPG exploration-noise decay horizon. By default "
+            "it is 70%% of MADDPG training timesteps."
+        ),
+    )
     parser.add_argument("--pdqn-timesteps", type=int, default=None,
                         help="Training steps for the PDQN baseline. Defaults to --total-timesteps.")
     parser.add_argument("--no-han-total-timesteps", type=int, default=None,
@@ -5043,6 +5265,16 @@ def main() -> None:
         )
 
     config_data["best_model_metric"] = args.best_model_metric
+    if args.maddpg_train_eval_episodes is not None:
+        config_data["maddpg_train_eval_episodes"] = max(
+            int(args.maddpg_train_eval_episodes),
+            1,
+        )
+    if args.maddpg_noise_decay_steps is not None:
+        config_data["maddpg_noise_decay_steps"] = max(
+            int(args.maddpg_noise_decay_steps),
+            1,
+        )
 
     if args.run_mode == "train_compare":
         resume_checkpoint = checkpoint if args.resume_system else None

@@ -57,6 +57,25 @@ def test_raw_maddpg_action_mask_applies_the_same_pre_handover_gate():
     assert masks[1].tolist() == [True, True, True]
 
 
+def test_raw_maddpg_action_mask_uses_new_environment_feasibility_mask():
+    expected = np.asarray(
+        [
+            [True, False, True],
+            [True, True, False],
+        ],
+        dtype=bool,
+    )
+    env = SimpleNamespace(
+        num_users=2,
+        max_visible_sats=2,
+        get_handover_action_mask=lambda max_candidates: expected.copy(),
+    )
+
+    masks = compare_baselines.maddpg_action_mask(env)
+
+    assert np.array_equal(masks, expected)
+
+
 def test_raw_dqn_action_mask_keeps_only_stay_bins_for_safe_users():
     users = [SimpleNamespace(user_id=0), SimpleNamespace(user_id=1)]
     env = SimpleNamespace(
@@ -442,10 +461,36 @@ def test_maddpg_update_averages_per_agent_rewards_for_central_critic():
         )
     )
 
+    assert isinstance(algorithm.actor.obs_norm, nn.Identity)
+    assert isinstance(algorithm.critic.obs_norm, nn.Identity)
     stats = algorithm.update(buffer)
 
     assert "actor_loss" in stats
     assert "critic_loss" in stats
+    assert "q_mean" in stats
+    assert "target_q_mean" in stats
+    assert "td_abs_mean" in stats
+    assert "actor_grad_norm" in stats
+    assert "critic_grad_norm" in stats
+    assert all(np.isfinite(value) for value in stats.values())
+
+
+def test_maddpg_critic_normalizes_observations_without_changing_actor_inputs():
+    algorithm = MADDPGAlgorithm(
+        MADDPGConfig(
+            num_agents=2,
+            obs_dim=3,
+            max_candidates=2,
+            actor_hidden_dims=(8,),
+            critic_hidden_dims=(16,),
+            normalize_critic_observations=True,
+            device="cpu",
+        )
+    )
+
+    assert isinstance(algorithm.actor.obs_norm, nn.Identity)
+    assert isinstance(algorithm.critic.obs_norm, nn.LayerNorm)
+    assert tuple(algorithm.critic.obs_norm.normalized_shape) == (3,)
 
 
 def test_maddpg_random_actions_are_reproducible_with_same_seed():
@@ -597,6 +642,79 @@ def test_maddpg_act_respects_action_mask_and_feature_shape():
     assert action_features.shape == (2, 4)
     assert handover.tolist() == [0, 2]
     assert np.allclose(action_features.sum(axis=1), np.array([1.0, 1.0]) + env_actions[:, 1])
+
+
+def test_raw_maddpg_logs_progress_with_new_environment_interface(tmp_path, monkeypatch):
+    class TinyTrainingEnv:
+        user_obs_dim = 3
+        num_users = 2
+        max_visible_sats = 2
+
+        def __init__(self):
+            self.episode_step = 0
+            self.last_user_rewards = np.ones(self.num_users, dtype=np.float32)
+
+        def reset(self, seed=None):
+            self.episode_step = 0
+            return np.zeros((self.num_users, self.user_obs_dim), dtype=np.float32), {}
+
+        def step(self, actions):
+            self.episode_step += 1
+            done = self.episode_step >= 2
+            observations = np.full(
+                (self.num_users, self.user_obs_dim),
+                self.episode_step,
+                dtype=np.float32,
+            )
+            return observations, 1.0, done, False, {}
+
+        def get_handover_action_mask(self, max_candidates):
+            return np.ones(
+                (self.num_users, max_candidates + 1),
+                dtype=bool,
+            )
+
+    monkeypatch.setattr(
+        compare_baselines,
+        "build_env_for_objective",
+        lambda objective, config, seed, max_steps: TinyTrainingEnv(),
+    )
+    monkeypatch.setattr(
+        compare_baselines,
+        "evaluate_maddpg_policy",
+        lambda algorithm, objective, config, episodes, seed, max_steps: {
+            "method": "maddpg",
+            "display_name": "MADDPG",
+            "episodes": episodes,
+            "mean_reward": 2.0,
+            "std_reward": 0.0,
+            "episode_metrics": [{"episode": 0, "reward": 2.0}],
+        },
+    )
+
+    result = compare_baselines.train_and_evaluate_maddpg_baseline(
+        config={"log_interval": 1, "eval_episodes": 1},
+        objective="multi_objective",
+        output_dir=tmp_path,
+        episodes=1,
+        seed=17,
+        max_steps=2,
+        total_timesteps=4,
+        device_name="cpu",
+    )
+
+    log_text = Path(result["training_log"]).read_text(encoding="utf-8")
+    assert "Steps: 2/4" in log_text
+    assert "Steps: 4/4" in log_text
+    assert "LastEpReward: 2.000" in log_text
+    history = json.loads(Path(result["training_history"]).read_text(encoding="utf-8"))
+    assert history["config"]["log_interval_steps"] == 2
+    assert history["config"]["seed"] == 17
+    assert history["config"]["normalize_actor_observations"] is False
+    assert history["config"]["normalize_critic_observations"] is True
+    assert history["config"]["critic_huber_beta"] == 1.0
+    assert history["config"]["reward_scale"] == 1.0
+    assert history["config"]["raise_on_nonfinite_loss"] is True
 
 
 def test_raw_pdqn_training_history_records_shared_algorithm_config(tmp_path, monkeypatch):

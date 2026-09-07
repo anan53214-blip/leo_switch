@@ -49,7 +49,7 @@ DEFAULT_USER_COUNTS = (20, 25, 30, 35, 40)
 DEFAULT_BASELINES = (
     "attn_mappo",
     "mappo_no_han",
-    # "maddpg",
+    "maddpg",
     "pdqn",
     # "han_maddpg",
     "han_pdqn",
