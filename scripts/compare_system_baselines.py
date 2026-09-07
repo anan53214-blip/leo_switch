@@ -4,13 +4,14 @@ Evaluate heuristic baselines and compare them with a trained system method.
 
 Example:
     python scripts/compare_system_baselines.py ^
-        --system-run-dir results/full_train_delay_focus ^
+        --run-mode compare_only --system-run-dir results/full_train_han_pdqn ^
         --episodes 5 ^
         --max-steps 200
 """
 
 from __future__ import annotations
 
+import hashlib
 import argparse
 import csv
 import json
@@ -91,6 +92,7 @@ from scripts.baseline_plot_config import (
     SCATTER_LABEL_OFFSETS,
     SYSTEM_STYLE,
     TRAINING_QOS_STEP_METRICS,
+    method_visual_style,
 )
 
 try:
@@ -128,22 +130,22 @@ except ModuleNotFoundError:
     )
 
 DEFAULT_BASELINES = [
-    "random",
+    # "random",  # Excluded from future default experiments (2026-09-07).
     "min_distance",
     "full_local",
-    "joint_greedy",
+    # "joint_greedy",
     "maddpg",
     "pdqn",
     "han_mappo",
     "mappo_no_han",
-    "attn_mappo",
+    # "attn_mappo",
     "han_attn",
     "han_maddpg",
     "han_pdqn",
 ]
 
-DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_latency_priority"
-DEFAULT_SYSTEM_EXP_NAME = "han_mappo_latency_priority"
+DEFAULT_SYSTEM_RUN_DIR = PROJECT_ROOT / "results" / "full_train_han_pdqn"
+DEFAULT_SYSTEM_EXP_NAME = "han_pdqn"
 DEFAULT_TOTAL_TIMESTEPS = TrainConfig.total_timesteps
 DEFAULT_EVAL_EPISODES = TrainConfig.eval_episodes
 DEFAULT_PLOT_WINDOW = 3
@@ -159,6 +161,7 @@ TRAIN_ARTIFACT_FILENAMES = (
 PRIMARY_COMPARE_METRICS = list(PAPER_PRIMARY_COMPARE_METRICS)
 
 DISPLAY_NAME_MAP = {
+    "han_pdqn_sca": "SCA",
     "random": "Random",
     "min_distance": "Min-Distance",
     "full_local": "Full-Local",
@@ -797,11 +800,11 @@ def pretty_method_name(name: str, is_system: bool) -> str:
         if normalized_name == method_name or normalized_name.startswith(f"{method_name}_"):
             return display_name
     if is_system:
-        return "HAN+MAPPO"
+        return name or "System"
     return DISPLAY_NAME_MAP.get(name, DISPLAY_NAME_MAP.get(base_name, name))
 
 
-def system_display_name(methods: Sequence[Dict], fallback: str = "HAN+MAPPO") -> str:
+def system_display_name(methods: Sequence[Dict], fallback: str = "HAN+PDQN") -> str:
     for method in methods:
         if method.get("is_system"):
             return str(method.get("display_name", method.get("method", fallback)))
@@ -823,6 +826,8 @@ def filter_duplicate_system_baselines(
         "mappo": "han_mappo",
         "attn_mappo": "attn_mappo",
         "han_attn": "han_attn",
+        "pdqn": "han_pdqn",
+        "maddpg": "han_maddpg",
     }.get(system_algorithm, system_algorithm)
     return [
         baseline
@@ -1040,6 +1045,7 @@ def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
         method_key = str(method.get("method", ""))
         if method.get("is_system"):
             styles[method_key] = dict(SYSTEM_STYLE)
+            styles[method_key].update(method_visual_style(method_key) or method_visual_style(str(method.get("display_name", ""))))
             continue
 
         method_name = str(method.get("method", ""))
@@ -1055,10 +1061,11 @@ def build_method_styles(methods: Sequence[Dict]) -> Dict[str, Dict]:
             "linestyle": BASELINE_LINESTYLES[baseline_index % len(BASELINE_LINESTYLES)],
             "marker": BASELINE_MARKERS[baseline_index % len(BASELINE_MARKERS)],
             "linewidth": 1.8,
-            "markersize": 5.5,
+            "markersize": 9,
             "hatch": BAR_HATCH_PATTERNS[(baseline_index + 1) % len(BAR_HATCH_PATTERNS)],
             "scatter_size": 150,
         }
+        style.update(method_visual_style(method_name) or method_visual_style(display_name))
         styles[method_key] = style
         baseline_index += 1
     return styles
@@ -3043,7 +3050,12 @@ def trainer_class_for_objective(objective: str):
 
 
 def system_trainer_class_for_config(objective: str, config_data: Dict):
+    # Missing algorithm belongs to legacy MAPPO artifacts, not new defaults.
     algorithm = str(config_data.get("algorithm", "mappo"))
+    if algorithm == "pdqn":
+        return HANPDQNTrainer
+    if algorithm == "maddpg":
+        return HANMADDPGTrainer
     if algorithm == "attn_mappo":
         return AttentionMAPPOTrainer
     if algorithm == "han_attn":
@@ -3130,6 +3142,7 @@ def train_config_from_dict(
     load_path: Optional[Path] = None,
 ) -> TrainConfig:
     config = TrainConfig()
+    config.algorithm = str(config_data.get("algorithm", "mappo"))
     for key, value in config_data.items():
         setattr(config, key, value)
     config.device = resolve_device(device)
@@ -3145,8 +3158,8 @@ def train_config_from_dict(
         config.log_path = str(PROJECT_ROOT / "results" / "logs")
     if exp_name:
         config.exp_name = exp_name
-    if load_path is not None:
-        config.load_path = str(load_path)
+    # Only an explicit resume/evaluation may inherit a checkpoint load path.
+    config.load_path = str(load_path) if load_path is not None else None
     return config
 
 
@@ -3200,6 +3213,22 @@ def evaluate_system_checkpoint(
     max_steps: Optional[int],
 ) -> Dict:
     method_name = str(config_data.get("exp_name", checkpoint.parent.name or "system"))
+    trainer_cls = system_trainer_class_for_config(objective, config_data)
+    if trainer_cls in (HANPDQNTrainer, HANMADDPGTrainer):
+        result = evaluate_han_offpolicy_checkpoint(
+            checkpoint=checkpoint,
+            config_data=config_data,
+            episodes=episodes,
+            device=device,
+            max_steps=max_steps,
+            trainer_cls=trainer_cls,
+            method_name=method_name,
+        )
+        result["is_system"] = True
+        result["display_name"] = (
+            "HAN+PDQN" if trainer_cls is HANPDQNTrainer else "HAN+MADDPG"
+        )
+        return result
     return evaluate_mappo_checkpoint_with_trainer(
         checkpoint=checkpoint,
         config_data=config_data,
@@ -4623,7 +4652,7 @@ def plot_paired_advantage_over_baselines(
     methods: Sequence[Dict],
     output_dir: Path,
 ) -> Optional[Path]:
-    """Show paired HAN+MAPPO advantage under identical evaluation scenarios."""
+    """Show paired system-method advantage under identical evaluation scenarios."""
     plottable = learned_methods_with_episode_metrics(methods)
     reference = next((method for method in plottable if method.get("is_system")), None)
     comparisons = [method for method in plottable if method is not reference]
@@ -4945,6 +4974,10 @@ def plot_performance_radar(
             closed_values,
             color=style.get("color", PAPER_COLORS["muted"]),
             linewidth=linewidth,
+            marker=style.get("marker", "o"),
+            markersize=style.get("markersize", 9),
+            markeredgecolor="white",
+            markeredgewidth=0.7,
             linestyle=style.get("linestyle", "-"),
             label=method.get("display_name", method.get("method", "")),
         )
@@ -5145,7 +5178,7 @@ def plot_reward_distribution(methods: Sequence[Dict], output_dir: Path) -> Optio
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train HAN+MAPPO and compare it against the heuristic baselines in BASELINE_STRATEGIES."
+        description="Train HAN+PDQN and compare it against learned and heuristic baselines."
     )
     parser.add_argument("--run-mode", type=str, default="train_compare",
                         choices=["train_compare", "compare_only"],
@@ -5163,8 +5196,12 @@ def parse_args() -> argparse.Namespace:
                         help="Resume training from an existing checkpoint in --system-run-dir or --system-checkpoint.")
     parser.add_argument("--overwrite-system-run-dir", action="store_true",
                         help="Allow a fresh train_compare run to write into an existing --system-run-dir that already contains training artifacts.")
-    parser.add_argument("--exp-name", type=str, default=DEFAULT_SYSTEM_EXP_NAME,
-                        help="Experiment name used when training from this unified entry script.")
+    parser.add_argument("--exp-name", type=str, default=None,
+                        help="Experiment name; new runs default to han_pdqn, existing runs retain their name.")
+    parser.add_argument("--pretrained-han-path", type=str, default=None,
+                        help="Trained HAN checkpoint required for fresh HAN+PDQN training.")
+    parser.add_argument("--pdqn-lr", type=float, default=None,
+                        help="Override PDQN learning rate; otherwise preserve the run config.")
     parser.add_argument("--episodes", type=int, default=DEFAULT_EVAL_EPISODES,
                         help="Number of evaluation episodes for each method.")
     parser.add_argument("--max-steps", type=int, default=None,
@@ -5265,6 +5302,10 @@ def main() -> None:
         )
 
     config_data["best_model_metric"] = args.best_model_metric
+    if args.pretrained_han_path is not None:
+        config_data["pretrained_han_path"] = args.pretrained_han_path
+    if args.pdqn_lr is not None:
+        config_data["pdqn_lr"] = args.pdqn_lr
     if args.maddpg_train_eval_episodes is not None:
         config_data["maddpg_train_eval_episodes"] = max(
             int(args.maddpg_train_eval_episodes),
@@ -5293,7 +5334,7 @@ def main() -> None:
             max_steps=args.max_steps,
             total_timesteps=args.total_timesteps,
             early_stop_patience=args.early_stop_patience,
-            exp_name=args.exp_name,
+            exp_name=args.exp_name or config_data.get("exp_name", DEFAULT_SYSTEM_EXP_NAME),
             resume_checkpoint=resume_checkpoint,
         )
     elif checkpoint is None and history_path is None:
@@ -5494,6 +5535,8 @@ def main() -> None:
             "primary_metric_leaders": leaders,
             "system_run_dir": str(run_dir) if run_dir else None,
             "system_checkpoint": str(checkpoint) if checkpoint else None,
+            "system_checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest() if checkpoint else None,
+            "evaluation_seeds": [int(config_data.get("seed", args.seed)) + EVALUATION_SEED_OFFSET + i for i in range(args.episodes)] if not args.skip_system_eval else [],
             "training_history": str(history_path) if history_path else None,
             "total_timesteps": int(config_data.get("total_timesteps", args.total_timesteps)),
             "env_config": asdict(build_env_config_from_train_config(config_data, seed=args.seed, max_steps=args.max_steps)),

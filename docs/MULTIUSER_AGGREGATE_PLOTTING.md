@@ -1,5 +1,22 @@
 # 多用户与训练产物绘图命令说明
 
+> 2026-09-08 更新：多用户套件默认写入 `results/multiseed_0907/seed{seed}/u{num_users}`，主方法训练也在 `learned_baselines/han_pdqn` 下。`--with-sca` 可调用独立 SCA 评估并校验后汇总；旧 run-id 路径须用 `--legacy-layout`。完整命令见 [多种子目录说明](MULTISEED_LAYOUT.md)。
+
+## 当前绘图约定（2026-09-07）
+
+- HAN+PDQN 使用大红色 `#FF0000` 并加粗；各算法颜色固定，不随筛选或排名改变。
+- 用户规模等指标折线图使用明显不同的形状，普通标记 9 pt、HAN+PDQN 星形 13 pt。
+- 训练收敛图只画不同颜色的线，不添加形状标记。
+- 单用户收敛图及仪表板使用传入的 `--plot-window`（本实验原值为 3），不再写死为 5；多用户并排收敛图保留原始训练回合均值。样式调整不应改变原实验的平滑口径。
+- 本次筛选版删除 Attn+MAPPO、Joint Greedy、Random，保留 7 种方法；优化类基线尚未加入。
+- 历史结果可用 `--proposed-method han_pdqn` 调整新图的主方法角色，输出保留 `source_is_system` 供追溯；与 `--aggregate-output-dir` 配合另存。
+
+> 当前主方法是 **HAN+PDQN**。20260804 历史结果中的 `is_system=True` 仍代表当时的
+> HAN+MAPPO，阅读当前主方法指标请选 `method=han_pdqn`。下文包含历史路径和筛选示例，
+> 不改变当前方法身份。新实验默认训练 HAN+PDQN，目录前缀为 `full_train_han_pdqn_multiuser_`。
+> 主方法参数使用 `--pdqn-lr` 和 `--pretrained-han-path`，后者支持 `{num_users}`、`{seed}`。
+> 旧结果重绘应使用 `--aggregate-output-dir` 另存。完整入口见 [README](../README.md)。
+
 本文档说明如何基于已有结果重新生成对比图。这里的命令默认不重新训练、不重新评估，只读取已有结果文件。
 
 涉及两个脚本：

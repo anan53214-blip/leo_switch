@@ -11,6 +11,8 @@ from scripts.run_multiuser_scaling_suite import (
     MultiUserConfig,
     build_paths,
     build_train_command,
+    config_from_args,
+    training_history_path,
     parse_args as parse_suite_args,
 )
 from scripts.train import TrainConfig, parse_args
@@ -80,8 +82,8 @@ def test_training_defaults_match_reference_training():
     assert_defaults(config, REWARD_DEFAULTS)
     assert_defaults(config, RADIO_ENERGY_DEFAULTS)
     assert_defaults(config, TRAINING_DEFAULTS)
-    assert config.algorithm == "mappo"
-    assert config.exp_name.startswith("han_mappo")
+    assert config.algorithm == "pdqn"
+    assert config.exp_name.startswith("han_pdqn")
 
 
 def test_all_environment_fields_are_copied_from_training_config():
@@ -133,6 +135,15 @@ def test_training_cli_defaults_match_train_config(monkeypatch):
     assert_defaults(args, REWARD_DEFAULTS)
     assert_defaults(args, TRAINING_DEFAULTS)
     assert args.device == "auto"
+    assert args.exp_name == "han_pdqn"
+    assert args.save_path == TrainConfig.save_path
+
+
+def test_explicit_mappo_does_not_inherit_pdqn_name_or_directory(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["train.py", "--algorithm", "mappo"])
+    args = parse_args()
+    assert args.exp_name == "han_mappo"
+    assert args.save_path == "results/full_train_han_mappo"
 
 
 def test_comparison_cli_defaults_match_reference_training(monkeypatch):
@@ -176,7 +187,8 @@ def test_suite_cli_defaults_and_train_command_propagate_reference_training(tmp_p
     config = MultiUserConfig(run_id="config-test")
     paths = build_paths(tmp_path, config.run_id, num_users=20)
     command = build_train_command(paths, config, num_users=20)
-    assert command[command.index("--algorithm") + 1] == "mappo"
+    assert command[command.index("--algorithm") + 1] == "pdqn"
+    assert command[command.index("--pdqn_lr") + 1] == str(TrainConfig.pdqn_lr)
     assert command[command.index("--reward-load-balance-weight") + 1] == "0.05"
 
     for option, field_name in (
@@ -192,3 +204,33 @@ def test_suite_cli_defaults_and_train_command_propagate_reference_training(tmp_p
     ):
         option_index = command.index(option)
         assert command[option_index + 1] == str(TRAINING_DEFAULTS[field_name])
+
+
+def test_suite_pdqn_parameters_and_encoder_template(tmp_path):
+    config = config_from_args(parse_suite_args([
+        "--run-id", "pdqn-test", "--pdqn-lr", "0.0003",
+        "--pretrained-han-path", "results/encoder_u{num_users}_seed{seed}/best_model.pt",
+    ]))
+    paths = build_paths(tmp_path, config.run_id, num_users=40, seed=7, multi_seed=True)
+    command = build_train_command(paths, config, num_users=40, seed=7)
+    assert command[command.index("--pdqn_lr") + 1] == "0.0003"
+    assert command[command.index("--pretrained_han_path") + 1] == "results/encoder_u40_seed7/best_model.pt"
+    assert "han_pdqn" in str(paths.system_run_dir)
+    assert "han_mappo" in config.baselines
+    assert "pdqn" in config.baselines
+    assert "han_pdqn" not in config.baselines
+
+
+def test_history_lookup_preserves_legacy_method_identity(tmp_path):
+    paths = build_paths(tmp_path, "old", num_users=20)
+    legacy = tmp_path / "results/full_train_latency_priority_multiuser_u20_old/training_history.json"
+    baseline = paths.compare_output_dir / "learned_baselines/han_pdqn/training_history.json"
+    for path in (legacy, baseline):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    assert training_history_path(paths, "han_mappo") == legacy
+    assert training_history_path(paths, "han_pdqn") == baseline
+    system = paths.system_run_dir / "training_history.json"
+    system.parent.mkdir(parents=True)
+    system.write_text("{}", encoding="utf-8")
+    assert training_history_path(paths, "han_pdqn") == system

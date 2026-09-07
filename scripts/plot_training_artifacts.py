@@ -65,6 +65,7 @@ HIGHER_IS_BETTER = {
     "task_settlement_rate": True,
 }
 DISPLAY_NAME_MAP = {
+    "han_pdqn_sca": "SCA",
     "han_mappo": "HAN+MAPPO",
     "han_attn": "HAN+Attn",
     "attn_mappo": "Attn+MAPPO",
@@ -185,7 +186,7 @@ def pretty_method_name(name: str, is_system: bool) -> str:
     for key in sorted(DISPLAY_NAME_MAP, key=len, reverse=True):
         if normalized == key or normalized.startswith(f"{key}_"):
             return DISPLAY_NAME_MAP[key]
-    return "HAN+MAPPO" if is_system else name
+    return name
 
 
 def compute_deadline_violation_rate(record: Dict[str, Any]) -> float:
@@ -269,7 +270,13 @@ def _best_record(
 
 
 def _method_name(config: Dict[str, Any], history_path: Path) -> str:
-    return str(config.get("exp_name") or config.get("algorithm") or history_path.parent.name or "method")
+    # Learned baseline configs can inherit the system experiment name.
+    if history_path.parent.name in DISPLAY_NAME_MAP:
+        return history_path.parent.name
+    algorithm = str(config.get("algorithm", ""))
+    if config.get("pretrained_han_path") and algorithm == "pdqn":
+        return "han_pdqn"
+    return str(config.get("exp_name") or algorithm or history_path.parent.name or "method")
 
 
 def method_from_history(

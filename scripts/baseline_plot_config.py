@@ -100,6 +100,43 @@ SCATTER_LABEL_OFFSETS = {
     "HAN+PDQN": (10, 12),
 }
 
+# Algorithm identity stays stable across panels, filtering and metric rankings.
+# Colour and shape both encode identity, including in grayscale reproduction.
+METHOD_VISUAL_IDENTITIES = {
+    "han_pdqn_sca": ("#882255", "h"),
+    "han_pdqn": ("#FF0000", "*"),
+    "pdqn": ("#0072B2", "o"),
+    "han_mappo": ("#009E73", "s"),
+    "mappo_no_han": ("#AA4499", "^"),
+    "maddpg": ("#E69F00", "D"),
+    "min_distance": ("#56B4E9", "P"),
+    "full_local": ("#333333", "X"),
+    "attn_mappo": ("#332288", "v"),
+    "joint_greedy": ("#882255", "h"),
+    "random": ("#999999", "+"),
+    "han_attn": ("#44AA99", "<"),
+    "han_maddpg": ("#117733", ">"),
+    "dqn": ("#999933", "p"),
+}
+
+
+def method_visual_style(name: str) -> dict:
+    normalized = name.strip().lower().replace("+", "_").replace("-", "_").replace(" ", "_")
+    if normalized == "mappo":
+        normalized = "mappo_no_han"
+    if normalized == "sca":
+        normalized = "han_pdqn_sca"
+    for key in sorted(METHOD_VISUAL_IDENTITIES, key=len, reverse=True):
+        if normalized == key or normalized.startswith(key + "_"):
+            color, marker = METHOD_VISUAL_IDENTITIES[key]
+            return {
+                "color": color, "marker": marker, "linestyle": "-",
+                "markersize": 13 if key == "han_pdqn" else 9,
+                "linewidth": 2.8 if key == "han_pdqn" else 2.0,
+                "markeredgecolor": "white", "markeredgewidth": 0.7,
+            }
+    return {}
+
 PAPER_COLORS = {
     "primary": "#0F4C81",
     "secondary": "#B03A2E",

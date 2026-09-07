@@ -1,121 +1,92 @@
-# LEO 卫星网络切换与任务卸载联合优化（HAN + MAPPO）
+# LEO 卫星网络切换与任务卸载联合优化（HAN+PDQN）
 
-基于**异质图注意力网络 (HAN)** 和**多智能体近端策略优化 (MAPPO)** 的 LEO 卫星网络切换与计算卸载联合优化系统。
+> 2026-09-08 更新：多用户套件默认写入 `results/multiseed_0907/seed{seed}/u{num_users}`，主方法训练也在 `learned_baselines/han_pdqn` 下。`--with-sca` 可调用独立 SCA 评估并校验后汇总；旧 run-id 路径须用 `--legacy-layout`。完整命令见 [多种子目录说明](docs/MULTISEED_LAYOUT.md)。
 
----
+**当前论文主方法：HAN+PDQN。** 用户已于 2026-09-07 确认。HAN+MAPPO 是历史主方法，现作为对比方法保留。
 
-## 项目结构
+项目将异质图注意力网络（HAN）与参数化深度 Q 网络（PDQN）结合，联合决定用户的卫星切换和连续任务卸载比例。
+后续会话先读 [项目状态](docs/PROJECT_STATUS.md)；助手的项目级约定在根目录 [AGENTS.md](AGENTS.md)。
 
-```
-LEO_switch/
-├── config/
-│   └── （当前无运行时 YAML 配置）
-├── docs/
-│   ├── SYSTEM_ARCHITECTURE.md      # 完整技术文档（与代码逐行校对）
-│   ├── TRAINING_GUIDE.md           # 训练使用方法
-│   └── research_plan.md            # 研究计划
-├── src/
-│   ├── environment/                # 仿真环境
-│   │   ├── constellation.py        #   Walker 星座 (6×11=66 颗卫星)
-│   │   ├── channel.py              #   Ka 频段信道模型 (20 GHz)
-│   │   ├── mec.py                  #   MEC 服务器 & 任务队列
-│   │   ├── user.py                 #   地面用户 & 状态机
-│   │   ├── task.py                 #   可拆分计算任务
-│   │   ├── visibility.py           #   星地可见性计算
-│   │   └── gym_env.py              #   Gymnasium RL 环境封装
-│   ├── graph/                      # 异质图
-│   │   ├── features.py             #   节点/边特征提取
-│   │   └── builder.py              #   异质图构建器
-│   ├── model/                      # 神经网络
-│   │   ├── hetero_gnn.py           #   HAN 编码器 (571K 参数)
-│   │   ├── actor.py                #   HybridActor (Categorical + Normal)
-│   │   ├── critic.py               #   CentralizedCritic
-│   │   └── layers.py               #   MLP / GAT / SemanticAttention
-│   └── algorithm/                  # RL 算法
-│       ├── mappo.py                #   MAPPO (PPO-Clip + GAE)
-│       ├── buffer.py               #   多智能体 Rollout Buffer
-│       └── replay_buffer.py        #   Off-policy 经验回放
-├── scripts/
-│   ├── train.py                    # 训练入口
-│   ├── compare_system_baselines.py  # 系统与基线统一对比
-│   ├── plot_training_artifacts.py   # 从训练/对比产物重画图表
-│   └── run_multiuser_scaling_suite.py # 多用户扩展聚合
-├── tests/                          # 单元测试
-└── results/                        # 训练输出 (模型/日志/图表)
-```
+## 方法与实现对应
 
----
+| 方法 | 角色 | 训练/对比入口 |
+|---|---|---|
+| **HAN+PDQN** | **当前主方法** | `scripts/train.py --algorithm pdqn` → `HANPDQNTrainer`；结果键 `han_pdqn` |
+| PDQN | 无 HAN 基线 | `scripts/compare_system_baselines.py --baselines pdqn` |
+| SCA | 复用主方法离散规则、优化连续比例的对照 | `scripts/evaluate_sca_baseline.py`；结果键 `han_pdqn_sca`；[说明](docs/SCA_BASELINE.md) |
+| HAN+MAPPO | 历史主方法、当前基线 | `scripts/train.py --algorithm mappo`；对比键 `han_mappo` |
+| MAPPO / MADDPG 等 | 对比方法 | 统一对比脚本中的对应 baseline |
+| LOCR | 独立优化基线设计 | [算法说明](docs/基于Lyapunov的在线凸松弛基线算法说明.md) |
 
-## 核心设计
+注意：训练入口的 `pdqn` 包含 HAN；对比列表的 `pdqn` 不包含 HAN，`han_pdqn` 才是主方法。
 
-### 智能体
-- **每个地面用户是一个独立智能体**，所有用户共享 Actor 参数
-- 训练范式：**CTDE**（集中训练，分布式执行）
+后续默认实验已停用 **Attn+MAPPO、Joint Greedy、Random**，实现保留用于显式调用和读取历史结果。
+多用户/多种子套件默认比较 HAN+PDQN、HAN+MAPPO、MAPPO、MADDPG、PDQN、Min-Distance、Full-Local。
+SCA 使用独立评估入口补充，不自动训练或混入旧结果。
 
-### 状态表示 (69 维)
-环境原始状态 → 异质图 → **HAN 编码** → 拼接额外特征：
+## 当前算法流程
 
-| 组成部分 | 维度 | 来源 |
-|----------|------|------|
-| HAN 节点嵌入 | 64 | 用户节点 13 维 + 卫星节点 10 维 → HAN 编码 |
-| RVT 预警信号 | 1 | 剩余可见时间是否低于阈值 |
-| 任务特征 | 4 | 数据量、计算量、时延要求、类型 |
+1. 环境生成用户、卫星、可见性、任务及资源竞争状态。
+2. 构建异质图，用 HAN 提取用户表示并拼接任务与候选卫星信息。
+3. PDQN 参数网络给出连续卸载参数，Q 网络评估并选择离散切换动作。
+4. 原环境执行联合动作，计算任务时延、终端能耗、中断和奖励。
+5. 使用 replay buffer 与 target networks 更新 PDQN。
 
-### 动作空间（混合）
-| 动作 | 类型 | 分布 | 含义 |
-|------|------|------|------|
-| 切换决策 | 离散 | Categorical(K+1) | 0 = 不切换，1~K = 切换到第 k 个可见卫星 |
-| 卸载比例 | 连续 | Normal(μ, σ) | λ ∈ [0,1]，0 = 全本地，1 = 全卸载 |
+**当前实现使用预训练并冻结的 HAN。** replay 存储编码后的观测，因此不能把当前实现描述为 HAN 与 PDQN 端到端联合训练。
+新训练必须提供包含 `han_state_dict` 且 schema 匹配的检查点；正式实验应记录 HAN 预训练来源、种子及开销。
+已有 HAN+PDQN 检查点包含自身的 HAN 权重，可用于续训和评估。
 
-### 奖励函数
-- **任务奖励**：deadline 内完成时为 `1 - 0.60×时延比例 - 0.10×能耗比例`；超时或最终失败固定为 `-1`
-- **连接惩罚**：按每个用户在时隙内的实际服务中断比例处罚，完整中断一时隙最多 `-0.30`
-- **切换失败**：固定 `-0.20`；成功切换不额外奖励，只计算实际切换中断
-- **延迟发放**：MEC 任务完成后通过 `pending_rewards` 在后续步发放
-- **全局奖励** = mean(所有用户奖励)
+## 运行入口
 
-负载均衡、队列占用和切换次数只作为评价指标，不再重复进入 reward。完整公式和论文依据见
-[Reward 函数设计](docs/REWARD_WEIGHT_CONFIG.md)。
-
-### 竞争机制
-- 多用户共享卫星 MEC 队列 → CPU 时间片均分 → 用户越多每人分到越少
-- HAN 通过 User→Sat→User 元路径编码用户间资源竞争关系
-
----
-
-## 快速开始
+在项目根目录、已安装项目依赖的 Python 环境中执行。下面的预训练路径须替换为实际存在且版本匹配的检查点。
 
 ```bash
-# 安装依赖
-conda create -n satellite python=3.10 -y && conda activate satellite
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install numpy scipy matplotlib gymnasium pyyaml
+# 当前主方法；省略 --algorithm 时也默认 pdqn
+python scripts/train.py --algorithm pdqn --exp_name han_pdqn --pretrained_han_path results/han_encoder_pretrain/best_model.pt --pdqn_lr 0.001 --batch_size 512 --total_timesteps 150000 --save_path results/full_train_han_pdqn
 
-# 快速验证
-python scripts/train.py --total_timesteps 100000 --max_steps 512 --eval_episodes 1
+# 主方法续训，编码器从该检查点本身恢复
+python scripts/train.py --algorithm pdqn --load_path results/full_train_han_pdqn/final_model.pt --save_path results/full_train_han_pdqn --total_timesteps 300000
 
-# 标准训练（不传参数时也采用这组训练规模）
-python scripts/train.py --total_timesteps 150000 --max_steps 512 --n_steps 1024 --batch_size 512
+# 评估已有主方法，并运行基线
+python scripts/compare_system_baselines.py --run-mode compare_only --system-run-dir results/full_train_han_pdqn --baselines pdqn han_mappo mappo_no_han maddpg min_distance full_local
 
-# 生成图表
-python scripts/plot_training_artifacts.py --comparison-summary results/baseline_compare/<run_id> --output-dir results/baseline_compare/<run_id>/replot
+# 新的多用户主方法实验；先预览命令
+python scripts/run_multiuser_scaling_suite.py --run-id han_pdqn_multiuser --pretrained-han-path "results/han_pretrain_u{num_users}_seed{seed}/best_model.pt" --pdqn-lr 0.001 --dry-run
 ```
 
-详见 [`docs/TRAINING_GUIDE.md`](docs/TRAINING_GUIDE.md)。
+多用户脚本支持 `{num_users}` 和 `{seed}` 路径占位符；实际执行前需准备对应编码器检查点。
+新训练结果目录采用 `full_train_han_pdqn_multiuser_u{用户数}_{run_id}`，避免与历史 MAPPO 目录混用。
+若需用现有 MAPPO 训练器产生 HAN 预训练检查点，可显式运行 `--algorithm mappo --exp_name han_encoder_pretrain --save_path results/han_encoder_pretrain`，并单独计入预训练成本。
 
----
+| 参数 | 含义 |
+|---|---|
+| `pdqn_lr` / `--pdqn-lr` | PDQN Q 网络与参数网络学习率，默认 `1e-3` |
+| `batch_size` | replay 训练批大小，默认 `512` |
+| `pretrained_han_path` | 新训练所需的预训练 HAN 检查点 |
+| `learning_rate`、`n_steps`、`n_epochs` | PPO 路径参数，不用于替代 PDQN 学习率 |
 
-## 模型规模
+## 历史结果与实验口径
 
-| 组件 | 参数量 | 结构 |
-|------|--------|------|
-| HAN 编码器 | 571K | 2 层 × 4 头 × 3 元路径，64 维输出 |
-| Actor | 68K | MLP(69→256→128) + 离散头 + 连续头 |
-| Critic | 183K | 用户编码 + 卫星编码 + MLP → V(s) |
-| **总计** | **~822K** | |
+SCA 已有独立评估入口：`python scripts/evaluate_sca_baseline.py --checkpoint <HAN+PDQN权重路径>`。
+只创建新输出目录，配对评估原方法和 SCA，不训练或覆盖旧权重。默认评估 5 回合，测试 seeds 与统一对比脚本对齐；
+不能直接把新结果并入不同测试场景的旧表。参数和模型近似见 [SCA 说明](docs/SCA_BASELINE.md)。
 
----
+已有参考实验在 `results/baseline_compare/multiuser_scaling_multiuser_single_seed_150k_20260804/`。
+读取当前主方法时选择汇总表的 **`method=han_pdqn`**，其训练历史位于 `u*/learned_baselines/han_pdqn/`。
+这批文件的 `is_system=True` 是历史 HAN+MAPPO 运行角色；原始文件保持原样，不用于重新定义当前主方法。
 
-## 参考论文
-1. 宋晓勤等，基于深度确定性策略梯度的星地融合网络可拆分任务卸载算法
-2. 付一阳等，星地融合网络中基于异质图表征的多智能体协作切换方法
+环境/奖励以运行保存的 `env_config`、`training_history.json` 和代码版本为准。
+当前默认时延/能耗权重为 `0.60/0.40`，可达 MEC 公平性奖励权重为 `0.05`。
+状态、动作维度、奖励细节和历史机制见 [系统架构说明](docs/系统架构算法智能体与奖励函数完整说明.md)。
+验证/测试场景分离、多种子、优化基线、消融及泛化实验仍须按 [项目状态](docs/PROJECT_STATUS.md) 推进。
+
+## 项目文件
+
+- `scripts/train.py`：当前主方法及其他 HAN 训练器。
+- `src/algorithm/pdqn.py`：PDQN Q 网络、连续参数网络、回放更新。
+- `src/model/hetero_gnn.py`、`src/graph/`：HAN 与异质图构建。
+- `src/environment/`：轨道、信道、队列、任务和环境。
+- `scripts/compare_system_baselines.py`：统一评估及基线。
+- `scripts/run_multiuser_scaling_suite.py`：多用户、多种子实验与汇总。
+- `docs/COMPARE_SYSTEM_BASELINES_CLI.md`、`docs/MULTIUSER_AGGREGATE_PLOTTING.md`：命令说明。
+- `tests/`：环境、算法与实验入口回归检查。

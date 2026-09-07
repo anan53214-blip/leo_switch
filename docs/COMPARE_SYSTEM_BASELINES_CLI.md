@@ -1,5 +1,11 @@
 # compare_system_baselines.py 命令行参数说明
 
+> 当前默认主方法为 **HAN+PDQN**（2026-09-07）。新训练使用
+> `--pretrained-han-path <已训练HAN检查点>`，PDQN 学习率用 `--pdqn-lr`。
+> 默认系统目录为 `results/full_train_han_pdqn`。加载旧目录时按保存的算法配置评估，
+> 不会把旧 MAPPO 权重当作 PDQN。`--baselines pdqn` 是无 HAN 基线。
+> 下文旧结果路径是历史示例；当前主方法的新训练命令见 [README](../README.md)。
+
 本文档记录当前版本 `scripts/compare_system_baselines.py` 的 `--` 参数用法。
 
 推荐使用项目 Conda 环境执行：
@@ -28,7 +34,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
   --device cpu `
   --best-model-metric avg_delay `
   --compare-ranking-metric avg_delay `
-  --baselines random min_distance full_local joint_greedy mappo_no_han `
+  --baselines min_distance full_local mappo_no_han `
   --system-run-dir results\single_user_system_mappo `
   --output-dir results\baseline_compare\single_user_mappo_vs_baselines
 ```
@@ -65,7 +71,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
   --max-steps 512 `
   --device cpu `
   --compare-ranking-metric avg_delay `
-  --baselines random min_distance full_local joint_greedy `
+  --baselines min_distance full_local `
   --output-dir results\baseline_compare\single_user_recompare
 ```
 
@@ -78,7 +84,7 @@ C:\Users\19704\.conda\envs\satellite.env\python.exe scripts\compare_system_basel
 | `--system-checkpoint` | checkpoint 路径，默认无 | 显式指定系统算法的 `best_model.pt` 或 `final_model.pt`。 |
 | `--resume-system` | 开关参数 | 从已有系统 checkpoint 继续训练。 |
 | `--overwrite-system-run-dir` | 开关参数 | 允许新的 `train_compare` 直接写入已有系统目录。默认会保护已有目录，必要时创建带时间戳的兄弟目录。 |
-| `--exp-name` | 默认 `han_mappo_latency_priority` | 从统一对比脚本训练系统算法时使用的实验名。 |
+| `--exp-name` | 默认 `han_pdqn` | 从统一对比脚本训练当前主方法时使用的实验名。 |
 
 ## 训练与评估规模
 
@@ -152,16 +158,16 @@ CSV/JSON 中用于兼容旧实验，但不再作为论文主图指标。
 
 当前 `--baselines all` 会展开为：
 
+Attn+MAPPO、Joint Greedy、Random 已按后续实验方案从默认列表注释停用。
+实现仍保留，只有显式指定时才运行；历史结果不受影响。
+
 ```text
-random
 min_distance
 full_local
-joint_greedy
 maddpg
 pdqn
 han_mappo
 mappo_no_han
-attn_mappo
 han_attn
 han_maddpg
 han_pdqn
@@ -170,7 +176,7 @@ han_pdqn
 推荐的轻量基线组合：
 
 ```powershell
---baselines random min_distance full_local joint_greedy mappo_no_han
+--baselines min_distance full_local mappo_no_han
 ```
 
 学习型基线名称：

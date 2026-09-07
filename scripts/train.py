@@ -2,23 +2,24 @@
 LEO卫星网络切换与任务卸载联合优化 - 完整训练脚本
 ===============================================
 
-本脚本整合 HAN (异质图注意力网络) + MAPPO (多智能体PPO) 进行训练。
+当前主方法是 HAN (异质图注意力网络) + PDQN (参数化深度Q网络)。
+MAPPO、Attn+MAPPO、HAN+MADDPG 等训练器作为对比方法保留。
 
 【训练流程】
 1. 环境初始化：创建LEO卫星仿真环境
 2. 图构建：构建异质图，提取节点/边特征  
-3. HAN编码：使用HAN获取节点嵌入
-4. MAPPO决策：基于嵌入进行多智能体决策
+3. HAN编码：加载预训练冻结HAN，获取节点嵌入
+4. PDQN决策：参数网络生成卸载比例，Q网络选择切换动作
 5. 环境交互：执行动作，收集经验
-6. 策略更新：使用PPO更新Actor/Critic
+6. 策略更新：使用回放样本更新Q网络和参数网络
 
 【使用方法】
 ```bash
 # 基本训练
-python scripts/train.py
+python scripts/train.py --pretrained_han_path results/han_encoder_pretrain/best_model.pt
 
 # 指定参数
-python scripts/train.py --num_users 10 --total_timesteps 150000 --seed 42
+python scripts/train.py --algorithm pdqn --pretrained_han_path results/han_encoder_pretrain/best_model.pt --pdqn_lr 0.001 --num_users 10 --total_timesteps 150000 --seed 42
 
 # 从检查点恢复
 python scripts/train.py --load_path results/models/checkpoint_100000.pt
@@ -28,7 +29,7 @@ python scripts/train.py --load_path results/models/checkpoint_100000.pt
 - LEOSatelliteEnv: Gymnasium环境
 - HeteroGraphBuilder: 异质图构建
 - HANEncoder: 异质图注意力网络
-- MAPPO: 多智能体PPO算法
+- PDQNAlgorithm: 参数化深度Q算法（主方法）
 """
 
 import sys
@@ -231,10 +232,10 @@ class TrainConfig:
     """
     完整训练配置
     
-    整合环境、HAN、MAPPO、训练等所有参数
+    整合环境、HAN、PDQN主方法和其他基线训练参数
     """
     # ---------- 实验信息 ----------
-    exp_name: str = "han_mappo_delay_focus"      # 实验名称
+    exp_name: str = "han_pdqn"                 # 当前主方法
     seed: int = 42                        # 随机种子
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     
@@ -320,7 +321,7 @@ class TrainConfig:
     critic_hidden_dims: tuple = (256, 256, 128)  # Critic隐藏层
     
     # ---------- MAPPO参数 ----------
-    algorithm: str = "mappo"
+    algorithm: str = "pdqn"
     learning_rate: float = 1e-4           # 保守更新，降低中后期策略震荡
     gamma: float = 0.99                   # 折扣因子
     gae_lambda: float = 0.95              # GAE参数
@@ -359,7 +360,7 @@ class TrainConfig:
     log_interval: int = 1                 # 日志间隔
     
     # ---------- 路径参数 ----------
-    save_path: str = "results/full_train_delay_focus"  # 模型保存路径
+    save_path: str = "results/full_train_han_pdqn"  # 模型保存路径
     log_path: str = "results/logs"        # 日志路径
     
     # ---------- 加载参数 ----------
@@ -2024,7 +2025,11 @@ class HANMADDPGTrainer(HANMAPPOTrainer):
         entries stale. Requiring a trained frozen encoder is preferable to the
         previous silent use of a randomly initialized HAN.
         """
-        checkpoint_path = getattr(self.config, "pretrained_han_path", None)
+        # A resumed off-policy checkpoint contains its own frozen HAN.
+        checkpoint_path = (
+            getattr(self.config, "load_path", None)
+            or getattr(self.config, "pretrained_han_path", None)
+        )
         if not checkpoint_path:
             raise ValueError(
                 "HAN off-policy training requires pretrained_han_path; "
@@ -2694,7 +2699,7 @@ def parse_args():
     )
     
     # 实验参数
-    parser.add_argument('--exp_name', type=str, default=defaults.exp_name,
+    parser.add_argument('--exp_name', type=str, default=None,
                         help='实验名称')
     parser.add_argument('--seed', type=int, default=defaults.seed,
                         help='随机种子')
@@ -2756,7 +2761,9 @@ def parse_args():
     parser.add_argument('--n_steps', type=int, default=defaults.n_steps,
                         help='每次更新收集步数')
     parser.add_argument('--learning_rate', type=float, default=defaults.learning_rate,
-                        help='学习率')
+                        help='PPO 学习率；HAN+PDQN 使用 --pdqn_lr')
+    parser.add_argument('--pdqn_lr', '--pdqn-lr', type=float, default=defaults.pdqn_lr,
+                        help='HAN+PDQN 的 Q 网络和参数网络学习率')
     parser.add_argument('--batch_size', type=int, default=defaults.batch_size,
                         help='批大小')
     parser.add_argument('--n_epochs', type=int, default=defaults.n_epochs,
@@ -2783,7 +2790,7 @@ def parse_args():
                         help='HAN层数')
     
     # 保存加载
-    parser.add_argument('--save_path', type=str, default=defaults.save_path,
+    parser.add_argument('--save_path', type=str, default=None,
                         help='模型保存路径')
     parser.add_argument('--log_path', type=str, default=defaults.log_path,
                         help='日志保存路径')
@@ -2813,7 +2820,16 @@ def parse_args():
                         choices=list(BEST_MODEL_METRIC_CHOICES),
                         help='best_model.pt 的选优指标')
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    method_name = {
+        "pdqn": "han_pdqn", "mappo": "han_mappo", "maddpg": "han_maddpg",
+        "attn_mappo": "attn_mappo", "han_attn": "han_attn",
+    }[args.algorithm]
+    if args.exp_name is None:
+        args.exp_name = method_name
+    if args.save_path is None:
+        args.save_path = f"results/full_train_{method_name}"
+    return args
 
 
 def main():
