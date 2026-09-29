@@ -534,11 +534,19 @@ def _read_comparison_rows(
 
     rows: list[dict[str, str]] = []
     for row in source_rows:
-        method = str(row.get("method", ""))
+        source_method = str(row.get("method", ""))
+        method = source_method
+        # New suites store the trainer experiment name as the method key.
+        # Preserve that source identity while grouping HAN+PDQN across U.
+        if source_method == f"han_pdqn_multiuser_u{num_users}":
+            method = "han_pdqn"
         normalized = {
             key: str(value)
             for key, value in derive_paper_metrics(row).items()
         }
+        normalized["method"] = method
+        if method != source_method:
+            normalized["source_method"] = source_method
         normalized["num_users"] = str(num_users)
         normalized["seed"] = str(seed)
         normalized["display_name"] = method_display_name(
@@ -961,6 +969,94 @@ def plot_scaling_metrics(
     return output_path
 
 
+def plot_paired_reward_advantage(
+    seed_rows: Sequence[dict[str, str]],
+    output_dir: Path,
+    output_suffix: str = "",
+) -> list[Path]:
+    """Show each training seed against its best competing method at the same U."""
+    groups: dict[tuple[int, int], list[dict[str, str]]] = {}
+    for row in seed_rows:
+        try:
+            key = (int(row["num_users"]), int(row["seed"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        groups.setdefault(key, []).append(row)
+    if len({seed for _, seed in groups}) < 2:
+        return []
+
+    paired: list[dict[str, str]] = []
+    for (num_users, seed), group in sorted(groups.items()):
+        proposed = [row for row in group if row.get("method") == "han_pdqn"]
+        competitors = [
+            row for row in group
+            if row.get("method") != "han_pdqn"
+            and _float_or_none(row.get("mean_reward")) is not None
+        ]
+        if len(proposed) != 1 or not competitors:
+            continue
+        proposed_reward = _float_or_none(proposed[0].get("mean_reward"))
+        if proposed_reward is None:
+            continue
+        best = max(competitors, key=lambda row: float(row["mean_reward"]))
+        baseline_reward = float(best["mean_reward"])
+        paired.append({
+            "num_users": str(num_users),
+            "seed": str(seed),
+            "proposed_method": "han_pdqn",
+            "proposed_reward": str(proposed_reward),
+            "best_competitor_method": str(best.get("method", "")),
+            "best_competitor_name": str(best.get("display_name", "")),
+            "best_competitor_reward": str(baseline_reward),
+            "reward_advantage": str(proposed_reward - baseline_reward),
+        })
+    if not paired:
+        return []
+
+    csv_path = _write_csv(
+        output_dir / suffixed_filename("multiuser_paired_reward_advantage.csv", output_suffix),
+        paired,
+    )
+    setup_plot_style()
+    fig, ax = plt.subplots(figsize=(9, 5))
+    user_counts = sorted({int(row["num_users"]) for row in paired})
+    wins = sum(float(row["reward_advantage"]) > 0 for row in paired)
+    medians: list[float] = []
+    for user_index, num_users in enumerate(user_counts):
+        records = [row for row in paired if int(row["num_users"]) == num_users]
+        values = sorted(float(row["reward_advantage"]) for row in records)
+        middle = len(values) // 2
+        median = (values[middle] if len(values) % 2 else
+                  (values[middle - 1] + values[middle]) / 2)
+        medians.append(median)
+        for point_index, row in enumerate(records):
+            offset = (point_index - (len(records) - 1) / 2) * 0.16
+            advantage = float(row["reward_advantage"])
+            ax.scatter(num_users + offset, advantage,
+                       color="#555555", alpha=0.75, s=46,
+                       label="Training seed" if user_index == 0 and point_index == 0 else None,
+                       zorder=3)
+            if advantage < 0:
+                ax.annotate(f"seed {row['seed']}", (num_users + offset, advantage),
+                            xytext=(4, -9), textcoords="offset points", fontsize=8)
+        local_wins = sum(value > 0 for value in values)
+        ax.annotate(f"{local_wins}/{len(values)} wins", (num_users, median),
+                    xytext=(0, 11), textcoords="offset points", ha="center", fontsize=9)
+    ax.plot(user_counts, medians, color="#FF0000", marker="*", markersize=13,
+            linewidth=2.8, label="Median advantage", zorder=4)
+    ax.axhline(0, color="black", linewidth=1, linestyle="--")
+    ax.set_xticks(user_counts)
+    ax.set_xlabel("Number of Users")
+    ax.set_ylabel("Reward advantage over strongest competitor")
+    ax.set_title(f"HAN+PDQN wins {wins}/{len(paired)} paired seed scenarios")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    plot_path = output_dir / suffixed_filename("multiuser_paired_reward_advantage.png", output_suffix)
+    fig.savefig(plot_path)
+    plt.close(fig)
+    return [csv_path, plot_path]
+
+
 def _load_training_curve(history_path: Path) -> tuple[list[float], list[float]]:
     if not history_path.exists():
         return [], []
@@ -1160,6 +1256,12 @@ def _generate_aggregate_artifacts(
         allow_csv_only=config.allow_csv_only,
     )
     generated: list[Path] = [summary_csv]
+    if len(effective_seeds(config)) > 1:
+        records_csv = artifact_dir / suffixed_filename("multiuser_seed_records.csv", config.output_suffix)
+        with records_csv.open("r", encoding="utf-8", newline="") as handle:
+            generated.extend(plot_paired_reward_advantage(
+                list(csv.DictReader(handle)), artifact_dir, config.output_suffix,
+            ))
 
     reward_plot = plot_reward_convergence(
         project_root,

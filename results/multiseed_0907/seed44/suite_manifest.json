@@ -1,0 +1,82 @@
+{
+  "run_id": "promoted_rerun_20260928",
+  "generated_at": "2026-09-28T19:52:41",
+  "config": {
+    "run_id": "promoted_rerun_20260928",
+    "user_counts": [
+      20,
+      25,
+      30,
+      35,
+      40
+    ],
+    "python_executable": "/home/pjpjq/miniconda3/envs/satellite.env/bin/python",
+    "seed": 44,
+    "seeds": [
+      44
+    ],
+    "device": "auto",
+    "total_timesteps": 150000,
+    "max_steps": 512,
+    "n_steps": 1024,
+    "batch_size": 512,
+    "learning_rate": 0.0001,
+    "pdqn_lr": 0.001,
+    "pretrained_han_path": "",
+    "n_epochs": 4,
+    "eval_interval": 25000,
+    "eval_episodes": 5,
+    "save_interval": 50000,
+    "graph_update_interval": 1,
+    "log_interval": 1,
+    "reward_load_balance_weight": 0.05,
+    "best_model_metric": "reward",
+    "compare_ranking_metric": "reward",
+    "compare_episodes": 5,
+    "plot_window": 3,
+    "early_stop_patience": 0,
+    "baselines": [
+      "han_mappo",
+      "mappo_no_han",
+      "maddpg",
+      "pdqn",
+      "min_distance",
+      "full_local"
+    ],
+    "skip_system_train": false,
+    "skip_compare": false,
+    "force_system_train": false,
+    "reuse_learned_checkpoints": false,
+    "aggregate_only": true,
+    "aggregate_output_dir": "",
+    "include_methods": [],
+    "proposed_method": "han_pdqn",
+    "output_suffix": "",
+    "results_root": "results/multiseed_0907",
+    "with_sca": false,
+    "allow_csv_only": false,
+    "dry_run": false
+  },
+  "method_display_names": {
+    "han_pdqn_sca": "SCA",
+    "han_mappo": "HAN+MAPPO",
+    "han_attn": "HAN+Attn",
+    "attn_mappo": "Attn+MAPPO",
+    "mappo_no_han": "MAPPO",
+    "maddpg": "MADDPG",
+    "pdqn": "PDQN",
+    "han_maddpg": "HAN+MADDPG",
+    "han_pdqn": "HAN+PDQN",
+    "random": "Random",
+    "min_distance": "Min-Distance",
+    "full_local": "Full-Local",
+    "joint_greedy": "Joint Greedy"
+  },
+  "generated_artifacts": [
+    "/home/pjpjq/LEO_switch/results/multiseed_0907/seed44/multiuser_summary.csv",
+    "/home/pjpjq/LEO_switch/results/multiseed_0907/seed44/multiuser_reward_convergence.png",
+    "/home/pjpjq/LEO_switch/results/multiseed_0907/seed44/multiuser_core_metrics.png",
+    "/home/pjpjq/LEO_switch/results/multiseed_0907/seed44/multiuser_resource_metrics.png",
+    "/home/pjpjq/LEO_switch/results/multiseed_0907/seed44/multiuser_combined_metrics.png"
+  ]
+}

@@ -1,0 +1,1230 @@
+
+$ /home/pjpjq/miniconda3/envs/satellite.env/bin/python scripts/train.py --exp_name han_pdqn_multiuser_u35 --algorithm pdqn --seed 43 --device cuda --num_users 35 --total_timesteps 150000 --max_steps 512 --n_steps 1024 --batch_size 512 --learning_rate 0.0001 --pdqn_lr 0.001 --n_epochs 4 --eval_interval 25000 --eval_episodes 5 --save_interval 50000 --graph_update_interval 1 --log_interval 1 --reward-load-balance-weight 0.05 --best-model-metric reward --save_path /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn --log_path /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/logs --pretrained_han_path /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u35_multiuser_single_seed_150k_20260804/best_model.pt
+2026-09-16 14:00:57,203 | INFO | 初始化环境...
+2026-09-16 14:00:57,204 | INFO |   - 原始观测维度: 76
+2026-09-16 14:00:57,204 | INFO |   - HAN嵌入维度: 64
+2026-09-16 14:00:57,205 | INFO |   - 拼接后观测维度: 140 (raw 76 + HAN 64)
+2026-09-16 14:00:57,205 | INFO |   - 全局状态维度: 4900
+2026-09-16 14:00:57,205 | INFO | 初始化图构建器...
+2026-09-16 14:00:57,205 | INFO | 初始化HAN编码器...
+2026-09-16 14:00:57,329 | INFO |   - HAN参数量: 200,832
+2026-09-16 14:00:57,330 | INFO | 初始化 HAN+PDQN...
+2026-09-16 14:00:57,386 | INFO |   - Loaded frozen pretrained HAN: /home/pjpjq/LEO_switch/results/full_train_latency_priority_multiuser_u35_multiuser_single_seed_150k_20260804/best_model.pt
+2026-09-16 14:00:57,865 | INFO |   - PDQN Q参数量: 72,473
+2026-09-16 14:00:57,866 | INFO |   - PDQN 参数网络参数量: 293,139
+2026-09-16 14:00:57,866 | INFO | 初始化 off-policy replay buffer...
+2026-09-16 14:00:57,866 | INFO | 训练器初始化完成，设备: cuda
+2026-09-16 14:00:57,866 | INFO | 环境: 35 用户, 66 卫星
+2026-09-16 14:00:57,866 | INFO | ============================================================
+2026-09-16 14:00:57,866 | INFO | 开始训练 HAN+PDQN
+2026-09-16 14:00:57,866 | INFO |   总步数: 150,000
+2026-09-16 14:00:57,866 | INFO |   warmup: 1,000
+2026-09-16 14:00:57,866 | INFO |   replay_size: 50,000
+2026-09-16 14:00:57,866 | INFO |   设备: cuda
+2026-09-16 14:00:57,866 | INFO | ============================================================
+2026-09-16 14:01:07,000 | INFO | Update    1 | Steps:     512 | Episodes:     1 | EpReward:   -14.11 | FPS:  55801 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:01:07,000 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:01:07,000 | INFO |   Env | HO: 99.24% | Throughput: 13.28/user-min | Task: 63.29% | Resolved: 99.95% | Delay: 3.939s | Energy: 11315.44J | MEC fair: 0.370
+2026-09-16 14:01:07,000 | INFO |   Reward | Success: 113.31 | Load: 16.07 | Delay: -36.66 | Energy: -24.45 | TaskFail: -65.71 | Interrupt: -16.55 | HOFail: -0.12
+2026-09-16 14:01:17,132 | INFO | Update    2 | Steps:   1,024 | Episodes:     2 | EpReward:   -13.42 | FPS:  18218 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:01:17,132 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:01:17,132 | INFO |   Env | HO: 99.19% | Throughput: 12.90/user-min | Task: 62.27% | Resolved: 99.94% | Delay: 4.188s | Energy: 11350.18J | MEC fair: 0.522
+2026-09-16 14:01:17,132 | INFO |   Reward | Success: 110.11 | Load: 19.29 | Delay: -36.34 | Energy: -23.72 | TaskFail: -66.71 | Interrupt: -15.23 | HOFail: -0.13
+2026-09-16 14:01:45,025 | INFO | Update    3 | Steps:   1,536 | Episodes:     3 | EpReward:   -13.32 | FPS:  18471 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:01:45,025 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:01:45,025 | INFO |   Env | HO: 98.93% | Throughput: 13.84/user-min | Task: 65.44% | Resolved: 99.91% | Delay: 3.756s | Energy: 10739.29J | MEC fair: 0.494
+2026-09-16 14:01:45,025 | INFO |   Reward | Success: 118.11 | Load: 18.26 | Delay: -37.93 | Energy: -24.66 | TaskFail: -62.37 | Interrupt: -24.27 | HOFail: -0.24
+2026-09-16 14:02:12,647 | INFO | Update    4 | Steps:   2,048 | Episodes:     4 | EpReward:   -12.63 | FPS:  18739 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:02:12,647 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:02:12,647 | INFO |   Env | HO: 99.36% | Throughput: 12.99/user-min | Task: 62.00% | Resolved: 99.95% | Delay: 4.111s | Energy: 11334.39J | MEC fair: 0.537
+2026-09-16 14:02:12,647 | INFO |   Reward | Success: 110.86 | Load: 19.40 | Delay: -35.79 | Energy: -23.63 | TaskFail: -67.94 | Interrupt: -13.38 | HOFail: -0.08
+2026-09-16 14:02:40,289 | INFO | Update    5 | Steps:   2,560 | Episodes:     5 | EpReward:   -10.48 | FPS:  18561 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:02:40,289 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:02:40,289 | INFO |   Env | HO: 99.41% | Throughput: 13.85/user-min | Task: 65.33% | Resolved: 99.92% | Delay: 3.807s | Energy: 11001.22J | MEC fair: 0.533
+2026-09-16 14:02:40,289 | INFO |   Reward | Success: 118.20 | Load: 19.27 | Delay: -38.03 | Energy: -25.05 | TaskFail: -62.71 | Interrupt: -13.49 | HOFail: -0.07
+2026-09-16 14:03:08,003 | INFO | Update    6 | Steps:   3,072 | Episodes:     6 | EpReward:   -11.51 | FPS:  18135 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:03:08,003 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:03:08,003 | INFO |   Env | HO: 99.44% | Throughput: 12.73/user-min | Task: 60.13% | Resolved: 99.97% | Delay: 4.355s | Energy: 11511.30J | MEC fair: 0.527
+2026-09-16 14:03:08,003 | INFO |   Reward | Success: 108.60 | Load: 19.10 | Delay: -36.15 | Energy: -23.14 | TaskFail: -72.00 | Interrupt: -13.02 | HOFail: -0.07
+2026-09-16 14:03:35,847 | INFO | Update    7 | Steps:   3,584 | Episodes:     7 | EpReward:   -11.56 | FPS:  18130 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:03:35,847 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:03:35,847 | INFO |   Env | HO: 99.36% | Throughput: 13.08/user-min | Task: 62.30% | Resolved: 99.92% | Delay: 4.142s | Energy: 11308.69J | MEC fair: 0.511
+2026-09-16 14:03:35,847 | INFO |   Reward | Success: 111.60 | Load: 18.90 | Delay: -36.21 | Energy: -23.76 | TaskFail: -67.54 | Interrupt: -14.77 | HOFail: -0.09
+2026-09-16 14:04:03,621 | INFO | Update    8 | Steps:   4,096 | Episodes:     8 | EpReward:   -10.62 | FPS:  17909 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:04:03,621 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:04:03,621 | INFO |   Env | HO: 99.30% | Throughput: 13.65/user-min | Task: 65.09% | Resolved: 99.87% | Delay: 3.759s | Energy: 11136.07J | MEC fair: 0.378
+2026-09-16 14:04:03,621 | INFO |   Reward | Success: 116.51 | Load: 16.82 | Delay: -37.07 | Energy: -24.64 | TaskFail: -62.49 | Interrupt: -13.08 | HOFail: -0.08
+2026-09-16 14:04:31,544 | INFO | Update    9 | Steps:   4,608 | Episodes:     9 | EpReward:   -10.23 | FPS:  18251 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:04:31,544 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:04:31,544 | INFO |   Env | HO: 99.35% | Throughput: 13.42/user-min | Task: 64.16% | Resolved: 99.95% | Delay: 4.014s | Energy: 11095.34J | MEC fair: 0.601
+2026-09-16 14:04:31,544 | INFO |   Reward | Success: 114.54 | Load: 20.42 | Delay: -37.21 | Energy: -24.44 | TaskFail: -63.97 | Interrupt: -16.36 | HOFail: -0.10
+2026-09-16 14:04:59,272 | INFO | Update   10 | Steps:   5,120 | Episodes:    10 | EpReward:    -9.42 | FPS:  18202 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:04:59,272 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:04:59,272 | INFO |   Env | HO: 99.54% | Throughput: 14.16/user-min | Task: 67.56% | Resolved: 99.90% | Delay: 3.595s | Energy: 10812.21J | MEC fair: 0.338
+2026-09-16 14:04:59,272 | INFO |   Reward | Success: 120.86 | Load: 15.53 | Delay: -38.77 | Energy: -25.28 | TaskFail: -58.03 | Interrupt: -16.41 | HOFail: -0.05
+2026-09-16 14:05:27,128 | INFO | Update   11 | Steps:   5,632 | Episodes:    11 | EpReward:    -9.17 | FPS:  18209 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:05:27,128 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:05:27,128 | INFO |   Env | HO: 99.49% | Throughput: 13.45/user-min | Task: 64.40% | Resolved: 99.89% | Delay: 3.871s | Energy: 11060.09J | MEC fair: 0.610
+2026-09-16 14:05:27,128 | INFO |   Reward | Success: 114.80 | Load: 20.25 | Delay: -37.59 | Energy: -24.41 | TaskFail: -63.46 | Interrupt: -16.16 | HOFail: -0.07
+2026-09-16 14:05:55,488 | INFO | Update   12 | Steps:   6,144 | Episodes:    12 | EpReward:    -9.61 | FPS:  17997 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:05:55,489 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:05:55,489 | INFO |   Env | HO: 98.90% | Throughput: 14.17/user-min | Task: 66.89% | Resolved: 99.89% | Delay: 3.587s | Energy: 10416.64J | MEC fair: 0.533
+2026-09-16 14:05:55,489 | INFO |   Reward | Success: 120.91 | Load: 20.16 | Delay: -38.95 | Energy: -24.70 | TaskFail: -59.86 | Interrupt: -31.67 | HOFail: -0.30
+2026-09-16 14:06:23,621 | INFO | Update   13 | Steps:   6,656 | Episodes:    13 | EpReward:    -8.80 | FPS:   9313 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:06:23,621 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:06:23,621 | INFO |   Env | HO: 99.14% | Throughput: 14.62/user-min | Task: 69.44% | Resolved: 99.87% | Delay: 3.499s | Energy: 10423.98J | MEC fair: 0.447
+2026-09-16 14:06:23,621 | INFO |   Reward | Success: 124.77 | Load: 16.85 | Delay: -39.37 | Energy: -25.48 | TaskFail: -54.91 | Interrupt: -20.83 | HOFail: -0.13
+2026-09-16 14:06:51,626 | INFO | Update   14 | Steps:   7,168 | Episodes:    14 | EpReward:    -8.22 | FPS:  17965 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:06:51,627 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:06:51,627 | INFO |   Env | HO: 99.34% | Throughput: 13.87/user-min | Task: 66.00% | Resolved: 99.94% | Delay: 3.895s | Energy: 11046.28J | MEC fair: 0.541
+2026-09-16 14:06:51,627 | INFO |   Reward | Success: 118.34 | Load: 19.28 | Delay: -38.67 | Energy: -24.80 | TaskFail: -60.97 | Interrupt: -13.82 | HOFail: -0.09
+2026-09-16 14:07:19,613 | INFO | Update   15 | Steps:   7,680 | Episodes:    15 | EpReward:    -7.96 | FPS:  17800 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:07:19,613 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:07:19,613 | INFO |   Env | HO: 98.88% | Throughput: 13.78/user-min | Task: 65.41% | Resolved: 99.87% | Delay: 3.815s | Energy: 10824.33J | MEC fair: 0.446
+2026-09-16 14:07:19,613 | INFO |   Reward | Success: 117.63 | Load: 16.76 | Delay: -37.56 | Energy: -24.23 | TaskFail: -62.20 | Interrupt: -14.59 | HOFail: -0.13
+2026-09-16 14:07:47,480 | INFO | Update   16 | Steps:   8,192 | Episodes:    16 | EpReward:    -7.34 | FPS:  17991 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:07:47,480 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:07:47,480 | INFO |   Env | HO: 99.42% | Throughput: 13.99/user-min | Task: 66.64% | Resolved: 99.87% | Delay: 3.846s | Energy: 10802.24J | MEC fair: 0.539
+2026-09-16 14:07:47,480 | INFO |   Reward | Success: 119.40 | Load: 19.54 | Delay: -38.59 | Energy: -24.83 | TaskFail: -59.77 | Interrupt: -13.63 | HOFail: -0.07
+2026-09-16 14:08:15,633 | INFO | Update   17 | Steps:   8,704 | Episodes:    17 | EpReward:    -6.44 | FPS:  18527 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:08:15,633 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:08:15,633 | INFO |   Env | HO: 99.24% | Throughput: 14.66/user-min | Task: 70.09% | Resolved: 99.90% | Delay: 3.483s | Energy: 10204.72J | MEC fair: 0.461
+2026-09-16 14:08:15,633 | INFO |   Reward | Success: 125.11 | Load: 17.65 | Delay: -39.82 | Energy: -25.36 | TaskFail: -53.40 | Interrupt: -16.17 | HOFail: -0.11
+2026-09-16 14:08:43,739 | INFO | Update   18 | Steps:   9,216 | Episodes:    18 | EpReward:    -5.67 | FPS:  17849 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:08:43,739 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:08:43,739 | INFO |   Env | HO: 99.42% | Throughput: 14.56/user-min | Task: 69.81% | Resolved: 99.95% | Delay: 3.410s | Energy: 10279.27J | MEC fair: 0.400
+2026-09-16 14:08:43,739 | INFO |   Reward | Success: 124.26 | Load: 16.68 | Delay: -38.72 | Energy: -25.59 | TaskFail: -53.74 | Interrupt: -15.41 | HOFail: -0.07
+2026-09-16 14:09:11,932 | INFO | Update   19 | Steps:   9,728 | Episodes:    19 | EpReward:    -5.57 | FPS:  18120 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:09:11,932 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:09:11,932 | INFO |   Env | HO: 99.33% | Throughput: 13.60/user-min | Task: 64.87% | Resolved: 99.94% | Delay: 3.824s | Energy: 11023.14J | MEC fair: 0.540
+2026-09-16 14:09:11,932 | INFO |   Reward | Success: 116.06 | Load: 19.22 | Delay: -37.53 | Energy: -24.40 | TaskFail: -62.86 | Interrupt: -14.15 | HOFail: -0.09
+2026-09-16 14:09:39,981 | INFO | Update   20 | Steps:  10,240 | Episodes:    20 | EpReward:    -5.21 | FPS:  17936 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:09:39,981 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:09:39,981 | INFO |   Env | HO: 99.21% | Throughput: 13.69/user-min | Task: 65.59% | Resolved: 99.84% | Delay: 3.757s | Energy: 11023.32J | MEC fair: 0.536
+2026-09-16 14:09:39,981 | INFO |   Reward | Success: 116.86 | Load: 19.26 | Delay: -38.04 | Energy: -24.76 | TaskFail: -61.31 | Interrupt: -10.27 | HOFail: -0.09
+2026-09-16 14:10:08,109 | INFO | Update   21 | Steps:  10,752 | Episodes:    21 | EpReward:    -5.70 | FPS:  17634 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:10:08,109 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:10:08,110 | INFO |   Env | HO: 99.50% | Throughput: 12.89/user-min | Task: 60.04% | Resolved: 99.88% | Delay: 4.419s | Energy: 11461.49J | MEC fair: 0.453
+2026-09-16 14:10:08,110 | INFO |   Reward | Success: 110.03 | Load: 17.59 | Delay: -35.32 | Energy: -23.12 | TaskFail: -73.23 | Interrupt: -11.43 | HOFail: -0.06
+2026-09-16 14:10:36,152 | INFO | Update   22 | Steps:  11,264 | Episodes:    22 | EpReward:    -5.30 | FPS:  18108 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:10:36,152 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:10:36,152 | INFO |   Env | HO: 99.64% | Throughput: 13.88/user-min | Task: 65.82% | Resolved: 99.92% | Delay: 3.805s | Energy: 10867.62J | MEC fair: 0.551
+2026-09-16 14:10:36,152 | INFO |   Reward | Success: 118.43 | Load: 19.33 | Delay: -37.52 | Energy: -24.56 | TaskFail: -61.49 | Interrupt: -10.90 | HOFail: -0.04
+2026-09-16 14:11:04,277 | INFO | Update   23 | Steps:  11,776 | Episodes:    23 | EpReward:    -5.05 | FPS:  18074 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:11:04,277 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:11:04,277 | INFO |   Env | HO: 99.27% | Throughput: 13.92/user-min | Task: 65.65% | Resolved: 99.95% | Delay: 3.848s | Energy: 10870.77J | MEC fair: 0.582
+2026-09-16 14:11:04,277 | INFO |   Reward | Success: 118.80 | Load: 20.25 | Delay: -38.46 | Energy: -24.81 | TaskFail: -62.17 | Interrupt: -13.09 | HOFail: -0.10
+2026-09-16 14:11:32,386 | INFO | Update   24 | Steps:  12,288 | Episodes:    24 | EpReward:    -4.83 | FPS:  17709 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:11:32,386 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:11:32,386 | INFO |   Env | HO: 99.26% | Throughput: 14.44/user-min | Task: 68.86% | Resolved: 99.81% | Delay: 3.555s | Energy: 10260.53J | MEC fair: 0.414
+2026-09-16 14:11:32,386 | INFO |   Reward | Success: 123.26 | Load: 17.29 | Delay: -38.50 | Energy: -25.21 | TaskFail: -55.74 | Interrupt: -20.78 | HOFail: -0.10
+2026-09-16 14:12:00,640 | INFO | Update   25 | Steps:  12,800 | Episodes:    25 | EpReward:    -4.63 | FPS:  17700 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:12:00,640 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:12:00,640 | INFO |   Env | HO: 99.53% | Throughput: 14.31/user-min | Task: 68.28% | Resolved: 99.82% | Delay: 3.681s | Energy: 10247.48J | MEC fair: 0.448
+2026-09-16 14:12:00,640 | INFO |   Reward | Success: 122.14 | Load: 17.51 | Delay: -38.41 | Energy: -24.93 | TaskFail: -56.74 | Interrupt: -19.35 | HOFail: -0.07
+2026-09-16 14:12:28,827 | INFO | Update   26 | Steps:  13,312 | Episodes:    26 | EpReward:    -4.44 | FPS:  18164 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:12:28,827 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:12:28,827 | INFO |   Env | HO: 99.48% | Throughput: 13.83/user-min | Task: 65.16% | Resolved: 99.94% | Delay: 3.867s | Energy: 10909.23J | MEC fair: 0.639
+2026-09-16 14:12:28,827 | INFO |   Reward | Success: 118.06 | Load: 20.82 | Delay: -38.12 | Energy: -24.56 | TaskFail: -63.11 | Interrupt: -12.75 | HOFail: -0.07
+2026-09-16 14:12:56,961 | INFO | Update   27 | Steps:  13,824 | Episodes:    27 | EpReward:    -4.16 | FPS:  17988 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:12:56,962 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:12:56,962 | INFO |   Env | HO: 99.41% | Throughput: 13.91/user-min | Task: 66.55% | Resolved: 99.89% | Delay: 3.641s | Energy: 10621.12J | MEC fair: 0.588
+2026-09-16 14:12:56,962 | INFO |   Reward | Success: 118.66 | Load: 19.96 | Delay: -37.68 | Energy: -24.56 | TaskFail: -59.63 | Interrupt: -13.68 | HOFail: -0.07
+2026-09-16 14:13:25,057 | INFO | Update   28 | Steps:  14,336 | Episodes:    28 | EpReward:    -3.94 | FPS:  17970 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:13:25,057 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:13:25,057 | INFO |   Env | HO: 99.80% | Throughput: 13.78/user-min | Task: 66.45% | Resolved: 99.95% | Delay: 3.844s | Energy: 10658.80J | MEC fair: 0.544
+2026-09-16 14:13:25,057 | INFO |   Reward | Success: 117.60 | Load: 19.31 | Delay: -37.55 | Energy: -24.38 | TaskFail: -59.37 | Interrupt: -13.32 | HOFail: -0.02
+2026-09-16 14:13:53,126 | INFO | Update   29 | Steps:  14,848 | Episodes:    29 | EpReward:    -3.60 | FPS:  18021 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:13:53,126 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:13:53,126 | INFO |   Env | HO: 99.51% | Throughput: 14.08/user-min | Task: 66.87% | Resolved: 99.94% | Delay: 3.757s | Energy: 10734.21J | MEC fair: 0.594
+2026-09-16 14:13:53,127 | INFO |   Reward | Success: 120.14 | Load: 20.43 | Delay: -38.60 | Energy: -24.94 | TaskFail: -59.51 | Interrupt: -11.83 | HOFail: -0.05
+2026-09-16 14:14:21,327 | INFO | Update   30 | Steps:  15,360 | Episodes:    30 | EpReward:    -3.11 | FPS:  18092 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:14:21,327 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:14:21,327 | INFO |   Env | HO: 99.34% | Throughput: 14.79/user-min | Task: 70.84% | Resolved: 99.94% | Delay: 3.294s | Energy: 10158.83J | MEC fair: 0.430
+2026-09-16 14:14:21,327 | INFO |   Reward | Success: 126.20 | Load: 17.16 | Delay: -39.77 | Energy: -25.50 | TaskFail: -51.94 | Interrupt: -14.96 | HOFail: -0.07
+2026-09-16 14:14:49,623 | INFO | Update   31 | Steps:  15,872 | Episodes:    31 | EpReward:    -2.87 | FPS:  17484 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:14:49,623 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:14:49,623 | INFO |   Env | HO: 99.45% | Throughput: 13.91/user-min | Task: 65.95% | Resolved: 99.90% | Delay: 3.896s | Energy: 10532.45J | MEC fair: 0.515
+2026-09-16 14:14:49,623 | INFO |   Reward | Success: 118.71 | Load: 18.98 | Delay: -37.60 | Energy: -24.04 | TaskFail: -61.29 | Interrupt: -10.39 | HOFail: -0.06
+2026-09-16 14:15:17,724 | INFO | Update   32 | Steps:  16,384 | Episodes:    32 | EpReward:    -2.53 | FPS:  17523 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:15:17,724 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:15:17,724 | INFO |   Env | HO: 99.47% | Throughput: 15.13/user-min | Task: 71.49% | Resolved: 99.81% | Delay: 3.332s | Energy: 10118.01J | MEC fair: 0.445
+2026-09-16 14:15:17,724 | INFO |   Reward | Success: 129.09 | Load: 17.95 | Delay: -40.51 | Energy: -26.00 | TaskFail: -51.49 | Interrupt: -20.68 | HOFail: -0.06
+2026-09-16 14:15:45,894 | INFO | Update   33 | Steps:  16,896 | Episodes:    33 | EpReward:    -2.47 | FPS:  17899 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:15:45,894 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:15:45,894 | INFO |   Env | HO: 99.55% | Throughput: 13.55/user-min | Task: 65.16% | Resolved: 99.92% | Delay: 3.772s | Energy: 10654.53J | MEC fair: 0.590
+2026-09-16 14:15:45,894 | INFO |   Reward | Success: 115.66 | Load: 20.20 | Delay: -37.45 | Energy: -23.98 | TaskFail: -61.83 | Interrupt: -13.13 | HOFail: -0.05
+2026-09-16 14:16:14,020 | INFO | Update   34 | Steps:  17,408 | Episodes:    34 | EpReward:    -2.21 | FPS:  18065 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:16:14,020 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:16:14,020 | INFO |   Env | HO: 99.55% | Throughput: 14.36/user-min | Task: 67.86% | Resolved: 99.89% | Delay: 3.591s | Energy: 10386.20J | MEC fair: 0.395
+2026-09-16 14:16:14,020 | INFO |   Reward | Success: 122.51 | Load: 16.79 | Delay: -38.32 | Energy: -24.63 | TaskFail: -58.03 | Interrupt: -12.02 | HOFail: -0.05
+2026-09-16 14:16:42,390 | INFO | Update   35 | Steps:  17,920 | Episodes:    35 | EpReward:    -1.62 | FPS:  17971 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:16:42,390 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:16:42,390 | INFO |   Env | HO: 99.40% | Throughput: 15.36/user-min | Task: 73.48% | Resolved: 99.87% | Delay: 3.165s | Energy: 9646.42J | MEC fair: 0.457
+2026-09-16 14:16:42,390 | INFO |   Reward | Success: 131.11 | Load: 17.29 | Delay: -40.45 | Energy: -25.77 | TaskFail: -47.31 | Interrupt: -16.24 | HOFail: -0.09
+2026-09-16 14:17:10,612 | INFO | Update   36 | Steps:  18,432 | Episodes:    36 | EpReward:    -1.35 | FPS:  18232 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:17:10,612 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:17:10,612 | INFO |   Env | HO: 99.57% | Throughput: 14.15/user-min | Task: 67.37% | Resolved: 99.94% | Delay: 3.682s | Energy: 10675.69J | MEC fair: 0.595
+2026-09-16 14:17:10,612 | INFO |   Reward | Success: 120.74 | Load: 20.04 | Delay: -39.02 | Energy: -25.21 | TaskFail: -58.49 | Interrupt: -10.08 | HOFail: -0.05
+2026-09-16 14:17:38,808 | INFO | Update   37 | Steps:  18,944 | Episodes:    37 | EpReward:    -1.18 | FPS:  18557 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:17:38,808 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:17:38,808 | INFO |   Env | HO: 99.33% | Throughput: 14.17/user-min | Task: 67.89% | Resolved: 99.94% | Delay: 3.622s | Energy: 10317.39J | MEC fair: 0.363
+2026-09-16 14:17:38,808 | INFO |   Reward | Success: 120.89 | Load: 16.39 | Delay: -37.73 | Energy: -24.39 | TaskFail: -57.17 | Interrupt: -12.97 | HOFail: -0.06
+2026-09-16 14:18:06,724 | INFO | Update   38 | Steps:  19,456 | Episodes:    38 | EpReward:    -1.12 | FPS:  18466 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:18:06,724 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:18:06,725 | INFO |   Env | HO: 99.86% | Throughput: 13.75/user-min | Task: 65.78% | Resolved: 99.94% | Delay: 4.072s | Energy: 10802.09J | MEC fair: 0.529
+2026-09-16 14:18:06,725 | INFO |   Reward | Success: 117.31 | Load: 19.25 | Delay: -37.51 | Energy: -24.11 | TaskFail: -61.03 | Interrupt: -12.75 | HOFail: -0.01
+2026-09-16 14:18:35,048 | INFO | Update   39 | Steps:  19,968 | Episodes:    39 | EpReward:    -0.66 | FPS:  17706 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:18:35,048 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:18:35,048 | INFO |   Env | HO: 99.36% | Throughput: 15.46/user-min | Task: 72.66% | Resolved: 99.92% | Delay: 3.233s | Energy: 9739.46J | MEC fair: 0.479
+2026-09-16 14:18:35,048 | INFO |   Reward | Success: 131.91 | Load: 18.21 | Delay: -40.81 | Energy: -26.03 | TaskFail: -49.63 | Interrupt: -16.72 | HOFail: -0.09
+2026-09-16 14:19:03,265 | INFO | Update   40 | Steps:  20,480 | Episodes:    40 | EpReward:    -0.35 | FPS:  18232 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:19:03,266 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:19:03,266 | INFO |   Env | HO: 99.81% | Throughput: 14.70/user-min | Task: 69.24% | Resolved: 99.95% | Delay: 3.450s | Energy: 10483.10J | MEC fair: 0.381
+2026-09-16 14:19:03,266 | INFO |   Reward | Success: 125.40 | Load: 16.60 | Delay: -39.56 | Energy: -25.79 | TaskFail: -55.71 | Interrupt: -9.00 | HOFail: -0.02
+2026-09-16 14:19:31,411 | INFO | Update   41 | Steps:  20,992 | Episodes:    41 | EpReward:     0.03 | FPS:  17633 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:19:31,411 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:19:31,411 | INFO |   Env | HO: 99.57% | Throughput: 14.55/user-min | Task: 69.02% | Resolved: 99.86% | Delay: 3.438s | Energy: 10452.64J | MEC fair: 0.590
+2026-09-16 14:19:31,411 | INFO |   Reward | Success: 124.17 | Load: 20.00 | Delay: -39.35 | Energy: -25.44 | TaskFail: -55.74 | Interrupt: -8.47 | HOFail: -0.04
+2026-09-16 14:19:59,887 | INFO | Update   42 | Steps:  21,504 | Episodes:    42 | EpReward:     0.50 | FPS:  17622 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:19:59,887 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:19:59,888 | INFO |   Env | HO: 99.70% | Throughput: 15.21/user-min | Task: 73.33% | Resolved: 99.92% | Delay: 3.218s | Energy: 9532.85J | MEC fair: 0.477
+2026-09-16 14:19:59,888 | INFO |   Reward | Success: 129.83 | Load: 17.80 | Delay: -39.97 | Energy: -25.30 | TaskFail: -47.23 | Interrupt: -15.58 | HOFail: -0.04
+2026-09-16 14:20:28,276 | INFO | Update   43 | Steps:  22,016 | Episodes:    43 | EpReward:     1.01 | FPS:  17764 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:20:28,276 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:20:28,276 | INFO |   Env | HO: 99.54% | Throughput: 15.37/user-min | Task: 74.87% | Resolved: 99.93% | Delay: 3.081s | Energy: 9540.52J | MEC fair: 0.495
+2026-09-16 14:20:28,276 | INFO |   Reward | Success: 131.14 | Load: 18.39 | Delay: -40.90 | Energy: -26.12 | TaskFail: -44.03 | Interrupt: -15.72 | HOFail: -0.06
+2026-09-16 14:20:56,509 | INFO | Update   44 | Steps:  22,528 | Episodes:    44 | EpReward:     1.51 | FPS:  18306 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:20:56,509 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:20:56,509 | INFO |   Env | HO: 99.50% | Throughput: 15.30/user-min | Task: 72.85% | Resolved: 99.95% | Delay: 3.226s | Energy: 10186.00J | MEC fair: 0.580
+2026-09-16 14:20:56,509 | INFO |   Reward | Success: 130.54 | Load: 20.08 | Delay: -41.14 | Energy: -26.88 | TaskFail: -48.66 | Interrupt: -11.21 | HOFail: -0.05
+2026-09-16 14:21:24,694 | INFO | Update   45 | Steps:  23,040 | Episodes:    45 | EpReward:     1.84 | FPS:  18203 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:21:24,695 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:21:24,695 | INFO |   Env | HO: 99.66% | Throughput: 14.52/user-min | Task: 70.43% | Resolved: 99.95% | Delay: 3.443s | Energy: 10201.25J | MEC fair: 0.556
+2026-09-16 14:21:24,695 | INFO |   Reward | Success: 123.94 | Load: 19.69 | Delay: -39.61 | Energy: -25.27 | TaskFail: -52.03 | Interrupt: -9.97 | HOFail: -0.03
+2026-09-16 14:21:52,965 | INFO | Update   46 | Steps:  23,552 | Episodes:    46 | EpReward:     2.20 | FPS:  18000 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:21:52,965 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:21:52,965 | INFO |   Env | HO: 99.45% | Throughput: 14.70/user-min | Task: 70.15% | Resolved: 99.90% | Delay: 3.539s | Energy: 10191.67J | MEC fair: 0.576
+2026-09-16 14:21:52,965 | INFO |   Reward | Success: 125.40 | Load: 20.10 | Delay: -39.15 | Energy: -25.50 | TaskFail: -53.37 | Interrupt: -9.14 | HOFail: -0.05
+2026-09-16 14:22:21,066 | INFO | Update   47 | Steps:  24,064 | Episodes:    47 | EpReward:     2.43 | FPS:  17558 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:22:21,066 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:22:21,066 | INFO |   Env | HO: 99.51% | Throughput: 14.21/user-min | Task: 68.26% | Resolved: 99.89% | Delay: 3.625s | Energy: 10228.47J | MEC fair: 0.536
+2026-09-16 14:22:21,066 | INFO |   Reward | Success: 121.26 | Load: 19.59 | Delay: -38.06 | Energy: -24.59 | TaskFail: -56.37 | Interrupt: -8.64 | HOFail: -0.03
+2026-09-16 14:22:49,303 | INFO | Update   48 | Steps:  24,576 | Episodes:    48 | EpReward:     2.84 | FPS:  17954 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:22:49,303 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:22:49,303 | INFO |   Env | HO: 99.66% | Throughput: 15.35/user-min | Task: 73.42% | Resolved: 99.94% | Delay: 3.240s | Energy: 9940.47J | MEC fair: 0.368
+2026-09-16 14:22:49,303 | INFO |   Reward | Success: 131.03 | Load: 16.94 | Delay: -41.10 | Energy: -26.34 | TaskFail: -47.43 | Interrupt: -11.32 | HOFail: -0.03
+2026-09-16 14:23:12,878 | INFO | ----------------------------------------
+2026-09-16 14:23:12,878 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 14:24:00,676 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/best_model.pt
+2026-09-16 14:24:00,676 | INFO | 评估结果: 奖励 = 54.62 ± 6.98, 长度 = 512, 延迟 = 2.858s
+2026-09-16 14:24:00,677 | INFO | ----------------------------------------
+2026-09-16 14:24:05,519 | INFO | Update   49 | Steps:  25,088 | Episodes:    49 | EpReward:     3.10 | FPS:  18175 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:24:05,520 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:24:05,520 | INFO |   Env | HO: 99.47% | Throughput: 14.70/user-min | Task: 70.96% | Resolved: 99.90% | Delay: 3.470s | Energy: 10023.69J | MEC fair: 0.394
+2026-09-16 14:24:05,520 | INFO |   Reward | Success: 125.40 | Load: 17.00 | Delay: -38.53 | Energy: -25.17 | TaskFail: -51.31 | Interrupt: -11.39 | HOFail: -0.05
+2026-09-16 14:24:33,545 | INFO | Update   50 | Steps:  25,600 | Episodes:    50 | EpReward:     3.42 | FPS:  18260 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:24:33,545 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:24:33,545 | INFO |   Env | HO: 99.64% | Throughput: 14.90/user-min | Task: 70.95% | Resolved: 99.95% | Delay: 3.425s | Energy: 10249.76J | MEC fair: 0.593
+2026-09-16 14:24:33,545 | INFO |   Reward | Success: 127.14 | Load: 20.24 | Delay: -40.10 | Energy: -25.82 | TaskFail: -52.06 | Interrupt: -10.43 | HOFail: -0.02
+2026-09-16 14:25:01,872 | INFO | Update   51 | Steps:  26,112 | Episodes:    51 | EpReward:     3.87 | FPS:  17628 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:25:01,872 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:25:01,872 | INFO |   Env | HO: 99.62% | Throughput: 15.41/user-min | Task: 74.21% | Resolved: 99.84% | Delay: 3.217s | Energy: 9857.81J | MEC fair: 0.405
+2026-09-16 14:25:01,872 | INFO |   Reward | Success: 131.46 | Load: 16.70 | Delay: -40.76 | Energy: -26.49 | TaskFail: -45.69 | Interrupt: -8.66 | HOFail: -0.03
+2026-09-16 14:25:30,235 | INFO | Update   52 | Steps:  26,624 | Episodes:    52 | EpReward:     4.36 | FPS:  18301 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:25:30,235 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:25:30,235 | INFO |   Env | HO: 99.93% | Throughput: 15.59/user-min | Task: 73.69% | Resolved: 99.94% | Delay: 3.192s | Energy: 9998.55J | MEC fair: 0.596
+2026-09-16 14:25:30,235 | INFO |   Reward | Success: 133.00 | Load: 20.53 | Delay: -41.68 | Energy: -26.96 | TaskFail: -47.49 | Interrupt: -8.24 | HOFail: -0.01
+2026-09-16 14:25:58,510 | INFO | Update   53 | Steps:  27,136 | Episodes:    53 | EpReward:     4.75 | FPS:  17859 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:25:58,510 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:25:58,510 | INFO |   Env | HO: 99.68% | Throughput: 15.13/user-min | Task: 72.40% | Resolved: 99.89% | Delay: 3.315s | Energy: 10012.38J | MEC fair: 0.543
+2026-09-16 14:25:58,510 | INFO |   Reward | Success: 129.14 | Load: 19.69 | Delay: -40.36 | Energy: -26.27 | TaskFail: -49.23 | Interrupt: -7.94 | HOFail: -0.02
+2026-09-16 14:26:26,803 | INFO | Update   54 | Steps:  27,648 | Episodes:    54 | EpReward:     5.16 | FPS:  18152 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:26:26,804 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:26:26,804 | INFO |   Env | HO: 99.76% | Throughput: 15.63/user-min | Task: 72.86% | Resolved: 99.94% | Delay: 3.300s | Energy: 10117.86J | MEC fair: 0.545
+2026-09-16 14:26:26,804 | INFO |   Reward | Success: 133.37 | Load: 19.51 | Delay: -41.33 | Energy: -27.04 | TaskFail: -49.69 | Interrupt: -7.88 | HOFail: -0.02
+2026-09-16 14:26:55,118 | INFO | Update   55 | Steps:  28,160 | Episodes:    55 | EpReward:     5.60 | FPS:  18012 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:26:55,118 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:26:55,118 | INFO |   Env | HO: 99.73% | Throughput: 15.63/user-min | Task: 74.32% | Resolved: 99.89% | Delay: 3.127s | Energy: 9680.41J | MEC fair: 0.467
+2026-09-16 14:26:55,118 | INFO |   Reward | Success: 133.40 | Load: 17.38 | Delay: -40.70 | Energy: -26.23 | TaskFail: -46.09 | Interrupt: -8.49 | HOFail: -0.02
+2026-09-16 14:27:23,686 | INFO | Update   56 | Steps:  28,672 | Episodes:    56 | EpReward:     6.22 | FPS:  17800 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:27:23,687 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:27:23,687 | INFO |   Env | HO: 99.69% | Throughput: 16.89/user-min | Task: 80.32% | Resolved: 99.90% | Delay: 2.718s | Energy: 8839.99J | MEC fair: 0.462
+2026-09-16 14:27:23,687 | INFO |   Reward | Success: 144.14 | Load: 18.47 | Delay: -43.40 | Energy: -27.80 | TaskFail: -35.31 | Interrupt: -15.94 | HOFail: -0.04
+2026-09-16 14:27:52,052 | INFO | Update   57 | Steps:  29,184 | Episodes:    57 | EpReward:     6.78 | FPS:  17818 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:27:52,052 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:27:52,052 | INFO |   Env | HO: 99.79% | Throughput: 16.47/user-min | Task: 77.45% | Resolved: 99.92% | Delay: 2.933s | Energy: 9306.50J | MEC fair: 0.473
+2026-09-16 14:27:52,052 | INFO |   Reward | Success: 140.51 | Load: 17.49 | Delay: -42.04 | Energy: -26.91 | TaskFail: -40.91 | Interrupt: -9.94 | HOFail: -0.02
+2026-09-16 14:28:20,193 | INFO | Update   58 | Steps:  29,696 | Episodes:    58 | EpReward:     7.09 | FPS:  17917 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:28:20,193 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:28:20,193 | INFO |   Env | HO: 99.90% | Throughput: 15.65/user-min | Task: 72.40% | Resolved: 99.94% | Delay: 3.407s | Energy: 10252.27J | MEC fair: 0.486
+2026-09-16 14:28:20,193 | INFO |   Reward | Success: 133.51 | Load: 18.97 | Delay: -41.47 | Energy: -26.81 | TaskFail: -50.89 | Interrupt: -8.14 | HOFail: -0.01
+2026-09-16 14:28:48,349 | INFO | Update   59 | Steps:  30,208 | Episodes:    59 | EpReward:     7.49 | FPS:  17780 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:28:48,349 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:28:48,349 | INFO |   Env | HO: 99.80% | Throughput: 15.65/user-min | Task: 73.77% | Resolved: 99.87% | Delay: 3.212s | Energy: 9782.41J | MEC fair: 0.565
+2026-09-16 14:28:48,349 | INFO |   Reward | Success: 133.54 | Load: 19.69 | Delay: -41.42 | Energy: -26.68 | TaskFail: -47.49 | Interrupt: -7.32 | HOFail: -0.01
+2026-09-16 14:29:16,590 | INFO | Update   60 | Steps:  30,720 | Episodes:    60 | EpReward:     7.98 | FPS:  18092 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:29:16,591 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:29:16,591 | INFO |   Env | HO: 99.90% | Throughput: 16.06/user-min | Task: 77.09% | Resolved: 99.87% | Delay: 2.988s | Energy: 9350.07J | MEC fair: 0.391
+2026-09-16 14:29:16,591 | INFO |   Reward | Success: 137.09 | Load: 16.31 | Delay: -41.14 | Energy: -26.42 | TaskFail: -40.74 | Interrupt: -8.28 | HOFail: -0.01
+2026-09-16 14:29:44,756 | INFO | Update   61 | Steps:  31,232 | Episodes:    61 | EpReward:     8.44 | FPS:  17885 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:29:44,756 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:29:44,757 | INFO |   Env | HO: 99.66% | Throughput: 16.24/user-min | Task: 76.49% | Resolved: 99.91% | Delay: 3.045s | Energy: 9514.49J | MEC fair: 0.420
+2026-09-16 14:29:44,757 | INFO |   Reward | Success: 138.57 | Load: 17.58 | Delay: -41.62 | Energy: -27.01 | TaskFail: -42.60 | Interrupt: -8.47 | HOFail: -0.02
+2026-09-16 14:30:13,032 | INFO | Update   62 | Steps:  31,744 | Episodes:    62 | EpReward:     9.03 | FPS:  18095 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:30:13,032 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:30:13,032 | INFO |   Env | HO: 99.57% | Throughput: 16.73/user-min | Task: 80.34% | Resolved: 99.94% | Delay: 2.788s | Energy: 8808.58J | MEC fair: 0.438
+2026-09-16 14:30:13,032 | INFO |   Reward | Success: 142.80 | Load: 16.68 | Delay: -41.38 | Energy: -27.19 | TaskFail: -34.94 | Interrupt: -11.34 | HOFail: -0.02
+2026-09-16 14:30:41,474 | INFO | Update   63 | Steps:  32,256 | Episodes:    63 | EpReward:     9.55 | FPS:  18285 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:30:41,474 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:30:41,474 | INFO |   Env | HO: 99.56% | Throughput: 16.63/user-min | Task: 77.30% | Resolved: 99.94% | Delay: 3.002s | Energy: 9746.59J | MEC fair: 0.595
+2026-09-16 14:30:41,474 | INFO |   Reward | Success: 141.91 | Load: 20.51 | Delay: -43.20 | Energy: -28.66 | TaskFail: -41.69 | Interrupt: -6.68 | HOFail: -0.03
+2026-09-16 14:31:09,650 | INFO | Update   64 | Steps:  32,768 | Episodes:    64 | EpReward:     9.97 | FPS:  17651 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:31:09,650 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:31:09,650 | INFO |   Env | HO: 99.58% | Throughput: 15.92/user-min | Task: 75.94% | Resolved: 99.89% | Delay: 3.027s | Energy: 9612.51J | MEC fair: 0.529
+2026-09-16 14:31:09,650 | INFO |   Reward | Success: 135.89 | Load: 19.34 | Delay: -41.71 | Energy: -26.86 | TaskFail: -43.06 | Interrupt: -7.60 | HOFail: -0.02
+2026-09-16 14:31:38,011 | INFO | Update   65 | Steps:  33,280 | Episodes:    65 | EpReward:    10.45 | FPS:  18269 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:31:38,011 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:31:38,011 | INFO |   Env | HO: 100.00% | Throughput: 16.19/user-min | Task: 76.80% | Resolved: 99.94% | Delay: 3.098s | Energy: 9531.77J | MEC fair: 0.587
+2026-09-16 14:31:38,011 | INFO |   Reward | Success: 138.17 | Load: 20.25 | Delay: -41.98 | Energy: -27.50 | TaskFail: -41.74 | Interrupt: -5.80 | HOFail: 0.00
+2026-09-16 14:32:06,289 | INFO | Update   66 | Steps:  33,792 | Episodes:    66 | EpReward:    10.99 | FPS:  18209 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:32:06,289 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:32:06,289 | INFO |   Env | HO: 100.00% | Throughput: 16.53/user-min | Task: 79.08% | Resolved: 99.95% | Delay: 2.889s | Energy: 9084.84J | MEC fair: 0.494
+2026-09-16 14:32:06,289 | INFO |   Reward | Success: 141.09 | Load: 18.97 | Delay: -42.99 | Energy: -27.75 | TaskFail: -37.31 | Interrupt: -5.69 | HOFail: 0.00
+2026-09-16 14:32:34,707 | INFO | Update   67 | Steps:  34,304 | Episodes:    67 | EpReward:    11.64 | FPS:  17987 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:32:34,707 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:32:34,707 | INFO |   Env | HO: 99.87% | Throughput: 17.06/user-min | Task: 82.45% | Resolved: 99.87% | Delay: 2.639s | Energy: 8566.36J | MEC fair: 0.481
+2026-09-16 14:32:34,707 | INFO |   Reward | Success: 145.54 | Load: 17.99 | Delay: -43.13 | Energy: -27.95 | TaskFail: -30.97 | Interrupt: -7.05 | HOFail: -0.01
+2026-09-16 14:33:03,421 | INFO | Update   68 | Steps:  34,816 | Episodes:    68 | EpReward:    12.34 | FPS:  17573 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:33:03,421 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:33:03,421 | INFO |   Env | HO: 99.86% | Throughput: 17.92/user-min | Task: 84.55% | Resolved: 99.91% | Delay: 2.494s | Energy: 8492.02J | MEC fair: 0.465
+2026-09-16 14:33:03,421 | INFO |   Reward | Success: 152.94 | Load: 17.77 | Delay: -44.59 | Energy: -29.01 | TaskFail: -27.94 | Interrupt: -9.92 | HOFail: -0.01
+2026-09-16 14:33:32,041 | INFO | Update   69 | Steps:  35,328 | Episodes:    69 | EpReward:    13.08 | FPS:  17721 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:33:32,041 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:33:32,041 | INFO |   Env | HO: 100.00% | Throughput: 17.90/user-min | Task: 85.06% | Resolved: 99.90% | Delay: 2.460s | Energy: 8148.16J | MEC fair: 0.467
+2026-09-16 14:33:32,041 | INFO |   Reward | Success: 152.71 | Load: 17.45 | Delay: -43.92 | Energy: -28.32 | TaskFail: -26.83 | Interrupt: -7.55 | HOFail: 0.00
+2026-09-16 14:34:00,317 | INFO | Update   70 | Steps:  35,840 | Episodes:    70 | EpReward:    13.65 | FPS:  18163 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:34:00,317 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:34:00,317 | INFO |   Env | HO: 99.82% | Throughput: 17.12/user-min | Task: 80.49% | Resolved: 99.95% | Delay: 2.887s | Energy: 9190.63J | MEC fair: 0.574
+2026-09-16 14:34:00,317 | INFO |   Reward | Success: 146.09 | Load: 20.07 | Delay: -43.80 | Energy: -28.60 | TaskFail: -35.40 | Interrupt: -5.63 | HOFail: -0.01
+2026-09-16 14:34:28,630 | INFO | Update   71 | Steps:  36,352 | Episodes:    71 | EpReward:    14.17 | FPS:  17596 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:34:28,630 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:34:28,630 | INFO |   Env | HO: 99.66% | Throughput: 16.80/user-min | Task: 79.84% | Resolved: 99.95% | Delay: 2.842s | Energy: 9148.42J | MEC fair: 0.556
+2026-09-16 14:34:28,630 | INFO |   Reward | Success: 143.37 | Load: 19.68 | Delay: -43.14 | Energy: -28.21 | TaskFail: -36.20 | Interrupt: -5.02 | HOFail: -0.01
+2026-09-16 14:34:56,981 | INFO | Update   72 | Steps:  36,864 | Episodes:    72 | EpReward:    14.71 | FPS:  18134 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:34:56,981 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:34:56,981 | INFO |   Env | HO: 99.63% | Throughput: 16.85/user-min | Task: 80.68% | Resolved: 99.94% | Delay: 2.892s | Energy: 8953.83J | MEC fair: 0.650
+2026-09-16 14:34:56,981 | INFO |   Reward | Success: 143.80 | Load: 21.21 | Delay: -43.20 | Energy: -28.23 | TaskFail: -34.43 | Interrupt: -6.05 | HOFail: -0.01
+2026-09-16 14:35:25,425 | INFO | Update   73 | Steps:  37,376 | Episodes:    73 | EpReward:    15.36 | FPS:  18209 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:35:25,425 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:35:25,425 | INFO |   Env | HO: 99.60% | Throughput: 17.18/user-min | Task: 83.39% | Resolved: 99.94% | Delay: 2.638s | Energy: 8713.79J | MEC fair: 0.615
+2026-09-16 14:35:25,425 | INFO |   Reward | Success: 146.57 | Load: 20.75 | Delay: -43.95 | Energy: -28.86 | TaskFail: -29.20 | Interrupt: -3.32 | HOFail: -0.01
+2026-09-16 14:35:53,927 | INFO | Update   74 | Steps:  37,888 | Episodes:    74 | EpReward:    15.94 | FPS:  17874 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:35:53,927 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:35:53,927 | INFO |   Env | HO: 99.34% | Throughput: 17.52/user-min | Task: 82.40% | Resolved: 99.91% | Delay: 2.711s | Energy: 8529.45J | MEC fair: 0.485
+2026-09-16 14:35:53,927 | INFO |   Reward | Success: 149.54 | Load: 17.43 | Delay: -42.91 | Energy: -27.56 | TaskFail: -31.94 | Interrupt: -5.66 | HOFail: -0.02
+2026-09-16 14:36:22,288 | INFO | Update   75 | Steps:  38,400 | Episodes:    75 | EpReward:    16.50 | FPS:  17319 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:36:22,288 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:36:22,288 | INFO |   Env | HO: 100.00% | Throughput: 17.14/user-min | Task: 82.70% | Resolved: 99.89% | Delay: 2.716s | Energy: 8534.24J | MEC fair: 0.424
+2026-09-16 14:36:22,289 | INFO |   Reward | Success: 146.26 | Load: 16.75 | Delay: -43.06 | Energy: -27.59 | TaskFail: -30.60 | Interrupt: -3.73 | HOFail: 0.00
+2026-09-16 14:36:50,507 | INFO | Update   76 | Steps:  38,912 | Episodes:    76 | EpReward:    17.09 | FPS:  17669 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:36:50,508 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:36:50,508 | INFO |   Env | HO: 100.00% | Throughput: 17.28/user-min | Task: 83.51% | Resolved: 99.89% | Delay: 2.677s | Energy: 8623.16J | MEC fair: 0.576
+2026-09-16 14:36:50,508 | INFO |   Reward | Success: 147.46 | Load: 19.83 | Delay: -43.53 | Energy: -28.29 | TaskFail: -29.11 | Interrupt: -5.01 | HOFail: 0.00
+2026-09-16 14:37:19,010 | INFO | Update   77 | Steps:  39,424 | Episodes:    77 | EpReward:    17.82 | FPS:  17439 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:37:19,010 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:37:19,010 | INFO |   Env | HO: 100.00% | Throughput: 18.22/user-min | Task: 86.74% | Resolved: 99.98% | Delay: 2.377s | Energy: 7988.59J | MEC fair: 0.497
+2026-09-16 14:37:19,010 | INFO |   Reward | Success: 155.49 | Load: 17.17 | Delay: -43.37 | Energy: -28.48 | TaskFail: -23.77 | Interrupt: -4.06 | HOFail: 0.00
+2026-09-16 14:37:47,441 | INFO | Update   78 | Steps:  39,936 | Episodes:    78 | EpReward:    18.37 | FPS:  17748 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:37:47,441 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:37:47,441 | INFO |   Env | HO: 99.74% | Throughput: 17.68/user-min | Task: 83.50% | Resolved: 99.87% | Delay: 2.653s | Energy: 8871.81J | MEC fair: 0.575
+2026-09-16 14:37:47,441 | INFO |   Reward | Success: 150.86 | Load: 19.49 | Delay: -44.36 | Energy: -29.58 | TaskFail: -29.80 | Interrupt: -6.10 | HOFail: -0.01
+2026-09-16 14:38:15,826 | INFO | Update   79 | Steps:  40,448 | Episodes:    79 | EpReward:    19.01 | FPS:  18075 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:38:15,826 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:38:15,826 | INFO |   Env | HO: 100.00% | Throughput: 18.30/user-min | Task: 86.14% | Resolved: 99.92% | Delay: 2.424s | Energy: 8304.68J | MEC fair: 0.451
+2026-09-16 14:38:15,826 | INFO |   Reward | Success: 156.14 | Load: 17.12 | Delay: -44.60 | Energy: -29.83 | TaskFail: -25.11 | Interrupt: -4.88 | HOFail: 0.00
+2026-09-16 14:38:44,267 | INFO | Update   80 | Steps:  40,960 | Episodes:    80 | EpReward:    19.48 | FPS:  17990 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:38:44,267 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:38:44,267 | INFO |   Env | HO: 100.00% | Throughput: 17.05/user-min | Task: 82.39% | Resolved: 99.92% | Delay: 2.721s | Energy: 8672.46J | MEC fair: 0.435
+2026-09-16 14:38:44,267 | INFO |   Reward | Success: 145.49 | Load: 17.55 | Delay: -42.56 | Energy: -28.14 | TaskFail: -31.09 | Interrupt: -4.13 | HOFail: 0.00
+2026-09-16 14:39:12,610 | INFO | Update   81 | Steps:  41,472 | Episodes:    81 | EpReward:    19.97 | FPS:  17750 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:39:12,610 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:39:12,610 | INFO |   Env | HO: 99.66% | Throughput: 17.34/user-min | Task: 82.02% | Resolved: 99.91% | Delay: 2.706s | Energy: 8741.48J | MEC fair: 0.580
+2026-09-16 14:39:12,610 | INFO |   Reward | Success: 147.94 | Load: 20.10 | Delay: -43.58 | Energy: -28.57 | TaskFail: -32.43 | Interrupt: -4.33 | HOFail: -0.01
+2026-09-16 14:39:40,984 | INFO | Update   82 | Steps:  41,984 | Episodes:    82 | EpReward:    20.45 | FPS:  17909 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:39:40,984 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:39:40,984 | INFO |   Env | HO: 99.72% | Throughput: 17.43/user-min | Task: 83.32% | Resolved: 99.89% | Delay: 2.671s | Energy: 8850.89J | MEC fair: 0.549
+2026-09-16 14:39:40,984 | INFO |   Reward | Success: 148.71 | Load: 19.29 | Delay: -44.36 | Energy: -29.26 | TaskFail: -29.77 | Interrupt: -5.10 | HOFail: -0.01
+2026-09-16 14:40:09,318 | INFO | Update   83 | Steps:  42,496 | Episodes:    83 | EpReward:    20.95 | FPS:  18178 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:40:09,318 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:40:09,318 | INFO |   Env | HO: 100.00% | Throughput: 17.48/user-min | Task: 82.35% | Resolved: 99.95% | Delay: 2.823s | Energy: 8851.46J | MEC fair: 0.660
+2026-09-16 14:40:09,318 | INFO |   Reward | Success: 149.17 | Load: 20.97 | Delay: -43.86 | Energy: -28.88 | TaskFail: -31.97 | Interrupt: -3.60 | HOFail: 0.00
+2026-09-16 14:40:37,941 | INFO | Update   84 | Steps:  43,008 | Episodes:    84 | EpReward:    21.46 | FPS:  17800 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:40:37,941 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:40:37,941 | INFO |   Env | HO: 100.00% | Throughput: 17.52/user-min | Task: 83.67% | Resolved: 99.89% | Delay: 2.673s | Energy: 8544.42J | MEC fair: 0.492
+2026-09-16 14:40:37,941 | INFO |   Reward | Success: 149.49 | Load: 18.65 | Delay: -43.48 | Energy: -28.59 | TaskFail: -29.17 | Interrupt: -3.41 | HOFail: 0.00
+2026-09-16 14:41:06,375 | INFO | Update   85 | Steps:  43,520 | Episodes:    85 | EpReward:    22.00 | FPS:  17997 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:41:06,375 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:41:06,375 | INFO |   Env | HO: 100.00% | Throughput: 18.08/user-min | Task: 84.87% | Resolved: 99.92% | Delay: 2.542s | Energy: 8844.26J | MEC fair: 0.598
+2026-09-16 14:41:06,375 | INFO |   Reward | Success: 154.31 | Load: 20.01 | Delay: -45.64 | Energy: -30.40 | TaskFail: -27.51 | Interrupt: -3.14 | HOFail: 0.00
+2026-09-16 14:41:35,068 | INFO | Update   86 | Steps:  44,032 | Episodes:    86 | EpReward:    22.66 | FPS:  17314 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:41:35,068 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:41:35,068 | INFO |   Env | HO: 100.00% | Throughput: 18.71/user-min | Task: 90.17% | Resolved: 99.92% | Delay: 2.170s | Energy: 7639.32J | MEC fair: 0.502
+2026-09-16 14:41:35,068 | INFO |   Reward | Success: 159.69 | Load: 16.13 | Delay: -43.39 | Energy: -29.40 | TaskFail: -17.40 | Interrupt: -7.19 | HOFail: 0.00
+2026-09-16 14:42:03,591 | INFO | Update   87 | Steps:  44,544 | Episodes:    87 | EpReward:    23.30 | FPS:  17992 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:42:03,592 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:42:03,592 | INFO |   Env | HO: 100.00% | Throughput: 18.64/user-min | Task: 88.75% | Resolved: 99.95% | Delay: 2.230s | Energy: 7835.42J | MEC fair: 0.485
+2026-09-16 14:42:03,592 | INFO |   Reward | Success: 159.06 | Load: 16.45 | Delay: -43.44 | Energy: -29.24 | TaskFail: -20.17 | Interrupt: -4.00 | HOFail: 0.00
+2026-09-16 14:42:31,938 | INFO | Update   88 | Steps:  45,056 | Episodes:    88 | EpReward:    23.86 | FPS:  17735 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:42:31,938 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:42:31,939 | INFO |   Env | HO: 100.00% | Throughput: 18.10/user-min | Task: 86.74% | Resolved: 99.92% | Delay: 2.396s | Energy: 8362.88J | MEC fair: 0.579
+2026-09-16 14:42:31,939 | INFO |   Reward | Success: 154.43 | Load: 19.46 | Delay: -44.39 | Energy: -29.87 | TaskFail: -23.60 | Interrupt: -4.04 | HOFail: 0.00
+2026-09-16 14:43:00,093 | INFO | Update   89 | Steps:  45,568 | Episodes:    89 | EpReward:    24.25 | FPS:  18051 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:43:00,094 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:43:00,094 | INFO |   Env | HO: 100.00% | Throughput: 17.58/user-min | Task: 83.84% | Resolved: 99.97% | Delay: 2.598s | Energy: 8642.84J | MEC fair: 0.528
+2026-09-16 14:43:00,094 | INFO |   Reward | Success: 150.06 | Load: 19.03 | Delay: -43.36 | Energy: -29.35 | TaskFail: -28.91 | Interrupt: -8.04 | HOFail: 0.00
+2026-09-16 14:43:28,516 | INFO | Update   90 | Steps:  46,080 | Episodes:    90 | EpReward:    24.84 | FPS:  18304 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:43:28,516 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:43:28,516 | INFO |   Env | HO: 100.00% | Throughput: 18.49/user-min | Task: 88.55% | Resolved: 99.94% | Delay: 2.260s | Energy: 8106.42J | MEC fair: 0.457
+2026-09-16 14:43:28,516 | INFO |   Reward | Success: 157.80 | Load: 16.19 | Delay: -43.82 | Energy: -30.19 | TaskFail: -20.40 | Interrupt: -3.05 | HOFail: 0.00
+2026-09-16 14:43:56,712 | INFO | Update   91 | Steps:  46,592 | Episodes:    91 | EpReward:    25.34 | FPS:  17960 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:43:56,712 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:43:56,712 | INFO |   Env | HO: 100.00% | Throughput: 17.93/user-min | Task: 86.93% | Resolved: 99.94% | Delay: 2.367s | Energy: 8354.09J | MEC fair: 0.537
+2026-09-16 14:43:56,712 | INFO |   Reward | Success: 153.00 | Load: 18.56 | Delay: -43.13 | Energy: -29.80 | TaskFail: -23.00 | Interrupt: -4.86 | HOFail: 0.00
+2026-09-16 14:44:25,165 | INFO | Update   92 | Steps:  47,104 | Episodes:    92 | EpReward:    25.94 | FPS:  17905 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:44:25,165 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:44:25,165 | INFO |   Env | HO: 100.00% | Throughput: 18.70/user-min | Task: 90.61% | Resolved: 99.95% | Delay: 2.125s | Energy: 7548.84J | MEC fair: 0.470
+2026-09-16 14:44:25,165 | INFO |   Reward | Success: 159.60 | Load: 15.81 | Delay: -42.98 | Energy: -29.37 | TaskFail: -16.54 | Interrupt: -5.61 | HOFail: 0.00
+2026-09-16 14:44:53,449 | INFO | Update   93 | Steps:  47,616 | Episodes:    93 | EpReward:    26.36 | FPS:  17894 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:44:53,449 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:44:53,449 | INFO |   Env | HO: 100.00% | Throughput: 17.63/user-min | Task: 84.16% | Resolved: 99.94% | Delay: 2.535s | Energy: 8639.31J | MEC fair: 0.529
+2026-09-16 14:44:53,449 | INFO |   Reward | Success: 150.43 | Load: 18.43 | Delay: -43.24 | Energy: -29.31 | TaskFail: -28.31 | Interrupt: -3.43 | HOFail: 0.00
+2026-09-16 14:45:21,772 | INFO | Update   94 | Steps:  48,128 | Episodes:    94 | EpReward:    26.80 | FPS:  17676 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:45:21,772 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:45:21,772 | INFO |   Env | HO: 100.00% | Throughput: 17.93/user-min | Task: 85.88% | Resolved: 99.90% | Delay: 2.474s | Energy: 8287.48J | MEC fair: 0.416
+2026-09-16 14:45:21,772 | INFO |   Reward | Success: 152.97 | Load: 16.36 | Delay: -43.09 | Energy: -29.21 | TaskFail: -25.14 | Interrupt: -3.78 | HOFail: 0.00
+2026-09-16 14:45:50,157 | INFO | Update   95 | Steps:  48,640 | Episodes:    95 | EpReward:    27.34 | FPS:  17765 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:45:50,157 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:45:50,157 | INFO |   Env | HO: 100.00% | Throughput: 18.86/user-min | Task: 88.42% | Resolved: 99.95% | Delay: 2.264s | Energy: 7991.27J | MEC fair: 0.521
+2026-09-16 14:45:50,157 | INFO |   Reward | Success: 160.97 | Load: 16.94 | Delay: -44.13 | Energy: -29.84 | TaskFail: -21.09 | Interrupt: -5.18 | HOFail: 0.00
+2026-09-16 14:46:18,527 | INFO | Update   96 | Steps:  49,152 | Episodes:    96 | EpReward:    27.80 | FPS:  18125 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:46:18,527 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:46:18,527 | INFO |   Env | HO: 99.66% | Throughput: 18.13/user-min | Task: 85.89% | Resolved: 99.98% | Delay: 2.467s | Energy: 8641.79J | MEC fair: 0.624
+2026-09-16 14:46:18,527 | INFO |   Reward | Success: 154.74 | Load: 20.34 | Delay: -44.72 | Energy: -30.31 | TaskFail: -25.43 | Interrupt: -3.29 | HOFail: -0.01
+2026-09-16 14:46:46,764 | INFO | Update   97 | Steps:  49,664 | Episodes:    97 | EpReward:    28.12 | FPS:  17794 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:46:46,764 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:46:46,764 | INFO |   Env | HO: 100.00% | Throughput: 17.92/user-min | Task: 83.67% | Resolved: 99.98% | Delay: 2.645s | Energy: 8963.13J | MEC fair: 0.416
+2026-09-16 14:46:46,764 | INFO |   Reward | Success: 152.94 | Load: 15.86 | Delay: -44.08 | Energy: -29.97 | TaskFail: -29.86 | Interrupt: -6.17 | HOFail: 0.00
+2026-09-16 14:47:05,595 | INFO | ----------------------------------------
+2026-09-16 14:47:05,596 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 14:47:53,318 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/best_model.pt
+2026-09-16 14:47:53,318 | INFO | 评估结果: 奖励 = 76.22 ± 4.93, 长度 = 512, 延迟 = 2.297s
+2026-09-16 14:47:53,318 | INFO | ----------------------------------------
+2026-09-16 14:47:53,341 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/checkpoint_50000.pt
+2026-09-16 14:48:03,058 | INFO | Update   98 | Steps:  50,176 | Episodes:    98 | EpReward:    28.66 | FPS:  17925 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:48:03,058 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:48:03,058 | INFO |   Env | HO: 100.00% | Throughput: 18.92/user-min | Task: 91.25% | Resolved: 99.95% | Delay: 2.136s | Energy: 7683.89J | MEC fair: 0.500
+2026-09-16 14:48:03,058 | INFO |   Reward | Success: 161.46 | Load: 16.83 | Delay: -44.41 | Energy: -30.10 | TaskFail: -15.49 | Interrupt: -6.92 | HOFail: 0.00
+2026-09-16 14:48:31,469 | INFO | Update   99 | Steps:  50,688 | Episodes:    99 | EpReward:    29.19 | FPS:  18047 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:48:31,469 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:48:31,469 | INFO |   Env | HO: 100.00% | Throughput: 18.66/user-min | Task: 89.82% | Resolved: 99.90% | Delay: 2.209s | Energy: 7598.67J | MEC fair: 0.528
+2026-09-16 14:48:31,469 | INFO |   Reward | Success: 159.26 | Load: 17.90 | Delay: -43.71 | Energy: -29.43 | TaskFail: -18.06 | Interrupt: -4.93 | HOFail: 0.00
+2026-09-16 14:48:59,849 | INFO | Update  100 | Steps:  51,200 | Episodes:   100 | EpReward:    29.61 | FPS:  17388 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:48:59,849 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:48:59,849 | INFO |   Env | HO: 100.00% | Throughput: 18.10/user-min | Task: 86.51% | Resolved: 99.94% | Delay: 2.492s | Energy: 8088.38J | MEC fair: 0.503
+2026-09-16 14:48:59,849 | INFO |   Reward | Success: 154.46 | Load: 17.18 | Delay: -42.91 | Energy: -29.09 | TaskFail: -24.09 | Interrupt: -4.20 | HOFail: 0.00
+2026-09-16 14:49:28,534 | INFO | Update  101 | Steps:  51,712 | Episodes:   101 | EpReward:    30.60 | FPS:  17696 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:49:28,534 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:49:28,534 | INFO |   Env | HO: 100.00% | Throughput: 19.04/user-min | Task: 91.51% | Resolved: 99.94% | Delay: 2.069s | Energy: 7277.87J | MEC fair: 0.500
+2026-09-16 14:49:28,534 | INFO |   Reward | Success: 162.51 | Load: 16.63 | Delay: -43.94 | Energy: -29.78 | TaskFail: -15.09 | Interrupt: -5.84 | HOFail: 0.00
+2026-09-16 14:49:56,936 | INFO | Update  102 | Steps:  52,224 | Episodes:   102 | EpReward:    31.40 | FPS:  17425 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:49:56,936 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:49:56,936 | INFO |   Env | HO: 100.00% | Throughput: 17.91/user-min | Task: 85.04% | Resolved: 99.94% | Delay: 2.554s | Energy: 8529.29J | MEC fair: 0.526
+2026-09-16 14:49:56,936 | INFO |   Reward | Success: 152.86 | Load: 18.51 | Delay: -43.89 | Energy: -29.50 | TaskFail: -26.89 | Interrupt: -3.44 | HOFail: 0.00
+2026-09-16 14:50:25,527 | INFO | Update  103 | Steps:  52,736 | Episodes:   103 | EpReward:    32.35 | FPS:  17871 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:50:25,528 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:50:25,528 | INFO |   Env | HO: 100.00% | Throughput: 18.97/user-min | Task: 90.44% | Resolved: 99.95% | Delay: 2.186s | Energy: 7772.06J | MEC fair: 0.554
+2026-09-16 14:50:25,528 | INFO |   Reward | Success: 161.86 | Load: 18.08 | Delay: -45.16 | Energy: -30.49 | TaskFail: -17.11 | Interrupt: -5.44 | HOFail: 0.00
+2026-09-16 14:50:53,861 | INFO | Update  104 | Steps:  53,248 | Episodes:   104 | EpReward:    33.21 | FPS:  17669 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:50:53,861 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:50:53,861 | INFO |   Env | HO: 100.00% | Throughput: 18.53/user-min | Task: 87.58% | Resolved: 99.92% | Delay: 2.375s | Energy: 8543.13J | MEC fair: 0.622
+2026-09-16 14:50:53,861 | INFO |   Reward | Success: 158.11 | Load: 20.07 | Delay: -45.63 | Energy: -31.12 | TaskFail: -22.43 | Interrupt: -3.16 | HOFail: 0.00
+2026-09-16 14:51:22,239 | INFO | Update  105 | Steps:  53,760 | Episodes:   105 | EpReward:    34.00 | FPS:  17839 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:51:22,240 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:51:22,240 | INFO |   Env | HO: 100.00% | Throughput: 18.37/user-min | Task: 88.71% | Resolved: 99.95% | Delay: 2.280s | Energy: 7965.52J | MEC fair: 0.458
+2026-09-16 14:51:22,240 | INFO |   Reward | Success: 156.74 | Load: 17.36 | Delay: -43.62 | Energy: -29.68 | TaskFail: -19.94 | Interrupt: -3.79 | HOFail: 0.00
+2026-09-16 14:51:50,814 | INFO | Update  106 | Steps:  54,272 | Episodes:   106 | EpReward:    34.93 | FPS:  17400 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:51:50,814 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:51:50,815 | INFO |   Env | HO: 100.00% | Throughput: 19.05/user-min | Task: 88.59% | Resolved: 99.89% | Delay: 2.230s | Energy: 7687.90J | MEC fair: 0.494
+2026-09-16 14:51:50,815 | INFO |   Reward | Success: 162.57 | Load: 17.33 | Delay: -44.09 | Energy: -29.77 | TaskFail: -20.94 | Interrupt: -9.41 | HOFail: 0.00
+2026-09-16 14:52:19,161 | INFO | Update  107 | Steps:  54,784 | Episodes:   107 | EpReward:    35.77 | FPS:  17561 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:52:19,161 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:52:19,161 | INFO |   Env | HO: 100.00% | Throughput: 18.29/user-min | Task: 86.49% | Resolved: 99.91% | Delay: 2.451s | Energy: 8492.53J | MEC fair: 0.633
+2026-09-16 14:52:19,161 | INFO |   Reward | Success: 156.09 | Load: 20.07 | Delay: -44.54 | Energy: -30.47 | TaskFail: -24.37 | Interrupt: -4.58 | HOFail: 0.00
+2026-09-16 14:52:47,826 | INFO | Update  108 | Steps:  55,296 | Episodes:   108 | EpReward:    36.63 | FPS:  17576 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:52:47,827 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:52:47,827 | INFO |   Env | HO: 100.00% | Throughput: 18.99/user-min | Task: 91.51% | Resolved: 99.90% | Delay: 2.154s | Energy: 7454.18J | MEC fair: 0.528
+2026-09-16 14:52:47,827 | INFO |   Reward | Success: 162.06 | Load: 17.91 | Delay: -44.65 | Energy: -30.09 | TaskFail: -15.03 | Interrupt: -7.81 | HOFail: 0.00
+2026-09-16 14:53:16,163 | INFO | Update  109 | Steps:  55,808 | Episodes:   109 | EpReward:    37.43 | FPS:  17852 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:53:16,163 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:53:16,163 | INFO |   Env | HO: 100.00% | Throughput: 18.15/user-min | Task: 86.69% | Resolved: 99.95% | Delay: 2.452s | Energy: 8565.03J | MEC fair: 0.582
+2026-09-16 14:53:16,163 | INFO |   Reward | Success: 154.86 | Load: 19.21 | Delay: -44.28 | Energy: -30.55 | TaskFail: -23.77 | Interrupt: -3.01 | HOFail: 0.00
+2026-09-16 14:53:44,439 | INFO | Update  110 | Steps:  56,320 | Episodes:   110 | EpReward:    38.13 | FPS:  17779 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:53:44,440 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:53:44,440 | INFO |   Env | HO: 100.00% | Throughput: 17.90/user-min | Task: 86.29% | Resolved: 99.89% | Delay: 2.428s | Energy: 8218.76J | MEC fair: 0.427
+2026-09-16 14:53:44,440 | INFO |   Reward | Success: 152.71 | Load: 15.92 | Delay: -42.67 | Energy: -29.23 | TaskFail: -24.26 | Interrupt: -4.59 | HOFail: 0.00
+2026-09-16 14:54:12,746 | INFO | Update  111 | Steps:  56,832 | Episodes:   111 | EpReward:    38.95 | FPS:  18171 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:54:12,746 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:54:12,746 | INFO |   Env | HO: 100.00% | Throughput: 18.56/user-min | Task: 88.35% | Resolved: 99.94% | Delay: 2.335s | Energy: 8273.31J | MEC fair: 0.548
+2026-09-16 14:54:12,746 | INFO |   Reward | Success: 158.34 | Load: 18.25 | Delay: -44.59 | Energy: -30.82 | TaskFail: -20.89 | Interrupt: -4.53 | HOFail: 0.00
+2026-09-16 14:54:41,030 | INFO | Update  112 | Steps:  57,344 | Episodes:   112 | EpReward:    39.88 | FPS:  17378 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:54:41,030 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:54:41,030 | INFO |   Env | HO: 100.00% | Throughput: 18.79/user-min | Task: 88.90% | Resolved: 99.89% | Delay: 2.314s | Energy: 8325.08J | MEC fair: 0.523
+2026-09-16 14:54:41,030 | INFO |   Reward | Success: 160.37 | Load: 17.92 | Delay: -45.14 | Energy: -31.39 | TaskFail: -20.03 | Interrupt: -3.54 | HOFail: 0.00
+2026-09-16 14:55:09,488 | INFO | Update  113 | Steps:  57,856 | Episodes:   113 | EpReward:    40.56 | FPS:  17709 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:55:09,488 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:55:09,488 | INFO |   Env | HO: 100.00% | Throughput: 18.39/user-min | Task: 86.87% | Resolved: 99.89% | Delay: 2.403s | Energy: 8493.28J | MEC fair: 0.434
+2026-09-16 14:55:09,488 | INFO |   Reward | Success: 156.89 | Load: 16.66 | Delay: -44.85 | Energy: -30.68 | TaskFail: -23.71 | Interrupt: -4.84 | HOFail: 0.00
+2026-09-16 14:55:37,939 | INFO | Update  114 | Steps:  58,368 | Episodes:   114 | EpReward:    41.33 | FPS:  17951 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:55:37,939 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:55:37,939 | INFO |   Env | HO: 100.00% | Throughput: 18.79/user-min | Task: 88.55% | Resolved: 99.89% | Delay: 2.293s | Energy: 8256.98J | MEC fair: 0.469
+2026-09-16 14:55:37,939 | INFO |   Reward | Success: 160.34 | Load: 16.38 | Delay: -44.50 | Energy: -30.60 | TaskFail: -20.74 | Interrupt: -4.83 | HOFail: 0.00
+2026-09-16 14:56:06,261 | INFO | Update  115 | Steps:  58,880 | Episodes:   115 | EpReward:    42.10 | FPS:  17386 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:56:06,261 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:56:06,262 | INFO |   Env | HO: 100.00% | Throughput: 18.45/user-min | Task: 87.85% | Resolved: 99.95% | Delay: 2.329s | Energy: 8284.74J | MEC fair: 0.416
+2026-09-16 14:56:06,262 | INFO |   Reward | Success: 157.40 | Load: 15.60 | Delay: -43.99 | Energy: -30.60 | TaskFail: -21.77 | Interrupt: -4.20 | HOFail: 0.00
+2026-09-16 14:56:34,570 | INFO | Update  116 | Steps:  59,392 | Episodes:   116 | EpReward:    42.79 | FPS:  17553 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:56:34,570 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:56:34,570 | INFO |   Env | HO: 100.00% | Throughput: 18.50/user-min | Task: 87.24% | Resolved: 99.91% | Delay: 2.342s | Energy: 8350.06J | MEC fair: 0.432
+2026-09-16 14:56:34,570 | INFO |   Reward | Success: 157.89 | Load: 15.52 | Delay: -44.08 | Energy: -30.51 | TaskFail: -23.09 | Interrupt: -4.65 | HOFail: 0.00
+2026-09-16 14:57:02,893 | INFO | Update  117 | Steps:  59,904 | Episodes:   117 | EpReward:    43.40 | FPS:  17937 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:57:02,893 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:57:02,893 | INFO |   Env | HO: 99.73% | Throughput: 18.27/user-min | Task: 86.91% | Resolved: 99.95% | Delay: 2.385s | Energy: 8491.95J | MEC fair: 0.592
+2026-09-16 14:57:02,893 | INFO |   Reward | Success: 155.91 | Load: 19.35 | Delay: -44.84 | Energy: -30.72 | TaskFail: -23.49 | Interrupt: -7.31 | HOFail: -0.01
+2026-09-16 14:57:31,599 | INFO | Update  118 | Steps:  60,416 | Episodes:   118 | EpReward:    44.20 | FPS:  17211 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:57:31,599 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:57:31,599 | INFO |   Env | HO: 100.00% | Throughput: 19.58/user-min | Task: 92.78% | Resolved: 99.97% | Delay: 1.990s | Energy: 7488.18J | MEC fair: 0.524
+2026-09-16 14:57:31,599 | INFO |   Reward | Success: 167.06 | Load: 16.69 | Delay: -44.97 | Energy: -31.28 | TaskFail: -13.00 | Interrupt: -7.11 | HOFail: 0.00
+2026-09-16 14:58:00,001 | INFO | Update  119 | Steps:  60,928 | Episodes:   119 | EpReward:    44.99 | FPS:  17739 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:58:00,001 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:58:00,001 | INFO |   Env | HO: 100.00% | Throughput: 18.53/user-min | Task: 87.87% | Resolved: 99.97% | Delay: 2.320s | Energy: 8430.99J | MEC fair: 0.560
+2026-09-16 14:58:00,001 | INFO |   Reward | Success: 158.11 | Load: 18.79 | Delay: -44.70 | Energy: -30.92 | TaskFail: -21.83 | Interrupt: -3.81 | HOFail: 0.00
+2026-09-16 14:58:28,311 | INFO | Update  120 | Steps:  61,440 | Episodes:   120 | EpReward:    45.68 | FPS:  17994 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:58:28,311 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:58:28,311 | INFO |   Env | HO: 100.00% | Throughput: 18.51/user-min | Task: 87.00% | Resolved: 99.95% | Delay: 2.394s | Energy: 8695.86J | MEC fair: 0.500
+2026-09-16 14:58:28,312 | INFO |   Reward | Success: 157.97 | Load: 17.62 | Delay: -45.12 | Energy: -31.27 | TaskFail: -23.60 | Interrupt: -4.88 | HOFail: 0.00
+2026-09-16 14:58:56,690 | INFO | Update  121 | Steps:  61,952 | Episodes:   121 | EpReward:    46.59 | FPS:  17985 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:58:56,690 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:58:56,690 | INFO |   Env | HO: 100.00% | Throughput: 18.44/user-min | Task: 88.03% | Resolved: 99.90% | Delay: 2.354s | Energy: 8370.37J | MEC fair: 0.514
+2026-09-16 14:58:56,690 | INFO |   Reward | Success: 157.34 | Load: 17.84 | Delay: -44.29 | Energy: -31.04 | TaskFail: -21.40 | Interrupt: -2.92 | HOFail: 0.00
+2026-09-16 14:59:24,954 | INFO | Update  122 | Steps:  62,464 | Episodes:   122 | EpReward:    47.21 | FPS:  17900 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:59:24,954 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:59:24,954 | INFO |   Env | HO: 100.00% | Throughput: 17.85/user-min | Task: 85.06% | Resolved: 99.89% | Delay: 2.503s | Energy: 8569.26J | MEC fair: 0.498
+2026-09-16 14:59:24,954 | INFO |   Reward | Success: 152.29 | Load: 17.75 | Delay: -43.29 | Energy: -30.03 | TaskFail: -26.74 | Interrupt: -5.23 | HOFail: 0.00
+2026-09-16 14:59:53,248 | INFO | Update  123 | Steps:  62,976 | Episodes:   123 | EpReward:    47.94 | FPS:  17307 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 14:59:53,248 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 14:59:53,248 | INFO |   Env | HO: 100.00% | Throughput: 18.20/user-min | Task: 87.10% | Resolved: 99.97% | Delay: 2.405s | Energy: 8197.48J | MEC fair: 0.494
+2026-09-16 14:59:53,248 | INFO |   Reward | Success: 155.31 | Load: 17.28 | Delay: -42.73 | Energy: -29.70 | TaskFail: -23.00 | Interrupt: -3.25 | HOFail: 0.00
+2026-09-16 15:00:21,643 | INFO | Update  124 | Steps:  63,488 | Episodes:   124 | EpReward:    48.67 | FPS:  17716 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:00:21,644 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:00:21,644 | INFO |   Env | HO: 100.00% | Throughput: 18.64/user-min | Task: 86.82% | Resolved: 99.92% | Delay: 2.461s | Energy: 8729.84J | MEC fair: 0.559
+2026-09-16 15:00:21,644 | INFO |   Reward | Success: 159.09 | Load: 19.36 | Delay: -46.25 | Energy: -31.58 | TaskFail: -24.14 | Interrupt: -3.49 | HOFail: 0.00
+2026-09-16 15:00:50,348 | INFO | Update  125 | Steps:  64,000 | Episodes:   125 | EpReward:    49.54 | FPS:  17754 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:00:50,348 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:00:50,348 | INFO |   Env | HO: 100.00% | Throughput: 19.24/user-min | Task: 92.44% | Resolved: 99.97% | Delay: 2.003s | Energy: 7113.45J | MEC fair: 0.512
+2026-09-16 15:00:50,348 | INFO |   Reward | Success: 164.14 | Load: 17.03 | Delay: -42.82 | Energy: -29.88 | TaskFail: -13.43 | Interrupt: -7.99 | HOFail: 0.00
+2026-09-16 15:01:18,657 | INFO | Update  126 | Steps:  64,512 | Episodes:   126 | EpReward:    50.24 | FPS:  17529 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:01:18,657 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:01:18,657 | INFO |   Env | HO: 100.00% | Throughput: 18.45/user-min | Task: 86.84% | Resolved: 99.95% | Delay: 2.452s | Energy: 8598.63J | MEC fair: 0.436
+2026-09-16 15:01:18,657 | INFO |   Reward | Success: 157.40 | Load: 15.91 | Delay: -44.71 | Energy: -30.97 | TaskFail: -23.86 | Interrupt: -3.38 | HOFail: 0.00
+2026-09-16 15:01:47,080 | INFO | Update  127 | Steps:  65,024 | Episodes:   127 | EpReward:    51.01 | FPS:  17804 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:01:47,080 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:01:47,080 | INFO |   Env | HO: 100.00% | Throughput: 18.86/user-min | Task: 89.57% | Resolved: 99.89% | Delay: 2.203s | Energy: 8022.31J | MEC fair: 0.449
+2026-09-16 15:01:47,080 | INFO |   Reward | Success: 160.91 | Load: 16.46 | Delay: -44.34 | Energy: -30.97 | TaskFail: -18.74 | Interrupt: -3.41 | HOFail: 0.00
+2026-09-16 15:02:15,460 | INFO | Update  128 | Steps:  65,536 | Episodes:   128 | EpReward:    51.62 | FPS:  18116 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:02:15,460 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:02:15,460 | INFO |   Env | HO: 100.00% | Throughput: 18.03/user-min | Task: 85.19% | Resolved: 99.95% | Delay: 2.518s | Energy: 8648.97J | MEC fair: 0.408
+2026-09-16 15:02:15,460 | INFO |   Reward | Success: 153.89 | Load: 15.87 | Delay: -43.76 | Energy: -30.23 | TaskFail: -26.74 | Interrupt: -6.33 | HOFail: 0.00
+2026-09-16 15:02:43,879 | INFO | Update  129 | Steps:  66,048 | Episodes:   129 | EpReward:    52.38 | FPS:  17917 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:02:43,879 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:02:43,879 | INFO |   Env | HO: 100.00% | Throughput: 19.00/user-min | Task: 89.91% | Resolved: 99.95% | Delay: 2.241s | Energy: 8343.44J | MEC fair: 0.613
+2026-09-16 15:02:43,879 | INFO |   Reward | Success: 162.17 | Load: 19.96 | Delay: -46.22 | Energy: -32.21 | TaskFail: -18.20 | Interrupt: -3.07 | HOFail: 0.00
+2026-09-16 15:03:12,434 | INFO | Update  130 | Steps:  66,560 | Episodes:   130 | EpReward:    53.13 | FPS:   9512 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:03:12,434 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:03:12,434 | INFO |   Env | HO: 100.00% | Throughput: 19.05/user-min | Task: 92.10% | Resolved: 99.94% | Delay: 2.063s | Energy: 7412.08J | MEC fair: 0.537
+2026-09-16 15:03:12,434 | INFO |   Reward | Success: 162.60 | Load: 16.96 | Delay: -43.29 | Energy: -30.43 | TaskFail: -13.94 | Interrupt: -5.84 | HOFail: 0.00
+2026-09-16 15:03:40,876 | INFO | Update  131 | Steps:  67,072 | Episodes:   131 | EpReward:    53.83 | FPS:  17780 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:03:40,876 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:03:40,876 | INFO |   Env | HO: 100.00% | Throughput: 18.60/user-min | Task: 87.71% | Resolved: 99.91% | Delay: 2.373s | Energy: 8137.63J | MEC fair: 0.475
+2026-09-16 15:03:40,876 | INFO |   Reward | Success: 158.69 | Load: 15.70 | Delay: -43.71 | Energy: -30.16 | TaskFail: -22.23 | Interrupt: -3.86 | HOFail: 0.00
+2026-09-16 15:04:09,534 | INFO | Update  132 | Steps:  67,584 | Episodes:   132 | EpReward:    54.58 | FPS:  17475 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:04:09,534 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:04:09,534 | INFO |   Env | HO: 100.00% | Throughput: 19.18/user-min | Task: 91.90% | Resolved: 99.95% | Delay: 2.030s | Energy: 7398.92J | MEC fair: 0.495
+2026-09-16 15:04:09,534 | INFO |   Reward | Success: 163.63 | Load: 15.32 | Delay: -43.05 | Energy: -30.35 | TaskFail: -14.43 | Interrupt: -8.25 | HOFail: 0.00
+2026-09-16 15:04:38,095 | INFO | Update  133 | Steps:  68,096 | Episodes:   133 | EpReward:    55.41 | FPS:  17763 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:04:38,095 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:04:38,095 | INFO |   Env | HO: 100.00% | Throughput: 19.17/user-min | Task: 91.47% | Resolved: 99.94% | Delay: 2.115s | Energy: 7393.40J | MEC fair: 0.499
+2026-09-16 15:04:38,095 | INFO |   Reward | Success: 163.57 | Load: 15.61 | Delay: -42.73 | Energy: -30.20 | TaskFail: -15.26 | Interrupt: -8.21 | HOFail: 0.00
+2026-09-16 15:05:06,297 | INFO | Update  134 | Steps:  68,608 | Episodes:   134 | EpReward:    56.02 | FPS:  17774 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:05:06,297 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:05:06,297 | INFO |   Env | HO: 100.00% | Throughput: 18.02/user-min | Task: 85.87% | Resolved: 99.90% | Delay: 2.441s | Energy: 8562.24J | MEC fair: 0.508
+2026-09-16 15:05:06,297 | INFO |   Reward | Success: 153.80 | Load: 17.98 | Delay: -43.63 | Energy: -30.20 | TaskFail: -25.31 | Interrupt: -5.26 | HOFail: 0.00
+2026-09-16 15:05:34,574 | INFO | Update  135 | Steps:  69,120 | Episodes:   135 | EpReward:    56.56 | FPS:  17888 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:05:34,574 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:05:34,574 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 87.49% | Resolved: 99.92% | Delay: 2.299s | Energy: 8488.48J | MEC fair: 0.367
+2026-09-16 15:05:34,574 | INFO |   Reward | Success: 158.63 | Load: 14.69 | Delay: -43.78 | Energy: -31.05 | TaskFail: -22.69 | Interrupt: -3.71 | HOFail: 0.00
+2026-09-16 15:06:03,048 | INFO | Update  136 | Steps:  69,632 | Episodes:   136 | EpReward:    57.33 | FPS:  17626 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:06:03,048 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:06:03,048 | INFO |   Env | HO: 100.00% | Throughput: 19.14/user-min | Task: 91.62% | Resolved: 99.89% | Delay: 2.048s | Energy: 7620.42J | MEC fair: 0.493
+2026-09-16 15:06:03,048 | INFO |   Reward | Success: 163.29 | Load: 15.26 | Delay: -43.81 | Energy: -30.71 | TaskFail: -14.94 | Interrupt: -4.23 | HOFail: 0.00
+2026-09-16 15:06:31,488 | INFO | Update  137 | Steps:  70,144 | Episodes:   137 | EpReward:    58.01 | FPS:  18133 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:06:31,488 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:06:31,488 | INFO |   Env | HO: 100.00% | Throughput: 18.02/user-min | Task: 87.21% | Resolved: 99.97% | Delay: 2.353s | Energy: 8257.62J | MEC fair: 0.568
+2026-09-16 15:06:31,488 | INFO |   Reward | Success: 153.77 | Load: 18.95 | Delay: -43.36 | Energy: -30.16 | TaskFail: -22.54 | Interrupt: -3.20 | HOFail: 0.00
+2026-09-16 15:06:59,932 | INFO | Update  138 | Steps:  70,656 | Episodes:   138 | EpReward:    58.88 | FPS:  17594 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:06:59,933 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:06:59,933 | INFO |   Env | HO: 100.00% | Throughput: 19.25/user-min | Task: 91.02% | Resolved: 99.92% | Delay: 2.124s | Energy: 8162.77J | MEC fair: 0.614
+2026-09-16 15:06:59,933 | INFO |   Reward | Success: 164.26 | Load: 18.95 | Delay: -45.03 | Energy: -32.18 | TaskFail: -16.20 | Interrupt: -2.15 | HOFail: 0.00
+2026-09-16 15:07:28,193 | INFO | Update  139 | Steps:  71,168 | Episodes:   139 | EpReward:    59.46 | FPS:  18066 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:07:28,193 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:07:28,193 | INFO |   Env | HO: 100.00% | Throughput: 18.41/user-min | Task: 88.14% | Resolved: 99.94% | Delay: 2.317s | Energy: 8443.13J | MEC fair: 0.520
+2026-09-16 15:07:28,193 | INFO |   Reward | Success: 157.06 | Load: 17.77 | Delay: -44.21 | Energy: -30.93 | TaskFail: -21.14 | Interrupt: -3.89 | HOFail: 0.00
+2026-09-16 15:07:56,508 | INFO | Update  140 | Steps:  71,680 | Episodes:   140 | EpReward:    60.04 | FPS:  17306 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:07:56,508 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:07:56,508 | INFO |   Env | HO: 100.00% | Throughput: 17.89/user-min | Task: 86.02% | Resolved: 99.90% | Delay: 2.457s | Energy: 8506.95J | MEC fair: 0.555
+2026-09-16 15:07:56,508 | INFO |   Reward | Success: 152.66 | Load: 17.79 | Delay: -42.56 | Energy: -30.07 | TaskFail: -24.80 | Interrupt: -3.17 | HOFail: 0.00
+2026-09-16 15:08:25,025 | INFO | Update  141 | Steps:  72,192 | Episodes:   141 | EpReward:    60.75 | FPS:  17940 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:08:25,026 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:08:25,026 | INFO |   Env | HO: 100.00% | Throughput: 19.48/user-min | Task: 92.75% | Resolved: 99.89% | Delay: 2.035s | Energy: 7702.57J | MEC fair: 0.487
+2026-09-16 15:08:25,026 | INFO |   Reward | Success: 166.23 | Load: 15.01 | Delay: -44.04 | Energy: -31.56 | TaskFail: -13.00 | Interrupt: -5.86 | HOFail: 0.00
+2026-09-16 15:08:53,415 | INFO | Update  142 | Steps:  72,704 | Episodes:   142 | EpReward:    61.29 | FPS:  18105 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:08:53,415 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:08:53,415 | INFO |   Env | HO: 100.00% | Throughput: 18.34/user-min | Task: 87.23% | Resolved: 99.95% | Delay: 2.361s | Energy: 8432.51J | MEC fair: 0.500
+2026-09-16 15:08:53,415 | INFO |   Reward | Success: 156.54 | Load: 18.14 | Delay: -44.09 | Energy: -30.77 | TaskFail: -22.91 | Interrupt: -3.82 | HOFail: 0.00
+2026-09-16 15:09:21,769 | INFO | Update  143 | Steps:  73,216 | Episodes:   143 | EpReward:    61.85 | FPS:  17791 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:09:21,769 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:09:21,769 | INFO |   Env | HO: 100.00% | Throughput: 18.87/user-min | Task: 89.37% | Resolved: 99.95% | Delay: 2.194s | Energy: 8084.89J | MEC fair: 0.442
+2026-09-16 15:09:21,769 | INFO |   Reward | Success: 161.00 | Load: 15.50 | Delay: -44.30 | Energy: -31.04 | TaskFail: -19.14 | Interrupt: -3.11 | HOFail: 0.00
+2026-09-16 15:09:50,061 | INFO | Update  144 | Steps:  73,728 | Episodes:   144 | EpReward:    62.40 | FPS:  17583 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:09:50,061 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:09:50,062 | INFO |   Env | HO: 100.00% | Throughput: 18.78/user-min | Task: 89.06% | Resolved: 99.90% | Delay: 2.242s | Energy: 8412.54J | MEC fair: 0.513
+2026-09-16 15:09:50,062 | INFO |   Reward | Success: 160.26 | Load: 17.45 | Delay: -44.38 | Energy: -31.31 | TaskFail: -19.69 | Interrupt: -4.45 | HOFail: 0.00
+2026-09-16 15:10:18,361 | INFO | Update  145 | Steps:  74,240 | Episodes:   145 | EpReward:    62.95 | FPS:  17897 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:10:18,361 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:10:18,361 | INFO |   Env | HO: 100.00% | Throughput: 17.72/user-min | Task: 87.34% | Resolved: 99.92% | Delay: 2.408s | Energy: 8219.70J | MEC fair: 0.541
+2026-09-16 15:10:18,361 | INFO |   Reward | Success: 151.17 | Load: 17.90 | Delay: -42.35 | Energy: -29.66 | TaskFail: -21.91 | Interrupt: -4.08 | HOFail: 0.00
+2026-09-16 15:10:46,917 | INFO | Update  146 | Steps:  74,752 | Episodes:   146 | EpReward:    63.63 | FPS:  17862 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:10:46,918 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:10:46,918 | INFO |   Env | HO: 100.00% | Throughput: 19.31/user-min | Task: 91.98% | Resolved: 99.98% | Delay: 2.008s | Energy: 7405.11J | MEC fair: 0.523
+2026-09-16 15:10:46,918 | INFO |   Reward | Success: 164.77 | Load: 15.43 | Delay: -42.87 | Energy: -30.50 | TaskFail: -14.37 | Interrupt: -5.71 | HOFail: 0.00
+2026-09-16 15:11:00,583 | INFO | ----------------------------------------
+2026-09-16 15:11:00,583 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 15:11:48,341 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/best_model.pt
+2026-09-16 15:11:48,341 | INFO | 评估结果: 奖励 = 84.27 ± 4.85, 长度 = 512, 延迟 = 2.144s
+2026-09-16 15:11:48,341 | INFO | ----------------------------------------
+2026-09-16 15:12:03,103 | INFO | Update  147 | Steps:  75,264 | Episodes:   147 | EpReward:    64.35 | FPS:  17702 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:12:03,103 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:12:03,103 | INFO |   Env | HO: 100.00% | Throughput: 19.08/user-min | Task: 92.28% | Resolved: 99.97% | Delay: 2.032s | Energy: 7329.68J | MEC fair: 0.490
+2026-09-16 15:12:03,103 | INFO |   Reward | Success: 162.86 | Load: 15.71 | Delay: -42.72 | Energy: -30.50 | TaskFail: -13.63 | Interrupt: -6.27 | HOFail: 0.00
+2026-09-16 15:12:31,546 | INFO | Update  148 | Steps:  75,776 | Episodes:   148 | EpReward:    64.99 | FPS:  17411 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:12:31,547 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:12:31,547 | INFO |   Env | HO: 100.00% | Throughput: 18.99/user-min | Task: 92.54% | Resolved: 99.95% | Delay: 2.003s | Energy: 7353.33J | MEC fair: 0.492
+2026-09-16 15:12:31,547 | INFO |   Reward | Success: 162.09 | Load: 14.49 | Delay: -42.60 | Energy: -30.46 | TaskFail: -13.06 | Interrupt: -5.53 | HOFail: 0.00
+2026-09-16 15:13:00,004 | INFO | Update  149 | Steps:  76,288 | Episodes:   149 | EpReward:    65.67 | FPS:  17250 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:13:00,004 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:13:00,004 | INFO |   Env | HO: 100.00% | Throughput: 19.54/user-min | Task: 92.21% | Resolved: 99.95% | Delay: 2.039s | Energy: 7682.11J | MEC fair: 0.512
+2026-09-16 15:13:00,004 | INFO |   Reward | Success: 166.71 | Load: 15.62 | Delay: -44.70 | Energy: -31.58 | TaskFail: -14.09 | Interrupt: -7.34 | HOFail: 0.00
+2026-09-16 15:13:28,685 | INFO | Update  150 | Steps:  76,800 | Episodes:   150 | EpReward:    66.33 | FPS:  17411 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:13:28,685 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:13:28,685 | INFO |   Env | HO: 100.00% | Throughput: 19.04/user-min | Task: 91.59% | Resolved: 99.97% | Delay: 2.049s | Energy: 7458.93J | MEC fair: 0.522
+2026-09-16 15:13:28,685 | INFO |   Reward | Success: 162.51 | Load: 16.03 | Delay: -43.22 | Energy: -30.62 | TaskFail: -14.91 | Interrupt: -5.08 | HOFail: 0.00
+2026-09-16 15:13:56,938 | INFO | Update  151 | Steps:  77,312 | Episodes:   151 | EpReward:    66.74 | FPS:  17745 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:13:56,938 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:13:56,938 | INFO |   Env | HO: 100.00% | Throughput: 18.42/user-min | Task: 86.78% | Resolved: 99.84% | Delay: 2.388s | Energy: 8335.44J | MEC fair: 0.423
+2026-09-16 15:13:56,938 | INFO |   Reward | Success: 157.17 | Load: 15.21 | Delay: -43.03 | Energy: -30.12 | TaskFail: -23.94 | Interrupt: -7.25 | HOFail: 0.00
+2026-09-16 15:14:25,345 | INFO | Update  152 | Steps:  77,824 | Episodes:   152 | EpReward:    67.20 | FPS:  17963 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:14:25,345 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:14:25,345 | INFO |   Env | HO: 100.00% | Throughput: 18.72/user-min | Task: 86.87% | Resolved: 99.98% | Delay: 2.439s | Energy: 8674.66J | MEC fair: 0.566
+2026-09-16 15:14:25,346 | INFO |   Reward | Success: 159.71 | Load: 19.31 | Delay: -45.62 | Energy: -31.55 | TaskFail: -24.14 | Interrupt: -3.23 | HOFail: 0.00
+2026-09-16 15:14:53,790 | INFO | Update  153 | Steps:  78,336 | Episodes:   153 | EpReward:    67.72 | FPS:  17797 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:14:53,790 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:14:53,790 | INFO |   Env | HO: 100.00% | Throughput: 18.64/user-min | Task: 89.60% | Resolved: 99.94% | Delay: 2.220s | Energy: 7955.71J | MEC fair: 0.418
+2026-09-16 15:14:53,790 | INFO |   Reward | Success: 159.09 | Load: 14.58 | Delay: -42.94 | Energy: -30.32 | TaskFail: -18.46 | Interrupt: -4.69 | HOFail: 0.00
+2026-09-16 15:15:22,310 | INFO | Update  154 | Steps:  78,848 | Episodes:   154 | EpReward:    68.33 | FPS:  17530 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:15:22,310 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:15:22,310 | INFO |   Env | HO: 100.00% | Throughput: 19.97/user-min | Task: 93.42% | Resolved: 99.95% | Delay: 1.942s | Energy: 7446.58J | MEC fair: 0.497
+2026-09-16 15:15:22,310 | INFO |   Reward | Success: 170.43 | Load: 15.05 | Delay: -44.46 | Energy: -31.49 | TaskFail: -12.00 | Interrupt: -9.43 | HOFail: 0.00
+2026-09-16 15:15:50,991 | INFO | Update  155 | Steps:  79,360 | Episodes:   155 | EpReward:    68.94 | FPS:  17810 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:15:50,991 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:15:50,991 | INFO |   Env | HO: 100.00% | Throughput: 19.39/user-min | Task: 92.72% | Resolved: 99.92% | Delay: 1.984s | Energy: 7365.82J | MEC fair: 0.497
+2026-09-16 15:15:50,991 | INFO |   Reward | Success: 165.46 | Load: 16.05 | Delay: -43.35 | Energy: -30.70 | TaskFail: -13.00 | Interrupt: -4.77 | HOFail: 0.00
+2026-09-16 15:16:19,804 | INFO | Update  156 | Steps:  79,872 | Episodes:   156 | EpReward:    69.43 | FPS:  17247 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:16:19,805 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:16:19,805 | INFO |   Env | HO: 99.87% | Throughput: 19.57/user-min | Task: 93.67% | Resolved: 99.90% | Delay: 1.916s | Energy: 7162.60J | MEC fair: 0.495
+2026-09-16 15:16:19,805 | INFO |   Reward | Success: 167.00 | Load: 15.38 | Delay: -43.35 | Energy: -30.76 | TaskFail: -11.29 | Interrupt: -7.34 | HOFail: -0.01
+2026-09-16 15:16:48,109 | INFO | Update  157 | Steps:  80,384 | Episodes:   157 | EpReward:    69.85 | FPS:  17969 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:16:48,110 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:16:48,110 | INFO |   Env | HO: 100.00% | Throughput: 18.93/user-min | Task: 89.99% | Resolved: 100.00% | Delay: 2.256s | Energy: 8268.18J | MEC fair: 0.523
+2026-09-16 15:16:48,110 | INFO |   Reward | Success: 161.54 | Load: 17.44 | Delay: -44.85 | Energy: -31.69 | TaskFail: -17.97 | Interrupt: -4.70 | HOFail: 0.00
+2026-09-16 15:17:16,457 | INFO | Update  158 | Steps:  80,896 | Episodes:   158 | EpReward:    70.38 | FPS:  18063 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:17:16,457 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:17:16,457 | INFO |   Env | HO: 100.00% | Throughput: 18.46/user-min | Task: 88.59% | Resolved: 99.92% | Delay: 2.255s | Energy: 7961.86J | MEC fair: 0.525
+2026-09-16 15:17:16,457 | INFO |   Reward | Success: 157.51 | Load: 18.39 | Delay: -43.40 | Energy: -30.19 | TaskFail: -20.29 | Interrupt: -3.92 | HOFail: 0.00
+2026-09-16 15:17:44,780 | INFO | Update  159 | Steps:  81,408 | Episodes:   159 | EpReward:    70.87 | FPS:  17772 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:17:44,780 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:17:44,780 | INFO |   Env | HO: 100.00% | Throughput: 18.76/user-min | Task: 89.62% | Resolved: 99.92% | Delay: 2.226s | Energy: 8147.89J | MEC fair: 0.550
+2026-09-16 15:17:44,780 | INFO |   Reward | Success: 160.09 | Load: 18.95 | Delay: -44.79 | Energy: -31.54 | TaskFail: -18.54 | Interrupt: -4.68 | HOFail: 0.00
+2026-09-16 15:18:13,315 | INFO | Update  160 | Steps:  81,920 | Episodes:   160 | EpReward:    71.31 | FPS:  17891 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:18:13,315 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:18:13,315 | INFO |   Env | HO: 100.00% | Throughput: 18.91/user-min | Task: 89.57% | Resolved: 99.90% | Delay: 2.223s | Energy: 8277.45J | MEC fair: 0.565
+2026-09-16 15:18:13,316 | INFO |   Reward | Success: 161.40 | Load: 19.10 | Delay: -44.97 | Energy: -31.66 | TaskFail: -18.80 | Interrupt: -4.05 | HOFail: 0.00
+2026-09-16 15:18:41,618 | INFO | Update  161 | Steps:  82,432 | Episodes:   161 | EpReward:    71.71 | FPS:  17539 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:18:41,618 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:18:41,618 | INFO |   Env | HO: 100.00% | Throughput: 18.34/user-min | Task: 88.51% | Resolved: 99.97% | Delay: 2.279s | Energy: 8007.96J | MEC fair: 0.468
+2026-09-16 15:18:41,618 | INFO |   Reward | Success: 156.51 | Load: 16.05 | Delay: -42.84 | Energy: -29.78 | TaskFail: -20.31 | Interrupt: -3.57 | HOFail: 0.00
+2026-09-16 15:19:10,211 | INFO | Update  162 | Steps:  82,944 | Episodes:   162 | EpReward:    72.10 | FPS:  17597 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:19:10,211 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:19:10,211 | INFO |   Env | HO: 100.00% | Throughput: 19.57/user-min | Task: 91.94% | Resolved: 99.98% | Delay: 2.072s | Energy: 7300.68J | MEC fair: 0.508
+2026-09-16 15:19:10,211 | INFO |   Reward | Success: 166.97 | Load: 16.25 | Delay: -43.21 | Energy: -30.54 | TaskFail: -14.63 | Interrupt: -10.82 | HOFail: 0.00
+2026-09-16 15:19:38,573 | INFO | Update  163 | Steps:  83,456 | Episodes:   163 | EpReward:    72.42 | FPS:  17979 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:19:38,574 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:19:38,574 | INFO |   Env | HO: 100.00% | Throughput: 18.40/user-min | Task: 88.20% | Resolved: 99.98% | Delay: 2.319s | Energy: 8337.65J | MEC fair: 0.446
+2026-09-16 15:19:38,574 | INFO |   Reward | Success: 156.97 | Load: 16.57 | Delay: -43.85 | Energy: -30.90 | TaskFail: -21.00 | Interrupt: -3.68 | HOFail: 0.00
+2026-09-16 15:20:07,073 | INFO | Update  164 | Steps:  83,968 | Episodes:   164 | EpReward:    72.95 | FPS:  17534 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:20:07,073 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:20:07,073 | INFO |   Env | HO: 100.00% | Throughput: 19.46/user-min | Task: 92.87% | Resolved: 99.94% | Delay: 2.005s | Energy: 7496.18J | MEC fair: 0.521
+2026-09-16 15:20:07,073 | INFO |   Reward | Success: 166.03 | Load: 16.92 | Delay: -44.30 | Energy: -31.24 | TaskFail: -12.74 | Interrupt: -5.83 | HOFail: 0.00
+2026-09-16 15:20:35,478 | INFO | Update  165 | Steps:  84,480 | Episodes:   165 | EpReward:    73.36 | FPS:  17937 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:20:35,478 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:20:35,478 | INFO |   Env | HO: 100.00% | Throughput: 18.90/user-min | Task: 90.22% | Resolved: 99.95% | Delay: 2.176s | Energy: 8134.20J | MEC fair: 0.556
+2026-09-16 15:20:35,478 | INFO |   Reward | Success: 161.26 | Load: 18.76 | Delay: -45.15 | Energy: -31.79 | TaskFail: -17.49 | Interrupt: -3.03 | HOFail: 0.00
+2026-09-16 15:21:03,872 | INFO | Update  166 | Steps:  84,992 | Episodes:   166 | EpReward:    73.70 | FPS:  18216 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:21:03,872 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:21:03,872 | INFO |   Env | HO: 100.00% | Throughput: 18.83/user-min | Task: 89.02% | Resolved: 99.92% | Delay: 2.245s | Energy: 8338.20J | MEC fair: 0.619
+2026-09-16 15:21:03,872 | INFO |   Reward | Success: 160.69 | Load: 20.17 | Delay: -45.24 | Energy: -31.83 | TaskFail: -19.83 | Interrupt: -3.54 | HOFail: 0.00
+2026-09-16 15:21:32,185 | INFO | Update  167 | Steps:  85,504 | Episodes:   167 | EpReward:    73.92 | FPS:  18112 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:21:32,185 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:21:32,185 | INFO |   Env | HO: 100.00% | Throughput: 18.72/user-min | Task: 89.27% | Resolved: 99.95% | Delay: 2.229s | Energy: 8225.37J | MEC fair: 0.536
+2026-09-16 15:21:32,185 | INFO |   Reward | Success: 159.71 | Load: 18.11 | Delay: -44.95 | Energy: -31.56 | TaskFail: -19.20 | Interrupt: -5.57 | HOFail: 0.00
+2026-09-16 15:22:00,463 | INFO | Update  168 | Steps:  86,016 | Episodes:   168 | EpReward:    74.07 | FPS:  18018 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:22:00,463 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:22:00,463 | INFO |   Env | HO: 100.00% | Throughput: 18.51/user-min | Task: 88.42% | Resolved: 99.90% | Delay: 2.300s | Energy: 8357.14J | MEC fair: 0.539
+2026-09-16 15:22:00,463 | INFO |   Reward | Success: 157.91 | Load: 18.50 | Delay: -44.25 | Energy: -31.16 | TaskFail: -20.69 | Interrupt: -6.58 | HOFail: 0.00
+2026-09-16 15:22:28,912 | INFO | Update  169 | Steps:  86,528 | Episodes:   169 | EpReward:    74.19 | FPS:  17850 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:22:28,912 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:22:28,912 | INFO |   Env | HO: 100.00% | Throughput: 18.50/user-min | Task: 89.40% | Resolved: 99.95% | Delay: 2.172s | Energy: 7779.64J | MEC fair: 0.466
+2026-09-16 15:22:28,912 | INFO |   Reward | Success: 157.89 | Load: 15.36 | Delay: -42.32 | Energy: -29.91 | TaskFail: -18.71 | Interrupt: -6.20 | HOFail: 0.00
+2026-09-16 15:22:57,313 | INFO | Update  170 | Steps:  87,040 | Episodes:   170 | EpReward:    74.45 | FPS:  17591 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:22:57,313 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:22:57,313 | INFO |   Env | HO: 100.00% | Throughput: 19.02/user-min | Task: 89.92% | Resolved: 99.91% | Delay: 2.186s | Energy: 7951.33J | MEC fair: 0.463
+2026-09-16 15:22:57,313 | INFO |   Reward | Success: 162.34 | Load: 16.71 | Delay: -44.39 | Energy: -31.03 | TaskFail: -18.20 | Interrupt: -7.27 | HOFail: 0.00
+2026-09-16 15:23:25,605 | INFO | Update  171 | Steps:  87,552 | Episodes:   171 | EpReward:    74.73 | FPS:  17762 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:23:25,605 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:23:25,605 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 89.31% | Resolved: 99.94% | Delay: 2.217s | Energy: 8090.34J | MEC fair: 0.522
+2026-09-16 15:23:25,606 | INFO |   Reward | Success: 158.66 | Load: 18.82 | Delay: -44.66 | Energy: -31.15 | TaskFail: -19.00 | Interrupt: -3.92 | HOFail: 0.00
+2026-09-16 15:23:53,971 | INFO | Update  172 | Steps:  88,064 | Episodes:   172 | EpReward:    74.97 | FPS:  17577 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:23:53,972 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:23:53,972 | INFO |   Env | HO: 100.00% | Throughput: 18.84/user-min | Task: 88.94% | Resolved: 99.97% | Delay: 2.230s | Energy: 8422.27J | MEC fair: 0.495
+2026-09-16 15:23:53,972 | INFO |   Reward | Success: 160.80 | Load: 17.58 | Delay: -45.10 | Energy: -31.71 | TaskFail: -20.00 | Interrupt: -4.32 | HOFail: 0.00
+2026-09-16 15:24:22,279 | INFO | Update  173 | Steps:  88,576 | Episodes:   173 | EpReward:    75.11 | FPS:  18007 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:24:22,279 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:24:22,279 | INFO |   Env | HO: 100.00% | Throughput: 18.56/user-min | Task: 89.06% | Resolved: 99.95% | Delay: 2.270s | Energy: 8179.69J | MEC fair: 0.474
+2026-09-16 15:24:22,279 | INFO |   Reward | Success: 158.40 | Load: 17.16 | Delay: -44.49 | Energy: -31.04 | TaskFail: -19.46 | Interrupt: -4.72 | HOFail: 0.00
+2026-09-16 15:24:50,548 | INFO | Update  174 | Steps:  89,088 | Episodes:   174 | EpReward:    75.29 | FPS:  18026 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:24:50,549 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:24:50,549 | INFO |   Env | HO: 100.00% | Throughput: 18.45/user-min | Task: 89.07% | Resolved: 99.90% | Delay: 2.226s | Energy: 8032.17J | MEC fair: 0.576
+2026-09-16 15:24:50,549 | INFO |   Reward | Success: 157.46 | Load: 19.00 | Delay: -43.71 | Energy: -30.71 | TaskFail: -19.31 | Interrupt: -5.85 | HOFail: 0.00
+2026-09-16 15:25:18,975 | INFO | Update  175 | Steps:  89,600 | Episodes:   175 | EpReward:    75.51 | FPS:  17427 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:25:18,975 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:25:18,975 | INFO |   Env | HO: 100.00% | Throughput: 18.61/user-min | Task: 89.94% | Resolved: 99.94% | Delay: 2.182s | Energy: 7693.19J | MEC fair: 0.450
+2026-09-16 15:25:18,975 | INFO |   Reward | Success: 158.83 | Load: 15.96 | Delay: -42.72 | Energy: -29.86 | TaskFail: -17.77 | Interrupt: -4.46 | HOFail: 0.00
+2026-09-16 15:25:47,266 | INFO | Update  176 | Steps:  90,112 | Episodes:   176 | EpReward:    75.62 | FPS:  17922 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:25:47,266 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:25:47,266 | INFO |   Env | HO: 100.00% | Throughput: 18.46/user-min | Task: 86.82% | Resolved: 99.92% | Delay: 2.408s | Energy: 8716.96J | MEC fair: 0.574
+2026-09-16 15:25:47,266 | INFO |   Reward | Success: 157.49 | Load: 19.69 | Delay: -45.20 | Energy: -31.34 | TaskFail: -23.91 | Interrupt: -4.08 | HOFail: 0.00
+2026-09-16 15:26:15,511 | INFO | Update  177 | Steps:  90,624 | Episodes:   177 | EpReward:    75.65 | FPS:  17744 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:26:15,511 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:26:15,511 | INFO |   Env | HO: 100.00% | Throughput: 18.70/user-min | Task: 88.89% | Resolved: 99.97% | Delay: 2.197s | Energy: 7926.50J | MEC fair: 0.444
+2026-09-16 15:26:15,511 | INFO |   Reward | Success: 159.60 | Load: 15.32 | Delay: -42.72 | Energy: -30.24 | TaskFail: -19.94 | Interrupt: -6.60 | HOFail: 0.00
+2026-09-16 15:26:43,959 | INFO | Update  178 | Steps:  91,136 | Episodes:   178 | EpReward:    75.79 | FPS:  17549 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:26:43,959 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:26:43,959 | INFO |   Env | HO: 100.00% | Throughput: 18.79/user-min | Task: 87.72% | Resolved: 99.91% | Delay: 2.286s | Energy: 8384.17J | MEC fair: 0.420
+2026-09-16 15:26:43,960 | INFO |   Reward | Success: 160.37 | Load: 16.57 | Delay: -44.32 | Energy: -31.07 | TaskFail: -22.46 | Interrupt: -4.34 | HOFail: 0.00
+2026-09-16 15:27:12,262 | INFO | Update  179 | Steps:  91,648 | Episodes:   179 | EpReward:    75.87 | FPS:  18029 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:27:12,262 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:27:12,262 | INFO |   Env | HO: 100.00% | Throughput: 18.48/user-min | Task: 88.21% | Resolved: 99.90% | Delay: 2.276s | Energy: 8243.37J | MEC fair: 0.508
+2026-09-16 15:27:12,262 | INFO |   Reward | Success: 157.71 | Load: 17.90 | Delay: -43.52 | Energy: -30.64 | TaskFail: -21.09 | Interrupt: -3.09 | HOFail: 0.00
+2026-09-16 15:27:40,579 | INFO | Update  180 | Steps:  92,160 | Episodes:   180 | EpReward:    76.11 | FPS:  17389 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:27:40,579 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:27:40,579 | INFO |   Env | HO: 100.00% | Throughput: 18.91/user-min | Task: 89.07% | Resolved: 99.95% | Delay: 2.309s | Energy: 8362.13J | MEC fair: 0.576
+2026-09-16 15:27:40,579 | INFO |   Reward | Success: 161.40 | Load: 19.02 | Delay: -45.24 | Energy: -31.79 | TaskFail: -19.80 | Interrupt: -2.94 | HOFail: 0.00
+2026-09-16 15:28:09,069 | INFO | Update  181 | Steps:  92,672 | Episodes:   181 | EpReward:    76.38 | FPS:  17795 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:28:09,069 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:28:09,069 | INFO |   Env | HO: 100.00% | Throughput: 19.17/user-min | Task: 91.32% | Resolved: 99.95% | Delay: 2.072s | Energy: 7458.76J | MEC fair: 0.486
+2026-09-16 15:28:09,069 | INFO |   Reward | Success: 163.54 | Load: 15.81 | Delay: -42.91 | Energy: -30.18 | TaskFail: -15.54 | Interrupt: -4.70 | HOFail: 0.00
+2026-09-16 15:28:37,510 | INFO | Update  182 | Steps:  93,184 | Episodes:   182 | EpReward:    76.63 | FPS:  18083 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:28:37,510 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:28:37,510 | INFO |   Env | HO: 100.00% | Throughput: 18.86/user-min | Task: 90.49% | Resolved: 99.95% | Delay: 2.181s | Energy: 8027.57J | MEC fair: 0.584
+2026-09-16 15:28:37,510 | INFO |   Reward | Success: 160.94 | Load: 19.63 | Delay: -45.08 | Energy: -31.48 | TaskFail: -16.91 | Interrupt: -2.14 | HOFail: 0.00
+2026-09-16 15:29:05,956 | INFO | Update  183 | Steps:  93,696 | Episodes:   183 | EpReward:    76.77 | FPS:  17960 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:29:05,956 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:29:05,956 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 88.95% | Resolved: 99.97% | Delay: 2.221s | Energy: 8214.57J | MEC fair: 0.443
+2026-09-16 15:29:05,956 | INFO |   Reward | Success: 158.66 | Load: 15.42 | Delay: -44.24 | Energy: -31.09 | TaskFail: -19.71 | Interrupt: -3.71 | HOFail: 0.00
+2026-09-16 15:29:34,396 | INFO | Update  184 | Steps:  94,208 | Episodes:   184 | EpReward:    76.91 | FPS:  17772 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:29:34,397 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:29:34,397 | INFO |   Env | HO: 100.00% | Throughput: 18.71/user-min | Task: 89.22% | Resolved: 99.97% | Delay: 2.282s | Energy: 8301.56J | MEC fair: 0.615
+2026-09-16 15:29:34,397 | INFO |   Reward | Success: 159.69 | Load: 19.77 | Delay: -45.20 | Energy: -31.11 | TaskFail: -19.29 | Interrupt: -5.68 | HOFail: 0.00
+2026-09-16 15:30:03,099 | INFO | Update  185 | Steps:  94,720 | Episodes:   185 | EpReward:    77.15 | FPS:  17203 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:30:03,099 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:30:03,099 | INFO |   Env | HO: 100.00% | Throughput: 19.33/user-min | Task: 93.83% | Resolved: 99.92% | Delay: 1.934s | Energy: 7084.08J | MEC fair: 0.508
+2026-09-16 15:30:03,099 | INFO |   Reward | Success: 164.97 | Load: 15.99 | Delay: -42.94 | Energy: -30.27 | TaskFail: -10.86 | Interrupt: -5.41 | HOFail: 0.00
+2026-09-16 15:30:31,576 | INFO | Update  186 | Steps:  95,232 | Episodes:   186 | EpReward:    77.16 | FPS:  18137 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:30:31,576 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:30:31,576 | INFO |   Env | HO: 100.00% | Throughput: 18.92/user-min | Task: 87.73% | Resolved: 99.94% | Delay: 2.327s | Energy: 8581.54J | MEC fair: 0.635
+2026-09-16 15:30:31,576 | INFO |   Reward | Success: 161.43 | Load: 20.56 | Delay: -45.70 | Energy: -32.00 | TaskFail: -22.57 | Interrupt: -2.94 | HOFail: 0.00
+2026-09-16 15:30:59,765 | INFO | Update  187 | Steps:  95,744 | Episodes:   187 | EpReward:    77.12 | FPS:  18151 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:30:59,765 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:30:59,765 | INFO |   Env | HO: 100.00% | Throughput: 18.63/user-min | Task: 88.50% | Resolved: 99.98% | Delay: 2.275s | Energy: 8282.81J | MEC fair: 0.525
+2026-09-16 15:30:59,765 | INFO |   Reward | Success: 158.97 | Load: 17.78 | Delay: -44.53 | Energy: -30.97 | TaskFail: -20.66 | Interrupt: -5.41 | HOFail: 0.00
+2026-09-16 15:31:28,249 | INFO | Update  188 | Steps:  96,256 | Episodes:   188 | EpReward:    77.19 | FPS:  18021 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:31:28,249 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:31:28,249 | INFO |   Env | HO: 100.00% | Throughput: 18.36/user-min | Task: 88.57% | Resolved: 99.95% | Delay: 2.290s | Energy: 8121.06J | MEC fair: 0.592
+2026-09-16 15:31:28,250 | INFO |   Reward | Success: 156.69 | Load: 20.07 | Delay: -43.78 | Energy: -30.56 | TaskFail: -20.23 | Interrupt: -3.67 | HOFail: 0.00
+2026-09-16 15:31:56,938 | INFO | Update  189 | Steps:  96,768 | Episodes:   189 | EpReward:    77.53 | FPS:  17369 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:31:56,938 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:31:56,938 | INFO |   Env | HO: 100.00% | Throughput: 19.47/user-min | Task: 93.28% | Resolved: 99.89% | Delay: 1.945s | Energy: 7003.22J | MEC fair: 0.520
+2026-09-16 15:31:56,938 | INFO |   Reward | Success: 166.14 | Load: 17.06 | Delay: -42.71 | Energy: -30.04 | TaskFail: -11.97 | Interrupt: -4.31 | HOFail: 0.00
+2026-09-16 15:32:25,331 | INFO | Update  190 | Steps:  97,280 | Episodes:   190 | EpReward:    77.62 | FPS:  17995 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:32:25,331 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:32:25,331 | INFO |   Env | HO: 100.00% | Throughput: 19.34/user-min | Task: 91.77% | Resolved: 99.98% | Delay: 2.058s | Energy: 7534.61J | MEC fair: 0.468
+2026-09-16 15:32:25,331 | INFO |   Reward | Success: 165.03 | Load: 15.97 | Delay: -43.21 | Energy: -30.65 | TaskFail: -14.80 | Interrupt: -7.37 | HOFail: 0.00
+2026-09-16 15:32:53,619 | INFO | Update  191 | Steps:  97,792 | Episodes:   191 | EpReward:    77.69 | FPS:  17889 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:32:53,620 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:32:53,620 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 88.86% | Resolved: 99.92% | Delay: 2.261s | Energy: 8227.41J | MEC fair: 0.577
+2026-09-16 15:32:53,620 | INFO |   Reward | Success: 158.60 | Load: 19.15 | Delay: -44.60 | Energy: -31.06 | TaskFail: -19.89 | Interrupt: -4.30 | HOFail: 0.00
+2026-09-16 15:33:22,020 | INFO | Update  192 | Steps:  98,304 | Episodes:   192 | EpReward:    77.74 | FPS:  17587 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:33:22,020 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:33:22,020 | INFO |   Env | HO: 100.00% | Throughput: 19.09/user-min | Task: 90.70% | Resolved: 99.94% | Delay: 2.160s | Energy: 8068.35J | MEC fair: 0.608
+2026-09-16 15:33:22,020 | INFO |   Reward | Success: 162.91 | Load: 19.35 | Delay: -45.31 | Energy: -31.62 | TaskFail: -16.71 | Interrupt: -2.42 | HOFail: 0.00
+2026-09-16 15:33:50,225 | INFO | Update  193 | Steps:  98,816 | Episodes:   193 | EpReward:    77.87 | FPS:  18030 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:33:50,225 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:33:50,225 | INFO |   Env | HO: 100.00% | Throughput: 18.55/user-min | Task: 88.36% | Resolved: 99.89% | Delay: 2.314s | Energy: 8269.96J | MEC fair: 0.588
+2026-09-16 15:33:50,225 | INFO |   Reward | Success: 158.26 | Load: 19.52 | Delay: -44.25 | Energy: -30.83 | TaskFail: -20.86 | Interrupt: -4.80 | HOFail: 0.00
+2026-09-16 15:34:18,558 | INFO | Update  194 | Steps:  99,328 | Episodes:   194 | EpReward:    77.93 | FPS:  18119 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:34:18,558 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:34:18,558 | INFO |   Env | HO: 100.00% | Throughput: 18.69/user-min | Task: 87.53% | Resolved: 99.98% | Delay: 2.361s | Energy: 8672.28J | MEC fair: 0.482
+2026-09-16 15:34:18,558 | INFO |   Reward | Success: 159.46 | Load: 16.98 | Delay: -44.83 | Energy: -31.68 | TaskFail: -22.71 | Interrupt: -3.18 | HOFail: 0.00
+2026-09-16 15:34:46,855 | INFO | Update  195 | Steps:  99,840 | Episodes:   195 | EpReward:    77.93 | FPS:  17301 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:34:46,855 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:34:46,855 | INFO |   Env | HO: 100.00% | Throughput: 18.74/user-min | Task: 88.52% | Resolved: 99.97% | Delay: 2.289s | Energy: 8296.17J | MEC fair: 0.517
+2026-09-16 15:34:46,855 | INFO |   Reward | Success: 159.91 | Load: 18.15 | Delay: -44.54 | Energy: -31.00 | TaskFail: -20.74 | Interrupt: -3.88 | HOFail: 0.00
+2026-09-16 15:34:55,739 | INFO | ----------------------------------------
+2026-09-16 15:34:55,739 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 15:35:43,443 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/best_model.pt
+2026-09-16 15:35:43,443 | INFO | 评估结果: 奖励 = 85.26 ± 6.09, 长度 = 512, 延迟 = 2.130s
+2026-09-16 15:35:43,444 | INFO | ----------------------------------------
+2026-09-16 15:35:43,467 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/checkpoint_100000.pt
+2026-09-16 15:36:02,899 | INFO | Update  196 | Steps: 100,352 | Episodes:   196 | EpReward:    78.02 | FPS:  17528 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:36:02,900 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:36:02,900 | INFO |   Env | HO: 100.00% | Throughput: 18.73/user-min | Task: 89.25% | Resolved: 99.94% | Delay: 2.234s | Energy: 7917.45J | MEC fair: 0.448
+2026-09-16 15:36:02,900 | INFO |   Reward | Success: 159.86 | Load: 15.91 | Delay: -43.21 | Energy: -30.32 | TaskFail: -19.26 | Interrupt: -2.63 | HOFail: 0.00
+2026-09-16 15:36:31,249 | INFO | Update  197 | Steps: 100,864 | Episodes:   197 | EpReward:    78.33 | FPS:  18200 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:36:31,249 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:36:31,249 | INFO |   Env | HO: 100.00% | Throughput: 18.82/user-min | Task: 91.82% | Resolved: 99.92% | Delay: 2.042s | Energy: 7669.13J | MEC fair: 0.664
+2026-09-16 15:36:31,249 | INFO |   Reward | Success: 160.63 | Load: 20.31 | Delay: -43.80 | Energy: -30.93 | TaskFail: -14.31 | Interrupt: -1.97 | HOFail: 0.00
+2026-09-16 15:36:59,482 | INFO | Update  198 | Steps: 101,376 | Episodes:   198 | EpReward:    78.29 | FPS:  17876 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:36:59,482 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:36:59,482 | INFO |   Env | HO: 100.00% | Throughput: 18.41/user-min | Task: 88.31% | Resolved: 99.92% | Delay: 2.329s | Energy: 8311.27J | MEC fair: 0.595
+2026-09-16 15:36:59,482 | INFO |   Reward | Success: 157.11 | Load: 19.89 | Delay: -44.75 | Energy: -30.98 | TaskFail: -20.80 | Interrupt: -3.66 | HOFail: 0.00
+2026-09-16 15:37:28,205 | INFO | Update  199 | Steps: 101,888 | Episodes:   199 | EpReward:    78.34 | FPS:  17749 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:37:28,205 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:37:28,205 | INFO |   Env | HO: 100.00% | Throughput: 19.33/user-min | Task: 91.43% | Resolved: 99.91% | Delay: 2.075s | Energy: 7489.86J | MEC fair: 0.527
+2026-09-16 15:37:28,205 | INFO |   Reward | Success: 164.94 | Load: 17.52 | Delay: -43.74 | Energy: -30.42 | TaskFail: -15.46 | Interrupt: -5.96 | HOFail: 0.00
+2026-09-16 15:37:56,591 | INFO | Update  200 | Steps: 102,400 | Episodes:   200 | EpReward:    78.29 | FPS:  17566 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:37:56,591 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:37:56,591 | INFO |   Env | HO: 100.00% | Throughput: 17.74/user-min | Task: 85.34% | Resolved: 99.90% | Delay: 2.555s | Energy: 8633.87J | MEC fair: 0.574
+2026-09-16 15:37:56,591 | INFO |   Reward | Success: 151.37 | Load: 19.89 | Delay: -43.40 | Energy: -30.11 | TaskFail: -26.00 | Interrupt: -5.99 | HOFail: 0.00
+2026-09-16 15:38:25,304 | INFO | Update  201 | Steps: 102,912 | Episodes:   201 | EpReward:    78.31 | FPS:  17795 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:38:25,305 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:38:25,305 | INFO |   Env | HO: 100.00% | Throughput: 19.40/user-min | Task: 91.62% | Resolved: 99.95% | Delay: 2.079s | Energy: 7379.15J | MEC fair: 0.502
+2026-09-16 15:38:25,305 | INFO |   Reward | Success: 165.51 | Load: 16.25 | Delay: -43.13 | Energy: -30.13 | TaskFail: -15.14 | Interrupt: -6.79 | HOFail: 0.00
+2026-09-16 15:38:53,651 | INFO | Update  202 | Steps: 103,424 | Episodes:   202 | EpReward:    78.43 | FPS:  17813 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:38:53,651 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:38:53,652 | INFO |   Env | HO: 100.00% | Throughput: 19.01/user-min | Task: 89.70% | Resolved: 99.89% | Delay: 2.201s | Energy: 8029.35J | MEC fair: 0.453
+2026-09-16 15:38:53,652 | INFO |   Reward | Success: 162.20 | Load: 16.46 | Delay: -44.95 | Energy: -31.15 | TaskFail: -18.63 | Interrupt: -4.60 | HOFail: 0.00
+2026-09-16 15:39:22,240 | INFO | Update  203 | Steps: 103,936 | Episodes:   203 | EpReward:    78.43 | FPS:  17303 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:39:22,240 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:39:22,240 | INFO |   Env | HO: 100.00% | Throughput: 19.12/user-min | Task: 91.07% | Resolved: 99.95% | Delay: 2.119s | Energy: 7289.68J | MEC fair: 0.480
+2026-09-16 15:39:22,240 | INFO |   Reward | Success: 163.17 | Load: 16.17 | Delay: -42.48 | Energy: -29.36 | TaskFail: -16.00 | Interrupt: -9.89 | HOFail: 0.00
+2026-09-16 15:39:50,676 | INFO | Update  204 | Steps: 104,448 | Episodes:   204 | EpReward:    78.44 | FPS:  17804 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:39:50,676 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:39:50,676 | INFO |   Env | HO: 100.00% | Throughput: 18.71/user-min | Task: 88.35% | Resolved: 99.95% | Delay: 2.251s | Energy: 8183.32J | MEC fair: 0.453
+2026-09-16 15:39:50,676 | INFO |   Reward | Success: 159.63 | Load: 16.91 | Delay: -43.62 | Energy: -30.68 | TaskFail: -21.06 | Interrupt: -3.60 | HOFail: 0.00
+2026-09-16 15:40:18,934 | INFO | Update  205 | Steps: 104,960 | Episodes:   205 | EpReward:    78.35 | FPS:  17517 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:40:18,934 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:40:18,934 | INFO |   Env | HO: 100.00% | Throughput: 18.06/user-min | Task: 85.54% | Resolved: 99.90% | Delay: 2.516s | Energy: 8747.10J | MEC fair: 0.558
+2026-09-16 15:40:18,934 | INFO |   Reward | Success: 154.09 | Load: 18.90 | Delay: -44.08 | Energy: -30.55 | TaskFail: -26.06 | Interrupt: -4.29 | HOFail: 0.00
+2026-09-16 15:40:47,258 | INFO | Update  206 | Steps: 105,472 | Episodes:   206 | EpReward:    78.41 | FPS:  17854 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:40:47,259 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:40:47,259 | INFO |   Env | HO: 100.00% | Throughput: 18.68/user-min | Task: 89.91% | Resolved: 99.98% | Delay: 2.172s | Energy: 7745.35J | MEC fair: 0.411
+2026-09-16 15:40:47,259 | INFO |   Reward | Success: 159.37 | Load: 15.92 | Delay: -43.21 | Energy: -30.16 | TaskFail: -17.89 | Interrupt: -2.97 | HOFail: 0.00
+2026-09-16 15:41:15,769 | INFO | Update  207 | Steps: 105,984 | Episodes:   207 | EpReward:    78.47 | FPS:  17624 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:41:15,769 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:41:15,769 | INFO |   Env | HO: 100.00% | Throughput: 18.30/user-min | Task: 88.58% | Resolved: 99.98% | Delay: 2.308s | Energy: 8266.10J | MEC fair: 0.610
+2026-09-16 15:41:15,769 | INFO |   Reward | Success: 156.17 | Load: 19.77 | Delay: -43.70 | Energy: -30.53 | TaskFail: -20.14 | Interrupt: -3.30 | HOFail: 0.00
+2026-09-16 15:41:44,126 | INFO | Update  208 | Steps: 106,496 | Episodes:   208 | EpReward:    78.41 | FPS:  18241 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:41:44,126 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:41:44,126 | INFO |   Env | HO: 100.00% | Throughput: 18.51/user-min | Task: 89.26% | Resolved: 99.94% | Delay: 2.218s | Energy: 8091.34J | MEC fair: 0.540
+2026-09-16 15:41:44,126 | INFO |   Reward | Success: 157.94 | Load: 17.69 | Delay: -43.82 | Energy: -30.71 | TaskFail: -19.00 | Interrupt: -5.37 | HOFail: 0.00
+2026-09-16 15:42:12,494 | INFO | Update  209 | Steps: 107,008 | Episodes:   209 | EpReward:    78.51 | FPS:  17997 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:42:12,494 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:42:12,494 | INFO |   Env | HO: 100.00% | Throughput: 18.87/user-min | Task: 90.11% | Resolved: 99.92% | Delay: 2.162s | Energy: 8135.41J | MEC fair: 0.584
+2026-09-16 15:42:12,494 | INFO |   Reward | Success: 161.06 | Load: 19.01 | Delay: -44.64 | Energy: -31.37 | TaskFail: -17.69 | Interrupt: -3.94 | HOFail: 0.00
+2026-09-16 15:42:40,916 | INFO | Update  210 | Steps: 107,520 | Episodes:   210 | EpReward:    78.60 | FPS:  18007 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:42:40,916 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:42:40,916 | INFO |   Env | HO: 100.00% | Throughput: 18.50/user-min | Task: 88.10% | Resolved: 99.97% | Delay: 2.292s | Energy: 8171.73J | MEC fair: 0.583
+2026-09-16 15:42:40,916 | INFO |   Reward | Success: 157.83 | Load: 19.52 | Delay: -44.00 | Energy: -30.55 | TaskFail: -21.31 | Interrupt: -4.51 | HOFail: 0.00
+2026-09-16 15:43:09,538 | INFO | Update  211 | Steps: 108,032 | Episodes:   211 | EpReward:    78.72 | FPS:  17503 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:43:09,538 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:43:09,538 | INFO |   Env | HO: 100.00% | Throughput: 19.21/user-min | Task: 91.88% | Resolved: 99.89% | Delay: 2.077s | Energy: 7215.40J | MEC fair: 0.495
+2026-09-16 15:43:09,538 | INFO |   Reward | Success: 163.91 | Load: 16.51 | Delay: -42.79 | Energy: -29.62 | TaskFail: -14.49 | Interrupt: -5.48 | HOFail: 0.00
+2026-09-16 15:43:37,895 | INFO | Update  212 | Steps: 108,544 | Episodes:   212 | EpReward:    78.75 | FPS:  17611 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:43:37,895 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:43:37,895 | INFO |   Env | HO: 100.00% | Throughput: 18.67/user-min | Task: 89.47% | Resolved: 99.94% | Delay: 2.248s | Energy: 8193.24J | MEC fair: 0.620
+2026-09-16 15:43:37,895 | INFO |   Reward | Success: 159.29 | Load: 19.67 | Delay: -44.69 | Energy: -31.16 | TaskFail: -18.74 | Interrupt: -3.01 | HOFail: 0.00
+2026-09-16 15:44:06,343 | INFO | Update  213 | Steps: 109,056 | Episodes:   213 | EpReward:    78.89 | FPS:  17955 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:44:06,343 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:44:06,343 | INFO |   Env | HO: 100.00% | Throughput: 18.89/user-min | Task: 89.83% | Resolved: 99.92% | Delay: 2.240s | Energy: 8224.71J | MEC fair: 0.644
+2026-09-16 15:44:06,343 | INFO |   Reward | Success: 161.23 | Load: 19.78 | Delay: -45.10 | Energy: -31.49 | TaskFail: -18.26 | Interrupt: -3.51 | HOFail: 0.00
+2026-09-16 15:44:34,821 | INFO | Update  214 | Steps: 109,568 | Episodes:   214 | EpReward:    78.97 | FPS:  17888 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:44:34,821 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:44:34,821 | INFO |   Env | HO: 100.00% | Throughput: 18.82/user-min | Task: 89.89% | Resolved: 99.95% | Delay: 2.225s | Energy: 8214.24J | MEC fair: 0.637
+2026-09-16 15:44:34,821 | INFO |   Reward | Success: 160.63 | Load: 20.16 | Delay: -44.42 | Energy: -31.37 | TaskFail: -18.06 | Interrupt: -2.60 | HOFail: 0.00
+2026-09-16 15:45:03,224 | INFO | Update  215 | Steps: 110,080 | Episodes:   215 | EpReward:    79.03 | FPS:  17789 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:45:03,224 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:45:03,224 | INFO |   Env | HO: 100.00% | Throughput: 18.88/user-min | Task: 89.89% | Resolved: 99.95% | Delay: 2.187s | Energy: 7918.25J | MEC fair: 0.402
+2026-09-16 15:45:03,224 | INFO |   Reward | Success: 161.09 | Load: 14.71 | Delay: -43.36 | Energy: -30.51 | TaskFail: -18.11 | Interrupt: -5.20 | HOFail: 0.00
+2026-09-16 15:45:31,585 | INFO | Update  216 | Steps: 110,592 | Episodes:   216 | EpReward:    79.12 | FPS:  17606 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:45:31,585 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:45:31,585 | INFO |   Env | HO: 100.00% | Throughput: 18.79/user-min | Task: 90.49% | Resolved: 99.95% | Delay: 2.138s | Energy: 7930.70J | MEC fair: 0.455
+2026-09-16 15:45:31,585 | INFO |   Reward | Success: 160.37 | Load: 14.70 | Delay: -43.09 | Energy: -30.87 | TaskFail: -16.86 | Interrupt: -4.64 | HOFail: 0.00
+2026-09-16 15:46:00,120 | INFO | Update  217 | Steps: 111,104 | Episodes:   217 | EpReward:    79.28 | FPS:  18092 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:46:00,120 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:46:00,120 | INFO |   Env | HO: 100.00% | Throughput: 19.28/user-min | Task: 90.99% | Resolved: 99.94% | Delay: 2.087s | Energy: 7721.70J | MEC fair: 0.481
+2026-09-16 15:46:00,120 | INFO |   Reward | Success: 164.49 | Load: 15.84 | Delay: -44.14 | Energy: -30.65 | TaskFail: -16.29 | Interrupt: -3.87 | HOFail: 0.00
+2026-09-16 15:46:28,763 | INFO | Update  218 | Steps: 111,616 | Episodes:   218 | EpReward:    79.33 | FPS:  17584 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:46:28,764 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:46:28,764 | INFO |   Env | HO: 100.00% | Throughput: 19.60/user-min | Task: 92.96% | Resolved: 99.95% | Delay: 1.998s | Energy: 7358.61J | MEC fair: 0.538
+2026-09-16 15:46:28,764 | INFO |   Reward | Success: 167.26 | Load: 16.69 | Delay: -43.70 | Energy: -30.69 | TaskFail: -12.66 | Interrupt: -4.37 | HOFail: 0.00
+2026-09-16 15:46:57,265 | INFO | Update  219 | Steps: 112,128 | Episodes:   219 | EpReward:    79.31 | FPS:  18219 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:46:57,265 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:46:57,265 | INFO |   Env | HO: 100.00% | Throughput: 17.93/user-min | Task: 86.97% | Resolved: 99.98% | Delay: 2.418s | Energy: 8182.32J | MEC fair: 0.593
+2026-09-16 15:46:57,265 | INFO |   Reward | Success: 152.97 | Load: 20.02 | Delay: -43.16 | Energy: -29.74 | TaskFail: -22.91 | Interrupt: -4.15 | HOFail: 0.00
+2026-09-16 15:47:25,735 | INFO | Update  220 | Steps: 112,640 | Episodes:   220 | EpReward:    79.41 | FPS:  18016 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:47:25,735 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:47:25,735 | INFO |   Env | HO: 100.00% | Throughput: 18.78/user-min | Task: 89.05% | Resolved: 99.94% | Delay: 2.246s | Energy: 8270.41J | MEC fair: 0.568
+2026-09-16 15:47:25,735 | INFO |   Reward | Success: 160.26 | Load: 18.87 | Delay: -45.02 | Energy: -31.30 | TaskFail: -19.71 | Interrupt: -2.18 | HOFail: 0.00
+2026-09-16 15:47:54,065 | INFO | Update  221 | Steps: 113,152 | Episodes:   221 | EpReward:    79.45 | FPS:  17067 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:47:54,065 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:47:54,065 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 89.23% | Resolved: 99.95% | Delay: 2.205s | Energy: 8066.83J | MEC fair: 0.491
+2026-09-16 15:47:54,065 | INFO |   Reward | Success: 158.63 | Load: 17.66 | Delay: -43.83 | Energy: -30.61 | TaskFail: -19.14 | Interrupt: -3.25 | HOFail: 0.00
+2026-09-16 15:48:22,348 | INFO | Update  222 | Steps: 113,664 | Episodes:   222 | EpReward:    79.57 | FPS:  17659 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:48:22,348 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:48:22,348 | INFO |   Env | HO: 100.00% | Throughput: 18.80/user-min | Task: 88.73% | Resolved: 99.95% | Delay: 2.353s | Energy: 8507.22J | MEC fair: 0.589
+2026-09-16 15:48:22,348 | INFO |   Reward | Success: 160.40 | Load: 18.80 | Delay: -45.26 | Energy: -31.55 | TaskFail: -20.37 | Interrupt: -5.05 | HOFail: 0.00
+2026-09-16 15:48:51,030 | INFO | Update  223 | Steps: 114,176 | Episodes:   223 | EpReward:    79.69 | FPS:  17849 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:48:51,030 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:48:51,030 | INFO |   Env | HO: 99.62% | Throughput: 19.08/user-min | Task: 92.16% | Resolved: 99.95% | Delay: 2.106s | Energy: 7207.34J | MEC fair: 0.520
+2026-09-16 15:48:51,030 | INFO |   Reward | Success: 162.83 | Load: 16.80 | Delay: -42.71 | Energy: -29.62 | TaskFail: -13.86 | Interrupt: -7.27 | HOFail: -0.01
+2026-09-16 15:49:19,743 | INFO | Update  224 | Steps: 114,688 | Episodes:   224 | EpReward:    79.87 | FPS:  17209 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:49:19,743 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:49:19,743 | INFO |   Env | HO: 100.00% | Throughput: 19.29/user-min | Task: 92.68% | Resolved: 99.90% | Delay: 1.930s | Energy: 7026.40J | MEC fair: 0.509
+2026-09-16 15:49:19,743 | INFO |   Reward | Success: 164.60 | Load: 16.29 | Delay: -41.94 | Energy: -29.55 | TaskFail: -13.00 | Interrupt: -6.14 | HOFail: 0.00
+2026-09-16 15:49:48,026 | INFO | Update  225 | Steps: 115,200 | Episodes:   225 | EpReward:    79.75 | FPS:  17447 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:49:48,026 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:49:48,026 | INFO |   Env | HO: 100.00% | Throughput: 18.49/user-min | Task: 88.13% | Resolved: 99.94% | Delay: 2.302s | Energy: 8412.96J | MEC fair: 0.552
+2026-09-16 15:49:48,026 | INFO |   Reward | Success: 157.80 | Load: 18.14 | Delay: -44.12 | Energy: -31.11 | TaskFail: -21.26 | Interrupt: -3.93 | HOFail: 0.00
+2026-09-16 15:50:16,435 | INFO | Update  226 | Steps: 115,712 | Episodes:   226 | EpReward:    79.87 | FPS:  18156 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:50:16,435 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:50:16,435 | INFO |   Env | HO: 100.00% | Throughput: 18.69/user-min | Task: 89.86% | Resolved: 99.94% | Delay: 2.219s | Energy: 8081.87J | MEC fair: 0.648
+2026-09-16 15:50:16,435 | INFO |   Reward | Success: 159.49 | Load: 20.45 | Delay: -44.96 | Energy: -31.05 | TaskFail: -18.00 | Interrupt: -3.07 | HOFail: 0.00
+2026-09-16 15:50:44,894 | INFO | Update  227 | Steps: 116,224 | Episodes:   227 | EpReward:    79.92 | FPS:  17901 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:50:44,894 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:50:44,894 | INFO |   Env | HO: 100.00% | Throughput: 19.40/user-min | Task: 90.99% | Resolved: 99.95% | Delay: 2.163s | Energy: 7867.10J | MEC fair: 0.525
+2026-09-16 15:50:44,894 | INFO |   Reward | Success: 165.57 | Load: 17.13 | Delay: -44.69 | Energy: -31.09 | TaskFail: -16.40 | Interrupt: -6.07 | HOFail: 0.00
+2026-09-16 15:51:13,299 | INFO | Update  228 | Steps: 116,736 | Episodes:   228 | EpReward:    80.08 | FPS:  17778 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:51:13,299 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:51:13,299 | INFO |   Env | HO: 100.00% | Throughput: 18.64/user-min | Task: 88.21% | Resolved: 99.95% | Delay: 2.278s | Energy: 8307.74J | MEC fair: 0.611
+2026-09-16 15:51:13,299 | INFO |   Reward | Success: 159.06 | Load: 19.87 | Delay: -44.62 | Energy: -30.93 | TaskFail: -21.26 | Interrupt: -2.89 | HOFail: 0.00
+2026-09-16 15:51:41,741 | INFO | Update  229 | Steps: 117,248 | Episodes:   229 | EpReward:    80.09 | FPS:   9207 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:51:41,741 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:51:41,741 | INFO |   Env | HO: 100.00% | Throughput: 19.09/user-min | Task: 91.03% | Resolved: 99.98% | Delay: 2.089s | Energy: 7745.08J | MEC fair: 0.477
+2026-09-16 15:51:41,741 | INFO |   Reward | Success: 162.91 | Load: 15.93 | Delay: -43.96 | Energy: -30.75 | TaskFail: -16.06 | Interrupt: -5.52 | HOFail: 0.00
+2026-09-16 15:52:10,305 | INFO | Update  230 | Steps: 117,760 | Episodes:   230 | EpReward:    80.14 | FPS:  17412 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:52:10,305 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:52:10,305 | INFO |   Env | HO: 100.00% | Throughput: 19.36/user-min | Task: 92.85% | Resolved: 99.92% | Delay: 2.039s | Energy: 7456.06J | MEC fair: 0.535
+2026-09-16 15:52:10,305 | INFO |   Reward | Success: 165.20 | Load: 17.25 | Delay: -44.11 | Energy: -30.76 | TaskFail: -12.71 | Interrupt: -3.62 | HOFail: 0.00
+2026-09-16 15:52:38,700 | INFO | Update  231 | Steps: 118,272 | Episodes:   231 | EpReward:    80.16 | FPS:  17841 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:52:38,700 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:52:38,700 | INFO |   Env | HO: 100.00% | Throughput: 18.68/user-min | Task: 87.65% | Resolved: 99.94% | Delay: 2.315s | Energy: 8391.51J | MEC fair: 0.556
+2026-09-16 15:52:38,700 | INFO |   Reward | Success: 159.43 | Load: 19.13 | Delay: -44.74 | Energy: -31.05 | TaskFail: -22.46 | Interrupt: -3.99 | HOFail: 0.00
+2026-09-16 15:53:07,195 | INFO | Update  232 | Steps: 118,784 | Episodes:   232 | EpReward:    80.18 | FPS:  17875 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:53:07,195 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:53:07,195 | INFO |   Env | HO: 100.00% | Throughput: 18.98/user-min | Task: 91.75% | Resolved: 99.97% | Delay: 2.101s | Energy: 7776.35J | MEC fair: 0.480
+2026-09-16 15:53:07,195 | INFO |   Reward | Success: 161.97 | Load: 16.54 | Delay: -44.24 | Energy: -31.05 | TaskFail: -14.57 | Interrupt: -3.19 | HOFail: 0.00
+2026-09-16 15:53:35,830 | INFO | Update  233 | Steps: 119,296 | Episodes:   233 | EpReward:    80.23 | FPS:  17851 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:53:35,830 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:53:35,830 | INFO |   Env | HO: 100.00% | Throughput: 19.39/user-min | Task: 91.30% | Resolved: 99.94% | Delay: 2.045s | Energy: 7587.17J | MEC fair: 0.514
+2026-09-16 15:53:35,830 | INFO |   Reward | Success: 165.49 | Load: 16.32 | Delay: -43.34 | Energy: -30.49 | TaskFail: -15.77 | Interrupt: -4.99 | HOFail: 0.00
+2026-09-16 15:54:04,154 | INFO | Update  234 | Steps: 119,808 | Episodes:   234 | EpReward:    80.32 | FPS:  17628 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:54:04,154 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:54:04,154 | INFO |   Env | HO: 100.00% | Throughput: 18.76/user-min | Task: 89.43% | Resolved: 99.90% | Delay: 2.235s | Energy: 7845.23J | MEC fair: 0.476
+2026-09-16 15:54:04,154 | INFO |   Reward | Success: 160.06 | Load: 16.65 | Delay: -42.89 | Energy: -30.01 | TaskFail: -18.91 | Interrupt: -7.84 | HOFail: 0.00
+2026-09-16 15:54:32,549 | INFO | Update  235 | Steps: 120,320 | Episodes:   235 | EpReward:    80.40 | FPS:  17974 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:54:32,549 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:54:32,549 | INFO |   Env | HO: 100.00% | Throughput: 18.49/user-min | Task: 89.53% | Resolved: 99.95% | Delay: 2.235s | Energy: 8184.12J | MEC fair: 0.622
+2026-09-16 15:54:32,549 | INFO |   Reward | Success: 157.80 | Load: 19.80 | Delay: -44.70 | Energy: -31.11 | TaskFail: -18.46 | Interrupt: -4.05 | HOFail: 0.00
+2026-09-16 15:55:00,789 | INFO | Update  236 | Steps: 120,832 | Episodes:   236 | EpReward:    80.32 | FPS:  17800 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:55:00,789 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:55:00,789 | INFO |   Env | HO: 100.00% | Throughput: 18.33/user-min | Task: 88.76% | Resolved: 99.95% | Delay: 2.259s | Energy: 8074.52J | MEC fair: 0.589
+2026-09-16 15:55:00,789 | INFO |   Reward | Success: 156.43 | Load: 18.89 | Delay: -42.88 | Energy: -30.33 | TaskFail: -19.80 | Interrupt: -5.16 | HOFail: 0.00
+2026-09-16 15:55:29,529 | INFO | Update  237 | Steps: 121,344 | Episodes:   237 | EpReward:    80.44 | FPS:  17349 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:55:29,530 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:55:29,530 | INFO |   Env | HO: 100.00% | Throughput: 19.31/user-min | Task: 92.01% | Resolved: 99.92% | Delay: 2.027s | Energy: 7314.83J | MEC fair: 0.506
+2026-09-16 15:55:29,530 | INFO |   Reward | Success: 164.80 | Load: 15.75 | Delay: -42.89 | Energy: -30.10 | TaskFail: -14.31 | Interrupt: -7.54 | HOFail: 0.00
+2026-09-16 15:55:58,064 | INFO | Update  238 | Steps: 121,856 | Episodes:   238 | EpReward:    80.40 | FPS:  18211 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:55:58,065 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:55:58,065 | INFO |   Env | HO: 100.00% | Throughput: 18.98/user-min | Task: 89.80% | Resolved: 99.98% | Delay: 2.185s | Energy: 8202.81J | MEC fair: 0.609
+2026-09-16 15:55:58,065 | INFO |   Reward | Success: 162.00 | Load: 19.66 | Delay: -45.77 | Energy: -31.85 | TaskFail: -18.40 | Interrupt: -2.49 | HOFail: 0.00
+2026-09-16 15:56:26,657 | INFO | Update  239 | Steps: 122,368 | Episodes:   239 | EpReward:    80.55 | FPS:  17458 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:56:26,658 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:56:26,658 | INFO |   Env | HO: 100.00% | Throughput: 19.20/user-min | Task: 92.95% | Resolved: 99.98% | Delay: 2.004s | Energy: 7380.06J | MEC fair: 0.466
+2026-09-16 15:56:26,658 | INFO |   Reward | Success: 163.83 | Load: 15.23 | Delay: -43.19 | Energy: -30.59 | TaskFail: -12.43 | Interrupt: -3.34 | HOFail: 0.00
+2026-09-16 15:56:55,061 | INFO | Update  240 | Steps: 122,880 | Episodes:   240 | EpReward:    80.62 | FPS:  17939 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:56:55,062 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:56:55,062 | INFO |   Env | HO: 100.00% | Throughput: 18.65/user-min | Task: 87.70% | Resolved: 99.89% | Delay: 2.336s | Energy: 8526.84J | MEC fair: 0.632
+2026-09-16 15:56:55,062 | INFO |   Reward | Success: 159.17 | Load: 20.05 | Delay: -44.99 | Energy: -31.19 | TaskFail: -22.31 | Interrupt: -3.40 | HOFail: 0.00
+2026-09-16 15:57:23,510 | INFO | Update  241 | Steps: 123,392 | Episodes:   241 | EpReward:    80.51 | FPS:  17827 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:57:23,511 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:57:23,511 | INFO |   Env | HO: 100.00% | Throughput: 18.45/user-min | Task: 87.05% | Resolved: 99.98% | Delay: 2.361s | Energy: 8362.26J | MEC fair: 0.582
+2026-09-16 15:57:23,511 | INFO |   Reward | Success: 157.43 | Load: 18.93 | Delay: -43.87 | Energy: -30.47 | TaskFail: -23.43 | Interrupt: -2.67 | HOFail: 0.00
+2026-09-16 15:57:51,889 | INFO | Update  242 | Steps: 123,904 | Episodes:   242 | EpReward:    80.63 | FPS:  17733 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:57:51,889 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:57:51,889 | INFO |   Env | HO: 100.00% | Throughput: 18.80/user-min | Task: 90.46% | Resolved: 99.89% | Delay: 2.115s | Energy: 7949.62J | MEC fair: 0.559
+2026-09-16 15:57:51,889 | INFO |   Reward | Success: 160.40 | Load: 18.23 | Delay: -43.93 | Energy: -31.07 | TaskFail: -16.91 | Interrupt: -1.99 | HOFail: 0.00
+2026-09-16 15:58:20,413 | INFO | Update  243 | Steps: 124,416 | Episodes:   243 | EpReward:    80.69 | FPS:  17357 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:58:20,413 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:58:20,413 | INFO |   Env | HO: 100.00% | Throughput: 19.04/user-min | Task: 90.88% | Resolved: 99.92% | Delay: 2.102s | Energy: 7772.97J | MEC fair: 0.470
+2026-09-16 15:58:20,414 | INFO |   Reward | Success: 162.49 | Load: 16.27 | Delay: -44.19 | Energy: -30.57 | TaskFail: -16.31 | Interrupt: -3.04 | HOFail: 0.00
+2026-09-16 15:58:49,087 | INFO | Update  244 | Steps: 124,928 | Episodes:   244 | EpReward:    80.80 | FPS:  17824 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 15:58:49,087 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 15:58:49,087 | INFO |   Env | HO: 100.00% | Throughput: 19.58/user-min | Task: 92.24% | Resolved: 99.94% | Delay: 2.012s | Energy: 7192.18J | MEC fair: 0.503
+2026-09-16 15:58:49,087 | INFO |   Reward | Success: 167.06 | Load: 16.43 | Delay: -43.01 | Energy: -30.10 | TaskFail: -14.06 | Interrupt: -7.33 | HOFail: 0.00
+2026-09-16 15:58:53,091 | INFO | ----------------------------------------
+2026-09-16 15:58:53,091 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 15:59:40,909 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/best_model.pt
+2026-09-16 15:59:40,909 | INFO | 评估结果: 奖励 = 85.76 ± 4.78, 长度 = 512, 延迟 = 2.109s
+2026-09-16 15:59:40,909 | INFO | ----------------------------------------
+2026-09-16 16:00:05,501 | INFO | Update  245 | Steps: 125,440 | Episodes:   245 | EpReward:    81.00 | FPS:  17828 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:00:05,501 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:00:05,501 | INFO |   Env | HO: 100.00% | Throughput: 19.50/user-min | Task: 93.00% | Resolved: 99.92% | Delay: 1.944s | Energy: 6966.74J | MEC fair: 0.519
+2026-09-16 16:00:05,501 | INFO |   Reward | Success: 166.37 | Load: 17.07 | Delay: -42.55 | Energy: -29.74 | TaskFail: -12.51 | Interrupt: -7.43 | HOFail: 0.00
+2026-09-16 16:00:33,768 | INFO | Update  246 | Steps: 125,952 | Episodes:   246 | EpReward:    80.88 | FPS:  17923 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:00:33,768 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:00:33,768 | INFO |   Env | HO: 100.00% | Throughput: 18.43/user-min | Task: 87.30% | Resolved: 99.95% | Delay: 2.357s | Energy: 8390.78J | MEC fair: 0.598
+2026-09-16 16:00:33,768 | INFO |   Reward | Success: 157.26 | Load: 19.31 | Delay: -44.06 | Energy: -30.61 | TaskFail: -22.89 | Interrupt: -3.86 | HOFail: 0.00
+2026-09-16 16:01:02,251 | INFO | Update  247 | Steps: 126,464 | Episodes:   247 | EpReward:    80.86 | FPS:  17675 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:01:02,251 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:01:02,251 | INFO |   Env | HO: 100.00% | Throughput: 18.89/user-min | Task: 89.48% | Resolved: 99.90% | Delay: 2.209s | Energy: 8226.83J | MEC fair: 0.632
+2026-09-16 16:01:02,251 | INFO |   Reward | Success: 161.20 | Load: 19.64 | Delay: -44.90 | Energy: -31.36 | TaskFail: -18.94 | Interrupt: -2.51 | HOFail: 0.00
+2026-09-16 16:01:30,620 | INFO | Update  248 | Steps: 126,976 | Episodes:   248 | EpReward:    80.77 | FPS:  17729 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:01:30,620 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:01:30,620 | INFO |   Env | HO: 100.00% | Throughput: 18.46/user-min | Task: 88.40% | Resolved: 99.92% | Delay: 2.314s | Energy: 8461.63J | MEC fair: 0.520
+2026-09-16 16:01:30,620 | INFO |   Reward | Success: 157.49 | Load: 17.60 | Delay: -44.29 | Energy: -31.16 | TaskFail: -20.66 | Interrupt: -3.41 | HOFail: 0.00
+2026-09-16 16:01:59,019 | INFO | Update  249 | Steps: 127,488 | Episodes:   249 | EpReward:    80.76 | FPS:  18019 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:01:59,020 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:01:59,020 | INFO |   Env | HO: 100.00% | Throughput: 18.96/user-min | Task: 89.86% | Resolved: 99.97% | Delay: 2.190s | Energy: 8204.35J | MEC fair: 0.649
+2026-09-16 16:01:59,020 | INFO |   Reward | Success: 161.83 | Load: 20.02 | Delay: -45.05 | Energy: -31.65 | TaskFail: -18.26 | Interrupt: -2.86 | HOFail: 0.00
+2026-09-16 16:02:27,455 | INFO | Update  250 | Steps: 128,000 | Episodes:   250 | EpReward:    80.69 | FPS:  17559 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:02:27,455 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:02:27,455 | INFO |   Env | HO: 100.00% | Throughput: 18.90/user-min | Task: 88.65% | Resolved: 99.92% | Delay: 2.291s | Energy: 8345.97J | MEC fair: 0.497
+2026-09-16 16:02:27,455 | INFO |   Reward | Success: 161.31 | Load: 16.76 | Delay: -44.64 | Energy: -31.06 | TaskFail: -20.66 | Interrupt: -4.10 | HOFail: 0.00
+2026-09-16 16:02:55,887 | INFO | Update  251 | Steps: 128,512 | Episodes:   251 | EpReward:    80.78 | FPS:  17574 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:02:55,887 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:02:55,887 | INFO |   Env | HO: 100.00% | Throughput: 18.09/user-min | Task: 88.49% | Resolved: 99.92% | Delay: 2.251s | Energy: 8146.94J | MEC fair: 0.519
+2026-09-16 16:02:55,887 | INFO |   Reward | Success: 154.40 | Load: 18.10 | Delay: -42.75 | Energy: -30.17 | TaskFail: -20.09 | Interrupt: -2.44 | HOFail: 0.00
+2026-09-16 16:03:24,380 | INFO | Update  252 | Steps: 129,024 | Episodes:   252 | EpReward:    80.84 | FPS:  17804 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:03:24,380 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:03:24,380 | INFO |   Env | HO: 100.00% | Throughput: 18.95/user-min | Task: 88.90% | Resolved: 99.98% | Delay: 2.238s | Energy: 8122.01J | MEC fair: 0.507
+2026-09-16 16:03:24,380 | INFO |   Reward | Success: 161.71 | Load: 16.81 | Delay: -44.29 | Energy: -30.59 | TaskFail: -20.20 | Interrupt: -2.82 | HOFail: 0.00
+2026-09-16 16:03:52,749 | INFO | Update  253 | Steps: 129,536 | Episodes:   253 | EpReward:    80.83 | FPS:  17620 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:03:52,749 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:03:52,749 | INFO |   Env | HO: 100.00% | Throughput: 18.43/user-min | Task: 87.97% | Resolved: 99.90% | Delay: 2.311s | Energy: 8374.48J | MEC fair: 0.544
+2026-09-16 16:03:52,749 | INFO |   Reward | Success: 157.29 | Load: 18.41 | Delay: -44.08 | Energy: -30.86 | TaskFail: -21.51 | Interrupt: -3.45 | HOFail: 0.00
+2026-09-16 16:04:21,224 | INFO | Update  254 | Steps: 130,048 | Episodes:   254 | EpReward:    80.70 | FPS:  17864 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:04:21,224 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:04:21,224 | INFO |   Env | HO: 100.00% | Throughput: 18.68/user-min | Task: 88.36% | Resolved: 99.92% | Delay: 2.250s | Energy: 8272.98J | MEC fair: 0.420
+2026-09-16 16:04:21,224 | INFO |   Reward | Success: 159.37 | Load: 15.81 | Delay: -43.98 | Energy: -30.89 | TaskFail: -21.00 | Interrupt: -3.60 | HOFail: 0.00
+2026-09-16 16:04:49,522 | INFO | Update  255 | Steps: 130,560 | Episodes:   255 | EpReward:    80.60 | FPS:  17754 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:04:49,522 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:04:49,522 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 89.06% | Resolved: 99.92% | Delay: 2.210s | Energy: 8045.51J | MEC fair: 0.514
+2026-09-16 16:04:49,522 | INFO |   Reward | Success: 158.60 | Load: 17.29 | Delay: -42.91 | Energy: -30.40 | TaskFail: -19.49 | Interrupt: -3.87 | HOFail: 0.00
+2026-09-16 16:05:18,200 | INFO | Update  256 | Steps: 131,072 | Episodes:   256 | EpReward:    80.55 | FPS:  18091 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:05:18,200 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:05:18,200 | INFO |   Env | HO: 100.00% | Throughput: 19.20/user-min | Task: 90.92% | Resolved: 99.89% | Delay: 2.074s | Energy: 7439.22J | MEC fair: 0.497
+2026-09-16 16:05:18,200 | INFO |   Reward | Success: 163.86 | Load: 16.80 | Delay: -43.40 | Energy: -29.97 | TaskFail: -16.37 | Interrupt: -5.68 | HOFail: 0.00
+2026-09-16 16:05:46,616 | INFO | Update  257 | Steps: 131,584 | Episodes:   257 | EpReward:    80.56 | FPS:  17542 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:05:46,617 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:05:46,617 | INFO |   Env | HO: 100.00% | Throughput: 19.06/user-min | Task: 88.99% | Resolved: 99.98% | Delay: 2.237s | Energy: 8459.27J | MEC fair: 0.574
+2026-09-16 16:05:46,617 | INFO |   Reward | Success: 162.66 | Load: 19.28 | Delay: -45.84 | Energy: -31.93 | TaskFail: -20.11 | Interrupt: -3.43 | HOFail: 0.00
+2026-09-16 16:06:15,181 | INFO | Update  258 | Steps: 132,096 | Episodes:   258 | EpReward:    80.54 | FPS:  17805 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:06:15,181 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:06:15,182 | INFO |   Env | HO: 100.00% | Throughput: 18.72/user-min | Task: 88.19% | Resolved: 99.89% | Delay: 2.266s | Energy: 8418.95J | MEC fair: 0.484
+2026-09-16 16:06:15,182 | INFO |   Reward | Success: 159.74 | Load: 16.84 | Delay: -44.81 | Energy: -31.35 | TaskFail: -21.40 | Interrupt: -2.96 | HOFail: 0.00
+2026-09-16 16:06:43,509 | INFO | Update  259 | Steps: 132,608 | Episodes:   259 | EpReward:    80.51 | FPS:  17838 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:06:43,509 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:06:43,509 | INFO |   Env | HO: 100.00% | Throughput: 18.35/user-min | Task: 88.02% | Resolved: 99.95% | Delay: 2.329s | Energy: 8310.92J | MEC fair: 0.557
+2026-09-16 16:06:43,509 | INFO |   Reward | Success: 156.60 | Load: 19.09 | Delay: -43.79 | Energy: -30.68 | TaskFail: -21.31 | Interrupt: -3.32 | HOFail: 0.00
+2026-09-16 16:07:11,986 | INFO | Update  260 | Steps: 133,120 | Episodes:   260 | EpReward:    80.52 | FPS:  17921 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:07:11,986 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:07:11,986 | INFO |   Env | HO: 100.00% | Throughput: 18.85/user-min | Task: 89.56% | Resolved: 99.97% | Delay: 2.214s | Energy: 8198.97J | MEC fair: 0.639
+2026-09-16 16:07:11,986 | INFO |   Reward | Success: 160.83 | Load: 20.11 | Delay: -44.68 | Energy: -31.26 | TaskFail: -18.74 | Interrupt: -4.12 | HOFail: 0.00
+2026-09-16 16:07:40,576 | INFO | Update  261 | Steps: 133,632 | Episodes:   261 | EpReward:    80.65 | FPS:  17917 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:07:40,576 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:07:40,577 | INFO |   Env | HO: 100.00% | Throughput: 19.67/user-min | Task: 91.93% | Resolved: 99.92% | Delay: 2.080s | Energy: 7790.59J | MEC fair: 0.513
+2026-09-16 16:07:40,577 | INFO |   Reward | Success: 167.89 | Load: 17.02 | Delay: -45.20 | Energy: -31.46 | TaskFail: -14.74 | Interrupt: -4.91 | HOFail: 0.00
+2026-09-16 16:08:09,352 | INFO | Update  262 | Steps: 134,144 | Episodes:   262 | EpReward:    80.69 | FPS:  17716 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:08:09,352 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:08:09,352 | INFO |   Env | HO: 99.82% | Throughput: 19.44/user-min | Task: 92.60% | Resolved: 99.92% | Delay: 2.016s | Energy: 7409.12J | MEC fair: 0.517
+2026-09-16 16:08:09,352 | INFO |   Reward | Success: 165.91 | Load: 17.03 | Delay: -44.38 | Energy: -30.61 | TaskFail: -13.26 | Interrupt: -6.65 | HOFail: -0.01
+2026-09-16 16:08:37,877 | INFO | Update  263 | Steps: 134,656 | Episodes:   263 | EpReward:    80.81 | FPS:  17713 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:08:37,877 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:08:37,877 | INFO |   Env | HO: 100.00% | Throughput: 19.26/user-min | Task: 90.37% | Resolved: 99.95% | Delay: 2.129s | Energy: 7782.31J | MEC fair: 0.505
+2026-09-16 16:08:37,877 | INFO |   Reward | Success: 164.34 | Load: 16.40 | Delay: -43.48 | Energy: -30.54 | TaskFail: -17.51 | Interrupt: -3.19 | HOFail: 0.00
+2026-09-16 16:09:06,692 | INFO | Update  264 | Steps: 135,168 | Episodes:   264 | EpReward:    80.81 | FPS:  17130 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:09:06,692 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:09:06,692 | INFO |   Env | HO: 100.00% | Throughput: 19.27/user-min | Task: 93.26% | Resolved: 99.94% | Delay: 1.973s | Energy: 7070.23J | MEC fair: 0.515
+2026-09-16 16:09:06,692 | INFO |   Reward | Success: 164.46 | Load: 17.00 | Delay: -43.68 | Energy: -29.86 | TaskFail: -11.89 | Interrupt: -7.19 | HOFail: 0.00
+2026-09-16 16:09:35,373 | INFO | Update  265 | Steps: 135,680 | Episodes:   265 | EpReward:    80.84 | FPS:  17274 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:09:35,373 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:09:35,373 | INFO |   Env | HO: 100.00% | Throughput: 19.15/user-min | Task: 91.02% | Resolved: 99.86% | Delay: 2.080s | Energy: 7535.96J | MEC fair: 0.510
+2026-09-16 16:09:35,373 | INFO |   Reward | Success: 163.37 | Load: 16.60 | Delay: -43.37 | Energy: -30.29 | TaskFail: -16.11 | Interrupt: -4.09 | HOFail: 0.00
+2026-09-16 16:10:03,791 | INFO | Update  266 | Steps: 136,192 | Episodes:   266 | EpReward:    80.86 | FPS:  17845 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:10:03,791 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:10:03,791 | INFO |   Env | HO: 100.00% | Throughput: 19.23/user-min | Task: 90.84% | Resolved: 99.92% | Delay: 2.086s | Energy: 7702.08J | MEC fair: 0.480
+2026-09-16 16:10:03,791 | INFO |   Reward | Success: 164.09 | Load: 14.85 | Delay: -42.83 | Energy: -30.57 | TaskFail: -16.54 | Interrupt: -6.45 | HOFail: 0.00
+2026-09-16 16:10:32,118 | INFO | Update  267 | Steps: 136,704 | Episodes:   267 | EpReward:    80.82 | FPS:  17516 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:10:32,118 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:10:32,118 | INFO |   Env | HO: 100.00% | Throughput: 18.39/user-min | Task: 87.37% | Resolved: 99.94% | Delay: 2.363s | Energy: 8482.56J | MEC fair: 0.544
+2026-09-16 16:10:32,118 | INFO |   Reward | Success: 156.91 | Load: 18.67 | Delay: -44.00 | Energy: -30.83 | TaskFail: -22.69 | Interrupt: -5.50 | HOFail: 0.00
+2026-09-16 16:11:00,424 | INFO | Update  268 | Steps: 137,216 | Episodes:   268 | EpReward:    80.87 | FPS:  17688 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:11:00,425 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:11:00,425 | INFO |   Env | HO: 100.00% | Throughput: 18.47/user-min | Task: 88.54% | Resolved: 99.90% | Delay: 2.218s | Energy: 8187.42J | MEC fair: 0.562
+2026-09-16 16:11:00,425 | INFO |   Reward | Success: 157.63 | Load: 18.12 | Delay: -43.52 | Energy: -30.70 | TaskFail: -20.40 | Interrupt: -2.92 | HOFail: 0.00
+2026-09-16 16:11:28,936 | INFO | Update  269 | Steps: 137,728 | Episodes:   269 | EpReward:    80.93 | FPS:  17923 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:11:28,936 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:11:28,936 | INFO |   Env | HO: 100.00% | Throughput: 19.07/user-min | Task: 89.25% | Resolved: 99.95% | Delay: 2.299s | Energy: 8414.41J | MEC fair: 0.653
+2026-09-16 16:11:28,937 | INFO |   Reward | Success: 162.74 | Load: 20.37 | Delay: -46.42 | Energy: -32.00 | TaskFail: -19.60 | Interrupt: -2.62 | HOFail: 0.00
+2026-09-16 16:11:57,202 | INFO | Update  270 | Steps: 138,240 | Episodes:   270 | EpReward:    80.88 | FPS:  17599 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:11:57,202 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:11:57,203 | INFO |   Env | HO: 100.00% | Throughput: 18.73/user-min | Task: 87.34% | Resolved: 99.94% | Delay: 2.354s | Energy: 8657.45J | MEC fair: 0.497
+2026-09-16 16:11:57,203 | INFO |   Reward | Success: 159.86 | Load: 17.47 | Delay: -45.48 | Energy: -31.41 | TaskFail: -23.17 | Interrupt: -4.86 | HOFail: 0.00
+2026-09-16 16:12:25,494 | INFO | Update  271 | Steps: 138,752 | Episodes:   271 | EpReward:    80.84 | FPS:  17792 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:12:25,494 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:12:25,494 | INFO |   Env | HO: 100.00% | Throughput: 18.08/user-min | Task: 87.86% | Resolved: 99.95% | Delay: 2.307s | Energy: 8233.88J | MEC fair: 0.585
+2026-09-16 16:12:25,494 | INFO |   Reward | Success: 154.29 | Load: 19.13 | Delay: -43.24 | Energy: -30.32 | TaskFail: -21.31 | Interrupt: -3.27 | HOFail: 0.00
+2026-09-16 16:12:53,968 | INFO | Update  272 | Steps: 139,264 | Episodes:   272 | EpReward:    80.84 | FPS:  17760 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:12:53,968 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:12:53,968 | INFO |   Env | HO: 100.00% | Throughput: 18.53/user-min | Task: 89.40% | Resolved: 99.92% | Delay: 2.177s | Energy: 8069.48J | MEC fair: 0.456
+2026-09-16 16:12:53,968 | INFO |   Reward | Success: 158.09 | Load: 14.88 | Delay: -42.58 | Energy: -30.48 | TaskFail: -18.74 | Interrupt: -3.80 | HOFail: 0.00
+2026-09-16 16:13:22,385 | INFO | Update  273 | Steps: 139,776 | Episodes:   273 | EpReward:    80.92 | FPS:  17674 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:13:22,385 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:13:22,385 | INFO |   Env | HO: 100.00% | Throughput: 19.09/user-min | Task: 91.38% | Resolved: 99.95% | Delay: 2.123s | Energy: 7388.42J | MEC fair: 0.508
+2026-09-16 16:13:22,386 | INFO |   Reward | Success: 162.89 | Load: 17.01 | Delay: -42.92 | Energy: -29.97 | TaskFail: -15.37 | Interrupt: -8.16 | HOFail: 0.00
+2026-09-16 16:13:50,949 | INFO | Update  274 | Steps: 140,288 | Episodes:   274 | EpReward:    80.99 | FPS:  17157 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:13:50,949 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:13:50,949 | INFO |   Env | HO: 100.00% | Throughput: 19.38/user-min | Task: 91.73% | Resolved: 99.97% | Delay: 2.075s | Energy: 7468.73J | MEC fair: 0.523
+2026-09-16 16:13:50,949 | INFO |   Reward | Success: 165.37 | Load: 16.89 | Delay: -44.32 | Energy: -30.24 | TaskFail: -14.91 | Interrupt: -8.31 | HOFail: 0.00
+2026-09-16 16:14:19,323 | INFO | Update  275 | Steps: 140,800 | Episodes:   275 | EpReward:    80.97 | FPS:  17823 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:14:19,323 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:14:19,323 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 88.38% | Resolved: 99.94% | Delay: 2.309s | Energy: 8263.14J | MEC fair: 0.451
+2026-09-16 16:14:19,323 | INFO |   Reward | Success: 158.66 | Load: 16.66 | Delay: -43.95 | Energy: -30.74 | TaskFail: -20.86 | Interrupt: -2.62 | HOFail: 0.00
+2026-09-16 16:14:47,693 | INFO | Update  276 | Steps: 141,312 | Episodes:   276 | EpReward:    80.99 | FPS:  17853 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:14:47,693 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:14:47,694 | INFO |   Env | HO: 100.00% | Throughput: 18.55/user-min | Task: 87.02% | Resolved: 99.92% | Delay: 2.370s | Energy: 8642.92J | MEC fair: 0.596
+2026-09-16 16:14:47,694 | INFO |   Reward | Success: 158.26 | Load: 19.67 | Delay: -45.13 | Energy: -31.26 | TaskFail: -23.60 | Interrupt: -3.21 | HOFail: 0.00
+2026-09-16 16:15:16,422 | INFO | Update  277 | Steps: 141,824 | Episodes:   277 | EpReward:    81.05 | FPS:  17800 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:15:16,422 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:15:16,422 | INFO |   Env | HO: 100.00% | Throughput: 18.89/user-min | Task: 91.29% | Resolved: 99.92% | Delay: 2.030s | Energy: 7258.17J | MEC fair: 0.466
+2026-09-16 16:15:16,422 | INFO |   Reward | Success: 161.20 | Load: 15.48 | Delay: -41.84 | Energy: -29.23 | TaskFail: -15.37 | Interrupt: -8.72 | HOFail: 0.00
+2026-09-16 16:15:44,966 | INFO | Update  278 | Steps: 142,336 | Episodes:   278 | EpReward:    81.09 | FPS:  17492 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:15:44,966 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:15:44,966 | INFO |   Env | HO: 100.00% | Throughput: 18.94/user-min | Task: 89.59% | Resolved: 99.94% | Delay: 2.247s | Energy: 7955.03J | MEC fair: 0.516
+2026-09-16 16:15:44,966 | INFO |   Reward | Success: 161.60 | Load: 16.74 | Delay: -44.03 | Energy: -30.55 | TaskFail: -18.77 | Interrupt: -5.56 | HOFail: 0.00
+2026-09-16 16:16:13,378 | INFO | Update  279 | Steps: 142,848 | Episodes:   279 | EpReward:    81.15 | FPS:  17645 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:16:13,378 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:16:13,378 | INFO |   Env | HO: 100.00% | Throughput: 18.59/user-min | Task: 89.02% | Resolved: 99.92% | Delay: 2.210s | Energy: 8105.17J | MEC fair: 0.640
+2026-09-16 16:16:13,378 | INFO |   Reward | Success: 158.63 | Load: 20.13 | Delay: -44.27 | Energy: -30.90 | TaskFail: -19.57 | Interrupt: -1.26 | HOFail: 0.00
+2026-09-16 16:16:42,076 | INFO | Update  280 | Steps: 143,360 | Episodes:   280 | EpReward:    81.21 | FPS:  17706 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:16:42,076 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:16:42,076 | INFO |   Env | HO: 100.00% | Throughput: 19.18/user-min | Task: 91.90% | Resolved: 99.92% | Delay: 2.069s | Energy: 7475.16J | MEC fair: 0.518
+2026-09-16 16:16:42,076 | INFO |   Reward | Success: 163.66 | Load: 16.42 | Delay: -43.26 | Energy: -30.18 | TaskFail: -14.43 | Interrupt: -5.72 | HOFail: 0.00
+2026-09-16 16:17:10,531 | INFO | Update  281 | Steps: 143,872 | Episodes:   281 | EpReward:    81.12 | FPS:  17428 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:17:10,531 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:17:10,531 | INFO |   Env | HO: 100.00% | Throughput: 18.63/user-min | Task: 87.99% | Resolved: 99.94% | Delay: 2.324s | Energy: 8577.77J | MEC fair: 0.601
+2026-09-16 16:17:10,531 | INFO |   Reward | Success: 158.94 | Load: 19.56 | Delay: -45.32 | Energy: -31.38 | TaskFail: -21.69 | Interrupt: -2.44 | HOFail: 0.00
+2026-09-16 16:17:39,077 | INFO | Update  282 | Steps: 144,384 | Episodes:   282 | EpReward:    81.10 | FPS:  17784 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:17:39,077 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:17:39,077 | INFO |   Env | HO: 100.00% | Throughput: 19.02/user-min | Task: 90.19% | Resolved: 99.92% | Delay: 2.160s | Energy: 7974.42J | MEC fair: 0.481
+2026-09-16 16:17:39,078 | INFO |   Reward | Success: 162.31 | Load: 16.70 | Delay: -44.41 | Energy: -31.06 | TaskFail: -17.66 | Interrupt: -3.37 | HOFail: 0.00
+2026-09-16 16:18:07,427 | INFO | Update  283 | Steps: 144,896 | Episodes:   283 | EpReward:    81.05 | FPS:  17525 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:18:07,427 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:18:07,427 | INFO |   Env | HO: 100.00% | Throughput: 18.37/user-min | Task: 86.87% | Resolved: 99.92% | Delay: 2.407s | Energy: 8612.20J | MEC fair: 0.505
+2026-09-16 16:18:07,427 | INFO |   Reward | Success: 156.77 | Load: 17.08 | Delay: -44.28 | Energy: -30.87 | TaskFail: -23.69 | Interrupt: -4.92 | HOFail: 0.00
+2026-09-16 16:18:35,783 | INFO | Update  284 | Steps: 145,408 | Episodes:   284 | EpReward:    80.98 | FPS:  17691 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:18:35,783 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:18:35,783 | INFO |   Env | HO: 100.00% | Throughput: 18.18/user-min | Task: 85.82% | Resolved: 99.92% | Delay: 2.434s | Energy: 8511.80J | MEC fair: 0.598
+2026-09-16 16:18:35,783 | INFO |   Reward | Success: 155.17 | Load: 19.99 | Delay: -44.25 | Energy: -30.41 | TaskFail: -25.63 | Interrupt: -3.84 | HOFail: 0.00
+2026-09-16 16:19:04,521 | INFO | Update  285 | Steps: 145,920 | Episodes:   285 | EpReward:    80.94 | FPS:  17706 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:19:04,521 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:19:04,521 | INFO |   Env | HO: 100.00% | Throughput: 19.53/user-min | Task: 91.36% | Resolved: 99.89% | Delay: 2.051s | Energy: 7485.23J | MEC fair: 0.509
+2026-09-16 16:19:04,521 | INFO |   Reward | Success: 166.69 | Load: 16.73 | Delay: -43.76 | Energy: -30.47 | TaskFail: -15.77 | Interrupt: -5.43 | HOFail: 0.00
+2026-09-16 16:19:32,969 | INFO | Update  286 | Steps: 146,432 | Episodes:   286 | EpReward:    80.95 | FPS:  17908 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:19:32,969 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:19:32,969 | INFO |   Env | HO: 100.00% | Throughput: 18.56/user-min | Task: 89.02% | Resolved: 99.94% | Delay: 2.255s | Energy: 8192.83J | MEC fair: 0.635
+2026-09-16 16:19:32,969 | INFO |   Reward | Success: 158.37 | Load: 20.32 | Delay: -45.12 | Energy: -31.21 | TaskFail: -19.54 | Interrupt: -3.29 | HOFail: 0.00
+2026-09-16 16:20:01,376 | INFO | Update  287 | Steps: 146,944 | Episodes:   287 | EpReward:    80.99 | FPS:  17901 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:20:01,376 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:20:01,376 | INFO |   Env | HO: 100.00% | Throughput: 18.69/user-min | Task: 90.42% | Resolved: 99.92% | Delay: 2.144s | Energy: 7952.13J | MEC fair: 0.464
+2026-09-16 16:20:01,376 | INFO |   Reward | Success: 159.46 | Load: 16.58 | Delay: -43.50 | Energy: -30.83 | TaskFail: -16.89 | Interrupt: -5.43 | HOFail: 0.00
+2026-09-16 16:20:29,819 | INFO | Update  288 | Steps: 147,456 | Episodes:   288 | EpReward:    80.99 | FPS:  17890 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:20:29,819 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:20:29,820 | INFO |   Env | HO: 100.00% | Throughput: 19.04/user-min | Task: 89.20% | Resolved: 99.98% | Delay: 2.237s | Energy: 7903.15J | MEC fair: 0.443
+2026-09-16 16:20:29,820 | INFO |   Reward | Success: 162.51 | Load: 15.89 | Delay: -43.03 | Energy: -30.17 | TaskFail: -19.69 | Interrupt: -7.41 | HOFail: 0.00
+2026-09-16 16:20:58,455 | INFO | Update  289 | Steps: 147,968 | Episodes:   289 | EpReward:    80.93 | FPS:  17623 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:20:58,455 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:20:58,455 | INFO |   Env | HO: 100.00% | Throughput: 18.87/user-min | Task: 91.79% | Resolved: 99.97% | Delay: 2.034s | Energy: 7283.51J | MEC fair: 0.486
+2026-09-16 16:20:58,455 | INFO |   Reward | Success: 161.03 | Load: 15.49 | Delay: -41.33 | Energy: -29.58 | TaskFail: -14.40 | Interrupt: -2.53 | HOFail: 0.00
+2026-09-16 16:21:26,823 | INFO | Update  290 | Steps: 148,480 | Episodes:   290 | EpReward:    80.90 | FPS:  17728 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:21:26,823 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:21:26,823 | INFO |   Env | HO: 100.00% | Throughput: 18.70/user-min | Task: 88.67% | Resolved: 99.94% | Delay: 2.244s | Energy: 8193.99J | MEC fair: 0.624
+2026-09-16 16:21:26,823 | INFO |   Reward | Success: 159.60 | Load: 20.21 | Delay: -44.69 | Energy: -31.19 | TaskFail: -20.40 | Interrupt: -2.17 | HOFail: 0.00
+2026-09-16 16:21:55,172 | INFO | Update  291 | Steps: 148,992 | Episodes:   291 | EpReward:    80.91 | FPS:  18153 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:21:55,172 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:21:55,172 | INFO |   Env | HO: 100.00% | Throughput: 18.34/user-min | Task: 88.53% | Resolved: 99.95% | Delay: 2.279s | Energy: 8010.20J | MEC fair: 0.615
+2026-09-16 16:21:55,172 | INFO |   Reward | Success: 156.54 | Load: 20.12 | Delay: -43.46 | Energy: -30.21 | TaskFail: -20.29 | Interrupt: -3.65 | HOFail: 0.00
+2026-09-16 16:22:23,419 | INFO | Update  292 | Steps: 149,504 | Episodes:   292 | EpReward:    80.80 | FPS:  17377 | Actor Loss: 0.0000 | Critic Loss: 0.0000 | HAN Grad: 0.0000 | HAN Δ: 0.000000 | HAN Metapaths: 0
+2026-09-16 16:22:23,419 | INFO |   Phase | Rollout: 0.00s | PPO update: 0.00s
+2026-09-16 16:22:23,419 | INFO |   Env | HO: 100.00% | Throughput: 18.43/user-min | Task: 87.96% | Resolved: 99.98% | Delay: 2.256s | Energy: 8129.01J | MEC fair: 0.518
+2026-09-16 16:22:23,419 | INFO |   Reward | Success: 157.23 | Load: 17.34 | Delay: -43.23 | Energy: -30.22 | TaskFail: -21.51 | Interrupt: -4.05 | HOFail: 0.00
+2026-09-16 16:22:50,947 | INFO | ----------------------------------------
+2026-09-16 16:22:50,947 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 16:23:38,915 | INFO | 评估结果: 奖励 = 85.07 ± 6.00, 长度 = 512, 延迟 = 2.131s
+2026-09-16 16:23:38,915 | INFO | ----------------------------------------
+2026-09-16 16:23:38,938 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/checkpoint_150000.pt
+2026-09-16 16:23:38,940 | INFO | ----------------------------------------
+2026-09-16 16:23:38,940 | INFO | 开始评估 HAN+PDQN...
+2026-09-16 16:24:26,856 | INFO | 评估结果: 奖励 = 85.07 ± 6.00, 长度 = 512, 延迟 = 2.131s
+2026-09-16 16:24:26,856 | INFO | ----------------------------------------
+2026-09-16 16:24:26,880 | INFO | 模型已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/final_model.pt
+2026-09-16 16:24:26,902 | INFO | 训练历史已保存: /home/pjpjq/LEO_switch/results/multiseed_0907/seed43/u35/learned_baselines/han_pdqn/training_history.json

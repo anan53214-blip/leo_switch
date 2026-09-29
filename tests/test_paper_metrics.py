@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from scripts.run_multiuser_scaling_suite import (
     has_any_training_artifacts,
     has_training_artifacts,
     plot_scaling_metrics,
+    plot_paired_reward_advantage,
 )
 from scripts.train import (
     ENVIRONMENT_SCHEMA_VERSION,
@@ -425,6 +427,40 @@ def test_comparison_csv_preserves_task_counts_and_zero_success_is_undefined(
     assert rows[0]["avg_success_delay"] == ""
     assert rows[0]["p95_success_delay"] == ""
     assert rows[0]["energy_per_successful_task"] == ""
+
+
+def test_multiseed_aggregation_preserves_han_pdqn_source_identity(tmp_path):
+    summary_path = compare.save_results_csv(
+        tmp_path,
+        [{"method": "han_pdqn_multiuser_u20", "display_name": "HAN+PDQN",
+          "mean_reward": 100.0, "completed_tasks": 1}],
+    )
+
+    rows = _read_comparison_rows(summary_path, num_users=20, seed=43)
+
+    assert rows[0]["method"] == "han_pdqn"
+    assert rows[0]["source_method"] == "han_pdqn_multiuser_u20"
+    assert rows[0]["display_name"] == "HAN+PDQN"
+
+
+def test_paired_reward_advantage_keeps_losing_seed(tmp_path):
+    rows = [
+        {"num_users": "20", "seed": "43", "method": "han_pdqn", "mean_reward": "60"},
+        {"num_users": "20", "seed": "43", "method": "pdqn", "display_name": "PDQN", "mean_reward": "98"},
+        {"num_users": "20", "seed": "43", "method": "han_mappo", "display_name": "HAN+MAPPO", "mean_reward": "99"},
+        {"num_users": "20", "seed": "44", "method": "han_pdqn", "mean_reward": "110"},
+        {"num_users": "20", "seed": "44", "method": "pdqn", "display_name": "PDQN", "mean_reward": "98"},
+    ]
+
+    paths = plot_paired_reward_advantage(rows, tmp_path)
+    with paths[0].open(newline="", encoding="utf-8") as handle:
+        paired = list(csv.DictReader(handle))
+
+    assert len(paths) == 2 and all(path.exists() for path in paths)
+    assert len(paired) == 2
+    assert paired[0]["best_competitor_method"] == "han_mappo"
+    assert float(paired[0]["reward_advantage"]) == -39.0
+    assert float(paired[1]["reward_advantage"]) == 12.0
 
 
 def test_zero_success_method_cannot_win_success_dependent_primary_metrics():
