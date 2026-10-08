@@ -429,18 +429,31 @@ def test_comparison_csv_preserves_task_counts_and_zero_success_is_undefined(
     assert rows[0]["energy_per_successful_task"] == ""
 
 
-def test_multiseed_aggregation_preserves_han_pdqn_source_identity(tmp_path):
+@pytest.mark.parametrize(
+    "source_method,method,display_name",
+    [
+        ("han_pdqn_multiuser_u20", "han_pdqn", "HAN+PDQN"),
+        ("han_mappo_latency_priority_multiuser_u20", "han_mappo", "HAN+MAPPO"),
+        ("pdqn", "pdqn", "PDQN"),
+    ],
+)
+def test_multiseed_aggregation_preserves_source_identity(
+    tmp_path, source_method, method, display_name,
+):
     summary_path = compare.save_results_csv(
         tmp_path,
-        [{"method": "han_pdqn_multiuser_u20", "display_name": "HAN+PDQN",
+        [{"method": source_method, "display_name": display_name,
           "mean_reward": 100.0, "completed_tasks": 1}],
     )
 
     rows = _read_comparison_rows(summary_path, num_users=20, seed=43)
 
-    assert rows[0]["method"] == "han_pdqn"
-    assert rows[0]["source_method"] == "han_pdqn_multiuser_u20"
-    assert rows[0]["display_name"] == "HAN+PDQN"
+    assert rows[0]["method"] == method
+    if source_method != method:
+        assert rows[0]["source_method"] == source_method
+    else:
+        assert "source_method" not in rows[0]
+    assert rows[0]["display_name"] == display_name
 
 
 def test_paired_reward_advantage_keeps_losing_seed(tmp_path):

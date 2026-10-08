@@ -536,10 +536,12 @@ def _read_comparison_rows(
     for row in source_rows:
         source_method = str(row.get("method", ""))
         method = source_method
-        # New suites store the trainer experiment name as the method key.
-        # Preserve that source identity while grouping HAN+PDQN across U.
-        if source_method == f"han_pdqn_multiuser_u{num_users}":
-            method = "han_pdqn"
+        # Group trainer experiment names by their actual algorithm, keeping
+        # the source identity for historical HAN+MAPPO and current HAN+PDQN.
+        method = {
+            f"han_pdqn_multiuser_u{num_users}": "han_pdqn",
+            f"han_mappo_latency_priority_multiuser_u{num_users}": "han_mappo",
+        }.get(source_method, source_method)
         normalized = {
             key: str(value)
             for key, value in derive_paper_metrics(row).items()
