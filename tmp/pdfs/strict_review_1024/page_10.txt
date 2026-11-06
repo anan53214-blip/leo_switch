@@ -1,0 +1,100 @@
+10
+20 25 30 35 40
+Number of users
+1600
+1800
+2000
+2200Average delay (ms)
+20 25 30 35 40
+Number of users
+15
+30
+45Deadline violation rate (%)
+20 25 30 35 40
+Number of users
+0.8
+1.6
+2.4
+3.2
+4.0Energy per successful task (J)
+(a) Successful-task delay (b) Deadline violation rate (c) Energy per successful task
+HAN+PDQN
+HAN+MAPPO
+MAPPO
+MADDPG
+PDQN
+Min-Distance
+Full-Local
+Fig. 5. Task performance versus the number of users: (a) average successful-task delay; (b) deadline violation rate; (c) terminal energy per successful task.
+Curves show five-training-seed means, and shaded regions indicate 95% bootstrap confidence intervals.
+figure includes complete episodes within the interaction bud-
+get.
+HAN+MAPPO and MAPPO improve rapidly during the
+initial training stage and subsequently approach lower return
+levels. HAN–PDQN and PDQN exhibit a more pronounced
+increase during the intermediate stage, after which HAN–
+PDQN maintains the highest mean return. Averaged over the
+final 20 complete episodes, HAN–PDQN achieves a return of
+87.78, compared with 76.85 for PDQN. The corresponding
+returns of HAN+MAPPO and MAPPO are approximately
+59.30 and 57.86. MADDPG exhibits lower late-stage returns
+and greater variation across seeds. The comparison therefore
+favors HAN–PDQN in the quality of the learned policy under
+the allocated interaction budget.
+We next examine the sensitivity of HAN–PDQN to its
+learning rate and replay batch size in Fig. 4. For the learning-
+rate experiment, the batch size is fixed at 512 and the rate
+is selected from{10 −4,3×10 −4,10 −3,3×10 −3}. For the
+batch-size experiment, the learning rate is fixed at10 −3 and
+the batch size is selected from{128,256,512,1024}. Each
+setting uses five training seeds.
+In Fig. 4(a), learning rates between10 −4 and10 −3 attain
+similar late-stage returns. Increasing the rate to3×10 −3
+produces a substantially lower mean return and a wider con-
+fidence interval. This behavior indicates sensitivity to aggres-
+sive updates when the value estimates and continuous action
+parameters evolve together.
+Fig. 4(b) shows that batch sizes 128, 512, and 1024 reach
+comparable return levels, whereas batch size 256 yields a
+lower mean and greater variation across seeds. The dependence
+on batch size is therefore nonmonotonic over the examined
+settings. The default combination of learning rate10 −3 and
+batch size 512 attains a high return with a consistent five-seed
+training profile and is used for the subsequent HAN–PDQN
+comparisons.
+C. Task Performance under User Scaling
+Fig. 5 evaluates task service as the user population increases
+from 20 to 40. The per-user arrival process remains unchanged,
+so a larger population increases the aggregate demand for the
+shared uplink and MEC resources. HAN–PDQN achieves the
+lowest mean successful-task delay, deadline violation rate, and
+energy per successful task at every evaluated population.
+In Fig. 5(a), the mean successful-task delay of HAN–PDQN
+increases from 1554.9 ms at 20 users to 1906.7 ms at 40 users.
+The corresponding PDQN values are 1608.2 and 1939.9 ms.
+At 30 users, HAN–PDQN achieves 1779.7 ms, compared with
+1820.7 ms for PDQN and 2053.8 ms for HAN+MAPPO. The
+increase with population is consistent with greater contention
+for upload bandwidth and MEC service. Throughout this
+range, the proposed controller maintains a lower delay despite
+the growing demand.
+The reliability difference is more pronounced in Fig. 5(b).
+At 30 users, the deadline violation rate is 6.89% for HAN–
+PDQN and 9.47% for PDQN, a reduction of 2.58 percent-
+age points. HAN+MAPPO and MAPPO yield 18.38% and
+18.83%, respectively, under the same population. At 40 users,
+HAN–PDQN maintains a violation rate of 10.99%, compared
+with 13.08% for PDQN, 24.24% for HAN+MAPPO, and
+37.47% for Min-Distance. These results show that the delay
+advantage is accompanied by improved deadline compliance.
+Fig. 5(c) further shows that HAN–PDQN uses less terminal
+energy per successful task across all evaluated populations. Its
+value increases from 0.948 J at 20 users to 1.491 J at 40 users,
+while PDQN increases from 1.040 to 1.537 J. At 30 users,
+HAN–PDQN requires 1.242 J per successful task, compared
+with 1.318 J for PDQN and 2.376 J for Min-Distance. The
+combination of lower delay, fewer deadline violations, and
+lower energy per successful task indicates an improvement
+across the three task-service dimensions.
+Full-Local exhibits nearly constant delay and energy per
+successful task as the population changes, consistent with

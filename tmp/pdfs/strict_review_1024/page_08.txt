@@ -1,0 +1,114 @@
+8
+Algorithm 1HAN–PDQN Training
+Require:HAN encoder, candidate limitK, replay capacity,
+batch sizeB, target periodC tar
+1:Initializeθ, ψand replay bufferD
+2:Set ¯θ←θ, ¯ψ←ψ
+3:foreach training episodedo
+4:Reset the environment and constructG 0
+5:Form ˜︁oi(0)andm i(0)for all users
+6:foreach decision slottdo
+7:foreach useri∈ Udo
+8:Select a feasible pair by exploration or (32)
+9:end for
+10:Execute the joint requests under the service model
+11:Obtainr i(t), ˜︁oi(t+ 1), andm i(t+ 1)
+12:Store the joint transition inD
+13:ifreplay warm-up is completethen
+14:Sample a minibatch fromD
+15:Compute targets using (33)–(34)
+16:Updateθusing (35)
+17:Updateψusing (36)
+18:Copy online parameters to targets everyC tar
+updates
+19:end if
+20:ifepisode terminates or reaches its time limitthen
+21:break
+22:end if
+23:end for
+24:end for
+warm-up, this random pair is selected with probabilityϵ;
+otherwise, the controller uses (32). The exploration probability
+decreases during training. Algorithm 1 summarizes the proce-
+dure.
+For online operation, the controller constructs the graph,
+computes the fused user observations, and selects the masked
+maximizing pairs withϵ= 0. Association changes are re-
+solved before new upload requests are admitted and allocated
+bandwidth, following Section II. This sequence preserves
+the candidate mapping used at decision time while applying
+capacity checks to the committed actions.
+For computational cost, letLbe the number of HAN layers
+andD h the hidden width. LetV mp andE mp count node and
+edge visits across the meta-path hops in one layer. For a fixed
+number of heads, graph encoding requiresO(L(V mpD2
+h +
+EmpDh))operations. IfP µ is the total parameter-branch
+weight count andP Q is the Q-network weight count, evaluat-
+ing all users addsO(N[P µ+(K+1)P Q]). A replay update over
+Bjoint transitions has network costO(BN[P µ+(K+1)P Q]).
+Graph construction contributes a separate cost determined by
+visibility and neighborhood generation. Online execution uses
+graph construction, encoding, and forward action evaluation;
+replay updates contribute to training cost.
+V. PERFORMANCEEVALUATION
+A. Experimental Setup and Evaluation Protocol
+We evaluate HAN–PDQN in a multi-user LEO satellite
+edge computing network comprising 66 satellites distributed
+across six orbital planes. The orbital altitude and inclination
+are 550 km and53 ◦, respectively. Ground users are distributed
+around(39.9 ◦N,116.4 ◦E), and the population varies from
+20 to 40 users. User locations and orbital starting times are
+resampled at episode initialization. Each episode contains 512
+slots, with a slot duration of 1 s. Tables II and III summarize
+the system and training parameters, respectively.
+Each user generates a task independently with probabil-
+ity 0.35 per slot. Tasks are classified as light, medium,
+and heavy with probabilities 0.3, 0.5, and 0.2. For light
+tasks, the input size, computation demand, and deadline
+are uniformly sampled from[1,3]Mbit,[0.3,0.8]Gcycle,
+and[1.5,3]s, respectively. The corresponding ranges are
+[5,10]Mbit,[1.2,2.5]Gcycle, and[2.5,5.5]s for medium
+tasks, and[12,25]Mbit,[3,7]Gcycle, and[4,8]s for
+heavy tasks. Each MEC provides a total processing rate of
+10 Gcycle/s through two 5-GHz cores. The utility weights
+are(ω D, ωE, ωI, ωF, ωL) = (0.60,0.40,0.30,0.20,0.05), with
+Eref = 1J.
+We compare HAN–PDQN with six benchmarks:
+•HAN+MAPPO: A graph-assisted multi-agent proximal
+policy optimization controller for joint satellite selection
+and offloading.
+•MAPPO: A multi-agent proximal policy optimization
+controller using raw user, task, and candidate-satellite
+observations.
+•MADDPG: A multi-agent deep deterministic policy gra-
+dient controller using raw observations to generate satel-
+lite and offloading decisions.
+•PDQN: A parameterized Q-learning controller using raw
+observations without HAN representations.
+•Min-Distance: A distance-based policy that requests the
+nearest admissible satellite under the handover conditions
+and requests full offloading. It retains the current associ-
+ation when no shorter admissible alternative is available.
+•Full-Local: A policy that processes all tasks locally and
+issues no handover requests.
+All methods operate under the same task, communication,
+MEC service, and admission models.
+For each user population, the learning methods are trained
+with seeds 42–46 and an interaction budget of1.5×10 5
+environment steps per run. Table III reports the principal
+training settings. HAN–PDQN and PDQN use replay batch
+sizes of 512 and 128, respectively. Periodic model evaluation
+is performed every 25,000 environment steps for the PDQN
+and MAPPO variants, and every ten episodes for MADDPG.
+Checkpoints are selected according to their mean evaluation
+return.
+Each selected policy is evaluated over five episodes per
+training seed, using matched scenario seeds across methods.
+Performance metrics are first averaged over these episodes and
+then summarized across the five training seeds. Shaded regions
+and error bars represent 95% bootstrap confidence intervals at
+the training-seed level.
+The reported metrics follow Section II-C. Successful-task
+delay is averaged over successful tasks, whereas the deadline
+violation rate is normalized by the number of generated

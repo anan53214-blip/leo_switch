@@ -1,0 +1,193 @@
+6
+$$G_t$$
+$$Z_t^U$$
+Action Execution
+LEO-MEC Environment
+Handover Offloading
+×
+$$d_{i,t}$$
+$$d_{i,t}=0:stay$$$$d_{i,t}>0:handover$$Local CPU
+$$1-\lambda_{i,t}$$
+$$\lambda_{i,t}$$
+Satellite MEC
+$$X_t^U$$
+$$Proj_U$$
+$$\hat{X_t^U}$$
+$$X_t^S$$
+$$Proj_S$$
+$$\hat{X_t^S}$$
+$$User\; Meta-path$$
+$$\text{Semantic\\ Attention }\\\beta_U^{(1)}$$
+$$H_U^{(1)}$$
+$$a_t=\left(a_{1,t},...,a_{N,t}\right)$$Joint action
+Heterogeous Graph Encoder
+$$Satellite\; Meta-path$$
+$$\phi^1_U:$$
+$$\phi^2_U:$$
+$$\phi^3_U:$$
+$$\phi^1_S:$$
+$$\phi^2_S:$$
+vis vis
+conn conn
+nbr nbr
+vis vis
+ISL ISL
+$${H_U,H_S}$$$$GAT\;\;\;$$$$\phi^1_U$$
+$$GAT\;\;\;$$$$\phi^2_U$$
+$$GAT\;\;\;$$$$\phi^3_U$$
+HAN Layer 1
+$$\text{Semantic\\ Attention }\\\beta_S^{(1)}$$$$GAT\;\;\;$$$$\phi^1_S$$
+$$GAT\;\;\;$$$$\phi^2_S$$
+$$H_S^{(1)}$$
+$$features$$
+$$GAT\;\;\;$$$$\phi^1_U$$
+$$GAT\;\;\;$$$$\phi^2_U$$
+HAN Layer 2
+$$Proj_U$$
+$$Proj_S$$$$GAT\;\;\;$$$$\phi^3_U$$
+$$\text{Semantic\\ Attention }\\\beta_U^{(1)}$$$$Proj_U$$
+Serving Link
+LEO SatelliteGround User Device
+Inter-satellite Link Satellite Coverage
+Onboard MEC Server
+Heterogeous
+Graph Snapshot
+user node
+satellite node
+$$o_{1,t}$$$$z_{1,t}$$
+Concat
+Agent 1
+$$\tilde{o}_{1,t}$$
+PDQN
+$$a_{1,t}$$
+$$o_{i,t}$$$$z_{i,t}$$
+Concat
+Agent i
+$$\tilde{o}_{i,t}$$
+PDQN
+$$a_{i,t}$$
+$$a_t$$
+$$o_{N,t}$$$$z_{N,t}$$
+Concat
+Agent N
+$$\tilde{o}_{N,t}$$
+PDQN
+$$a_{N,t}$$
+$$r_t$$
+HGE$$G_t$$$$O_t$$
+$$\tilde{o}_{N,t}$$
+$$\lambda_{N,0}$$$$\lambda_{N,1}$$
+$$\lambda_{N,K}$$
+Parameter Network
+$$\tilde{o}_{N,t}$$
+$$\lambda_{N,t}$$
+Q-Network
+$$Q_{N,0}$$$$Q_{N,1}$$
+$$Q_{N,K}$$
+$$\mathbf{\lambda}_{N,t}$$
+Action Select
+$$d_{N,t} = \arg\max_{k\in\mathcal K_N(t)}Q_{N,k}$$
+$$a_{N,t} = \left(d_{N,t},\lambda_{N,d_{N,t}}\right)$$
+$$\mathbf{Q}_{N,t}$$
+Fig. 2. HAN–PDQN framework for joint handover and partial task offloading.
+The five meta-paths in Table I organize these relations
+into complementary service contexts. The serving-based U–
+S–U path aggregates users attached to the same MEC, expos-
+ing established contention. The visibility-based U–S–U path
+connects users with common satellite alternatives, exposing
+demand that may converge on the same server after subsequent
+decisions. This distinction retains both the current sharing
+structure and the opportunities through which that structure
+can change. The remaining paths incorporate neighboring de-
+mand, overlapping satellite coverage, and ISL neighborhoods.
+TABLE I
+META-PATHSUSED FORCONTENTIONREPRESENTATION
+Meta-path and relation Service context
+U–S–U (serving) Users sharing a serving MEC
+U–S–U (visibility) Users with common satellite alternatives
+U–U (proximity) Demand from neighboring users
+S–U–S (visibility) Satellites visible to common users
+S–S–S (ISL) Satellite context across two ISL hops
+Following the hierarchical attention principle in [12], we
+first aggregate neighbors along each meta-path and then com-
+bine the resulting semantic representations. At each HAN
+layer, type-specific projections map node features into a com-
+mon hidden space. Each meta-path starts from these projected
+features and propagates messages successively along its con-
+stituent relations.
+For one relationrat a given meta-path hop, letN r(v)
+denote the incoming neighbors of nodev. For attention head
+h, we form the relation input
+cr,h
+uv =
+[︂
+Wr,h
+s hu∥Wr,h
+d hv∥Wr,h
+e er
+uv
+]︂
+,(23)
+where∥denotes concatenation ande r
+uv is the edge feature.
+The attention score and normalized weight are
+er,h
+uv = LeakyReLU
+(︁
+(ar,h)Tcr,h
+uv
+)︁
+,
+αr,h
+uv = exp(er,h
+uv )∑︁
+w∈Nr(v) exp(er,h
+wv)
+. (24)
+The matrices and attention vectors are specific to the layer,
+meta-path, and hop; these indices are suppressed for clarity.
+TheHheads produce the message and residual update
+mr
+v =
+H
+∥
+h=1
+∑︂
+u∈Nr(v)
+αr,h
+uv Wr,h
+s hu,
+h+
+v = LN (hv + ELU(mr
+v)).
+(25)
+Applying (25) along a meta-pathϕyields its outputh ϕ
+v . Thus,
+on a U–S–U path, user demand is first aggregated at the
+intermediate satellite and then propagated to the destination
+users.
+LetΦ ν contain the meta-paths ending at node typeν∈
+{U,S}, and letV ν be the corresponding node set. Semantic
+attention assigns each applicable path the score
+wϕ,ν = 1
+|Vν|
+∑︂
+v∈Vν
+qT
+ν tanh
+(︁
+Wνhϕ
+v +b ν
+)︁
+.(26)
+The path weights and fused node representation are
+βϕ,ν = exp(wϕ,ν)∑︁
+ϕ′∈Φν exp(wϕ′,ν) ,
+zv =W out
+ν
+∑︂
+ϕ∈Φν
+βϕ,νhϕ
+v +b out
+ν .
+(27)

@@ -1,0 +1,217 @@
+{
+  "output_dir": "D:\\program\\LEO_switch\\tmp\\matched_protocol_delivery\\smoke_test",
+  "methods": [
+    "pdqn_matched",
+    "han_pdqn_joint"
+  ],
+  "user_counts": [
+    2
+  ],
+  "seeds": [
+    42
+  ],
+  "runs": 2,
+  "protocol_hash": "51144395e19212effa1a968ecae301d074142df190370a3a7bc7a116732b3c0b",
+  "protocol": {
+    "version": "matched_pdqn_v1_20261106",
+    "model_schema_version": 5,
+    "geometry_schema_version": 3,
+    "environment_schema_version": 13,
+    "environment": {
+      "num_planes": 6,
+      "sats_per_plane": 11,
+      "altitude_km": 550.0,
+      "inclination_deg": 53.0,
+      "num_users": 0,
+      "user_center_lat": 39.9,
+      "user_center_lon": 116.4,
+      "user_radius_deg": 5.0,
+      "resample_users_on_reset": true,
+      "time_step_sec": 1.0,
+      "max_steps": 4,
+      "randomize_episode_start": true,
+      "episode_start_time_jitter_sec": 5730.127,
+      "min_elevation_deg": 10.0,
+      "handover_delay_sec": 0.6,
+      "rvt_threshold_sec": 60.0,
+      "pre_handover_rvt_sec": 60.0,
+      "handover_min_snr_db": -5.0,
+      "task_arrival_prob": 0.35,
+      "min_effective_offload_ratio": 0.05,
+      "task_arrival_seed_offset": 7919,
+      "enable_task_trace": false,
+      "carrier_frequency_ghz": 20.0,
+      "bandwidth_mhz": 10.0,
+      "satellite_tx_power_dbm": 40.0,
+      "satellite_antenna_gain_db": 34.0,
+      "user_tx_power_dbm": 24.0,
+      "user_antenna_gain_db": 38.5,
+      "user_pa_efficiency": 0.38,
+      "user_circuit_power_w": 0.05,
+      "ofdma_uplink_sharing": true,
+      "noise_temperature_k": 354.81,
+      "noise_figure_db": 2.0,
+      "rain_attenuation_db": 0.0,
+      "atmospheric_loss_db": 0.3,
+      "pointing_loss_db": 0.5,
+      "polarization_loss_db": 0.3,
+      "implementation_loss_db": 1.0,
+      "satellite_cpu_freq_ghz": 5.0,
+      "satellite_max_cpu_freq_ghz": 8.0,
+      "satellite_num_cores": 2,
+      "mec_max_concurrent_tasks": 2,
+      "max_queue_size": 6,
+      "user_cpu_freq_ghz": 1.0,
+      "user_max_cpu_freq_ghz": 1.5,
+      "kappa": 1e-27,
+      "user_idle_power_w": 0.05,
+      "result_ratio": 0.1,
+      "light_data_range": [
+        1000000.0,
+        3000000.0
+      ],
+      "light_compute_range": [
+        300000000.0,
+        800000000.0
+      ],
+      "light_delay_range": [
+        1.5,
+        3.0
+      ],
+      "medium_data_range": [
+        5000000.0,
+        10000000.0
+      ],
+      "medium_compute_range": [
+        1200000000.0,
+        2500000000.0
+      ],
+      "medium_delay_range": [
+        2.5,
+        5.5
+      ],
+      "heavy_data_range": [
+        12000000.0,
+        25000000.0
+      ],
+      "heavy_compute_range": [
+        3000000000.0,
+        7000000000.0
+      ],
+      "heavy_delay_range": [
+        4.0,
+        8.0
+      ],
+      "reward_delay_weight": 0.6,
+      "reward_energy_weight": 0.4,
+      "reward_energy_reference_j": 1.0,
+      "reward_interruption_weight": 0.3,
+      "reward_failed_handover_penalty": 0.2,
+      "reward_load_balance_weight": 0.05,
+      "seed": 0
+    },
+    "pdqn": {
+      "q_hidden_dims": [
+        256,
+        128
+      ],
+      "param_hidden_dims": [
+        128,
+        64
+      ],
+      "lr": 0.001,
+      "gamma": 0.99,
+      "batch_size": 4,
+      "replay_size": 32,
+      "warmup_steps": 4,
+      "target_update_interval": 3,
+      "epsilon_start": 1.0,
+      "epsilon_final": 0.02,
+      "epsilon_decay_steps": 5,
+      "grad_clip_norm": 0.5,
+      "param_loss_coef": 0.1,
+      "bc_loss_coef": 0.0
+    },
+    "han": {
+      "satellite_in_dim": 10,
+      "user_in_dim": 16,
+      "hidden_dim": 64,
+      "out_dim": 64,
+      "num_heads": 4,
+      "num_layers": 2,
+      "use_edge_features": true,
+      "user_sat_edge_dim": 5,
+      "serving_edge_dim": 2,
+      "nearby_user_edge_dim": 1,
+      "isl_edge_dim": 3,
+      "dropout": 0.0,
+      "metapaths": [
+        "user-visible-satellite-user",
+        "user-serving-satellite-user",
+        "user-nearby-user",
+        "satellite-visible-user-satellite",
+        "satellite-isl-satellite"
+      ]
+    },
+    "encoder_lr": 0.0001,
+    "microbatch_size": 2,
+    "total_timesteps": 12,
+    "eval_interval": 6,
+    "validation_seeds": [
+      1000000000,
+      1000000001
+    ],
+    "test_seeds": [
+      2000000000,
+      2000000001
+    ],
+    "save_interval": 4,
+    "log_interval_episodes": 1,
+    "torch_threads": 1,
+    "selection_metric": "validation mean reward; earliest checkpoint on ties",
+    "replay_terminal": "terminated only; bootstrap at time-limit truncation",
+    "time_limit_next_state": "generate next decision arrivals for training bootstrap only",
+    "action_mask": "environment feasibility mask including link, migration capacity and pre-handover gate",
+    "updates_per_transition": 1,
+    "training_seed_rule": "training_seed * 1000000 + episode_index",
+    "encoder_gradient": "sum of TD and parameter losses; one Adam step; separate target HAN",
+    "source_sha256": {
+      "scripts/run_matched_pdqn_suite.py": "a91d318344f20cea10f57b9b546b25461bb0d24c6f8292247bb9354863ac6b1a",
+      "scripts/train.py": "51483f1ec23c4c6e6f406db0cbf8ee2e70c23b3be627ef41539bc4413463350f",
+      "scripts/compare_system_baselines.py": "5db131bbfb307d1334dfb90c80e47c00938c4ccdbabff63de5897d53ee445023",
+      "scripts/paper_metrics.py": "60abcd6846c0c58120f96601ffe23248984d3d3681add59d411c7fa8b66fcc8b",
+      "src/algorithm/__init__.py": "9f855d83b7f482cf704212fcf1ca9f666efdf9e43cfc7ab383a39a363bba330a",
+      "src/algorithm/attention_mappo.py": "594a0aafdb34c6fdc1444fb56b2372de6d4c133037d1b6305304ef3c9ea0169f",
+      "src/algorithm/buffer.py": "8038c1fe448966e00d3f6585ea3ed41de57dbb9030f6686a0e8dd3b48ef41d87",
+      "src/algorithm/maddpg.py": "4c628bce3ab967881126037f625ed58b6f98b2c89d2f8b04ab997df852602586",
+      "src/algorithm/mappo.py": "8f5c5e8d959905004cba9678cf875256a13cb84d7cda5ccf9032e2ce1fe1a289",
+      "src/algorithm/pdqn.py": "8d5fba0e6766c9c20b3c663e080a323f4f07ae61a88f3ee9779d3e737d48c6a3",
+      "src/algorithm/replay_buffer.py": "b3ecd851e5c4075dcdeccce7daa3d2e211d9a5f3e18befa2843bb46f1d238b97",
+      "src/algorithm/sca_adapter.py": "f7fd47dc7e697d58cc78b39d8801612f3849b666e3f1a2ca1fca697872312078",
+      "src/algorithm/sca_offload.py": "9fd07451c6db5c2c79e454ed46f2f80eeb1a9787cd1de6f432a449db5eb0ac9a",
+      "src/environment/__init__.py": "3c9c7797cdf3ba7d4047daf8860b7f2ceeb0490ff39b26bf43a983fa8167073c",
+      "src/environment/channel.py": "9a8370df595a07bccf50a14c0f8f2557ddfce1b6f1fb14bf893134d14f45e8ab",
+      "src/environment/constellation.py": "b7a1568590d1a561f2b22afa7639b256f9e7df40cd54c82e5b54af78bdec18f7",
+      "src/environment/gym_env.py": "80e3c7c7dc315e9a69d3ea3ef6b3e4869e4b0130aa0a868767f2df8989043178",
+      "src/environment/mec.py": "b71bbfd3301a1e01674b723e3b057b90ec35aff888b823978a7e5c20c2385b9f",
+      "src/environment/task.py": "6f84e9c2d0d0eeb43b04dea7f8aeba40db6782a8806942d1beb163c4b267cba5",
+      "src/environment/user.py": "e66564cccc31f73ae56171abed7b42fc36752334feb3c82486ea0ad9f680e24c",
+      "src/environment/visibility.py": "928a06d43c675b64c3fe7c51f0fb678090fe8a199d869900ccefe9579bf5d6c9",
+      "src/features/__init__.py": "071291b5bf02116f7b1823c1dc7f69d6532bd84587a07622b4a7d9507a89642c",
+      "src/features/satellite_load.py": "dc554b25d8164a7137a7c7ec9dfb82fcda3bebbdcafd2e91477e04622c09ef67",
+      "src/graph/__init__.py": "d43dddd2879f30b612e79014959a3b644400d96baece800ab9fc9ed08b660da6",
+      "src/graph/builder.py": "c1da1851067a9b612f2178d28110afd8bb55ef411ce69c602bd420e5daa43ed5",
+      "src/graph/features.py": "9b0a96d569a63748654ef13e835f5a189dede39ee24eb1feda6b1398d6024655",
+      "src/model/__init__.py": "bb492e7c52876c1f4a7438004f7e499d8802168251709ef63e6a3505812f882f",
+      "src/model/actor.py": "aa17114a66b241ef7996bd0bb182e46270d47b1538acb934917ed02d90408a1d",
+      "src/model/candidate_attention.py": "da848619529e3c69c1494b19fd4ab971ea3b6c9c8aaff1a246425094cca92432",
+      "src/model/critic.py": "f6c922cfc8a8c6c48b81fa5ca78b81cb5a9bf73d1858d217f458e7b870939fe0",
+      "src/model/hetero_gnn.py": "e56125ef33fdf7ff88bd3c3ecbfa3b6d47de9c660ca712b0d56de2c52d9cb1ab",
+      "src/model/layers.py": "a518808fcf403fece33df1e2fb971ae7cb2c3a68fd7d0cf4897df17e1454b4f6"
+    }
+  },
+  "python": "3.10.19",
+  "torch": "2.13.0+cpu",
+  "numpy": "2.2.6",
+  "initial_device": "cpu"
+}

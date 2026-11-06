@@ -1,5 +1,7 @@
 # LEO 卫星网络切换与任务卸载联合优化（HAN+PDQN）
 
+> 2026-11-06：新增 [统一协议入口](scripts/run_matched_pdqn_suite.py)，运行设置匹配的 PDQN 与从零联合训练 HAN+PDQN。默认 U30、五种子，验证/测试分离，支持完整回放断点恢复。已有论文数值仍来自冻结版；软件及小规模验证通过不代表正式补充实验完成。详见 [实验待办](docs/EXPERIMENT_TODO.md)。
+
 > 2026-09-08 更新：多用户套件默认写入 `results/multiseed_0907/seed{seed}/u{num_users}`，主方法训练也在 `learned_baselines/han_pdqn` 下。`--with-sca` 可调用独立 SCA 评估并校验后汇总；旧 run-id 路径须用 `--legacy-layout`。完整命令见 [多种子目录说明](docs/MULTISEED_LAYOUT.md)。
 
 **当前论文主方法：HAN+PDQN。** 用户已于 2026-09-07 确认。HAN+MAPPO 是历史主方法，现作为对比方法保留。
@@ -12,6 +14,8 @@
 | 方法 | 角色 | 训练/对比入口 |
 |---|---|---|
 | **HAN+PDQN** | **当前主方法** | `scripts/train.py --algorithm pdqn` → `HANPDQNTrainer`；结果键 `han_pdqn` |
+| HAN+PDQN 联合训练版 | 新协议补充实验 | `scripts/run_matched_pdqn_suite.py`；`han_pdqn_joint`；无需预训练 |
+| PDQN 匹配版 | 新协议无图对照 | 同一入口；`pdqn_matched` |
 | PDQN | 无 HAN 基线 | `scripts/compare_system_baselines.py --baselines pdqn` |
 | SCA | 复用主方法离散规则、优化连续比例的对照 | `scripts/evaluate_sca_baseline.py`；结果键 `han_pdqn_sca`；[说明](docs/SCA_BASELINE.md) |
 | HAN+MAPPO | 历史主方法、当前基线 | `scripts/train.py --algorithm mappo`；对比键 `han_mappo` |
@@ -32,13 +36,30 @@ SCA 使用独立评估入口补充，不自动训练或混入旧结果。
 4. 原环境执行联合动作，计算任务时延、终端能耗、中断和奖励。
 5. 使用 replay buffer 与 target networks 更新 PDQN。
 
-**当前实现使用预训练并冻结的 HAN。** replay 存储编码后的观测，因此不能把当前实现描述为 HAN 与 PDQN 端到端联合训练。
-新训练必须提供包含 `han_state_dict` 且 schema 匹配的检查点；正式实验应记录 HAN 预训练来源、种子及开销。
-已有 HAN+PDQN 检查点包含自身的 HAN 权重，可用于续训和评估。
+**已有论文结果和旧入口使用预训练并冻结的 HAN。** 旧 replay 存储编码后的观测，旧结果不能描述为端到端联合训练。旧入口新训练需要包含 `han_state_dict` 且 schema 匹配的检查点，并记录预训练来源、种子及开销。
+
+**新增联合训练入口从随机初始化开始。** replay 保存原始观测和图快照，抽样时重算 HAN；TD 损失与参数损失共同更新 HAN，配套目标 HAN。两种新方法共用 PDQN 更新、物理可行性掩码、奖励、截断和评估规则。新旧 checkpoint 格式与协议不同，使用各自入口，不直接混合统计。
 
 ## 运行入口
 
-在项目根目录、已安装项目依赖的 Python 环境中执行。下面的预训练路径须替换为实际存在且版本匹配的检查点。
+在项目根目录、已安装项目依赖的 Python 环境中执行。**当前补充实验使用新入口**，默认两种方法 × U30 × seed42–46，共 10 次训练，每次 150,000 步：
+
+```bash
+# 预览协议，不创建结果、不训练
+python scripts/run_matched_pdqn_suite.py --dry-run
+# 小规模真实环境验证，写入独立的 smoke_test 子目录
+python scripts/run_matched_pdqn_suite.py --smoke-test --device cpu
+# 正式 GPU 实验，无需预训练权重
+python scripts/run_matched_pdqn_suite.py --device cuda
+# 中断后恢复完整 replay、优化器、目标网络和随机状态
+python scripts/run_matched_pdqn_suite.py --device cuda --resume
+# 按预先规划扩展到五规模，校验并复用已完成的 U30
+python scripts/run_matched_pdqn_suite.py --device cuda --extend-suite --user-counts 20 25 30 35 40
+```
+
+新结果写入 `results/multiseed_joint_20261106/`，保留历史默认路径。默认 batch=512、PDQN 学习率=1e-3、HAN 学习率=1e-4、梯度裁剪=0.5；每 25k 步在固定 5 个验证场景选模型，再在另一组 20 个场景测试。`--microbatch-size 16` 用梯度累积控制显存，实际 batch 仍为 512。恢复文件含原始图 replay，需为其留出内存和磁盘空间。
+
+以下为**旧冻结版本入口**；预训练路径须替换为实际存在且版本匹配的检查点。旧检查点不含完整 replay，不是新入口的完整恢复格式。
 
 ```bash
 # 当前主方法；省略 --algorithm 时也默认 pdqn
@@ -78,11 +99,13 @@ SCA 已有独立评估入口：`python scripts/evaluate_sca_baseline.py --checkp
 环境/奖励以运行保存的 `env_config`、`training_history.json` 和代码版本为准。
 当前默认时延/能耗权重为 `0.60/0.40`，可达 MEC 公平性奖励权重为 `0.05`。
 状态、动作维度、奖励细节和历史机制见 [系统架构说明](docs/系统架构算法智能体与奖励函数完整说明.md)。
-验证/测试场景分离、多种子、优化基线、消融及泛化实验仍须按 [项目状态](docs/PROJECT_STATUS.md) 推进。
+已有五种子主比较和冻结版超参数扫描已完成；新协议正式训练、独立测试、消融和泛化按 [实验待办](docs/EXPERIMENT_TODO.md) 推进。
 
 ## 项目文件
 
+- `paper/`：仅保留计划插入论文的精选图片副本，图表安排及参考文献见 [论文插图说明](paper/README.md)；现有及后续结果保存路径保持原样，不批量复制结果目录或 CSV。
 - `scripts/train.py`：当前主方法及其他 HAN 训练器。
+- `scripts/run_matched_pdqn_suite.py`：新协议的匹配 PDQN、从零联合训练 HAN+PDQN、独立测试、汇总及绘图。
 - `src/algorithm/pdqn.py`：PDQN Q 网络、连续参数网络、回放更新。
 - `src/model/hetero_gnn.py`、`src/graph/`：HAN 与异质图构建。
 - `src/environment/`：轨道、信道、队列、任务和环境。

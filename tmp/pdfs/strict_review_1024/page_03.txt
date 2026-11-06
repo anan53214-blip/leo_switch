@@ -1,0 +1,116 @@
+3
+Serving Link
+LEO SatelliteGround User Device
+Inter-satellite Link Satellite Coverage
+Onboard MEC Server
+Fig. 1. System architecture of the multi-user LEO satellite edge computing
+network.
+For each visible satellite, we usev i,s(t)to denote its
+remaining visibility time. Although several satellites may be
+visible simultaneously, a connected user maintains one serving
+association. To distinguish the association before and after a
+decision, we writeb −
+i (t)andb +
+i (t), respectively, and use0
+for a disconnected state. Task admission and communication
+resource allocation then follow the resulting associationb +
+i (t).
+In addition to user–satellite connections, the constellation
+contains ISLs that provide the satellite-neighborhood topol-
+ogy for HAN. We represent task migration through logical
+reassignment of residual workloads between MEC queues,
+together with a fixed service-interruption overhead.
+B. Communication Model
+To separate simultaneous uplink requests, we adopt
+OFDMA and distribute each satellite’s bandwidth among its
+newly admitted uploads. In slott, letA s(t)collect the users
+admitted by satellites, withn s(t) =|A s(t)|. Given total
+uplink bandwidthB s, each user in this admission batch
+receives
+Bi,s(t) = Bs
+ns(t) , i∈ A s(t).(2)
+The allocation is renewed for each decision slot.
+For the user–satellite link, we account for free-space propa-
+gation and additional attenuation through the large-scale power
+gain
+gi,s(t) = GiGs
+ℓi,s(t) (4πfcdi,s(t)/c)2 ,(3)
+whereG i andG s denote the user and satellite antenna gains,
+respectively,f c is the carrier frequency, andcis the speed of
+light. The factorℓ i,s(t)combines atmospheric, pointing, po-
+larization, and implementation losses. Under this gain model,
+transmitting with radiated powerP i over bandwidthB i,s(t)
+gives the uplink rate
+Rup
+i,s(t) =B i,s(t) log2
+(︃
+1 + Pigi,s(t)
+N0Bi,s(t)
+)︃
+,(4)
+withN 0 denoting the effective noise power spectral density.
+For result return, we evaluate the communication cost
+using reference downlink bandwidthB dl
+s and satellite radiated
+powerP s. Assuming the same large-scale gain for both link
+directions, the corresponding reference rate can be expressed
+as
+Rdl
+s,i(t) =B dl
+s log2
+(︃
+1 + Psgi,s(t)
+N0Bdls
+)︃
+.(5)
+We determine the communication costs from the link condi-
+tions at offloading admission and retain them for the task, even
+if its remote workload is subsequently migrated. The reference
+downlink rate supports this cost evaluation; downlink resource
+scheduling is outside the decision space.
+C. Task and Computation Model
+Each user generates computation tasks stochastically. We
+characterize thenth task of useriby
+Ji,n = (Di,n, Ci,n, τi,n, ai,n),(6)
+whereD i,n andC i,n specify the input size in bits and
+computation demand in CPU cycles, respectively. The task
+is generated ata i,n and must meet a relative deadline of
+τi,n seconds. Before dispatch, it waits in the user’s FIFO
+task queue. If dispatch occurs in slott d
+i,n at timeu i,n, its
+waiting time isW u
+i,n =u i,n −a i,n, where both timestamps
+are measured in seconds.
+At dispatch, the user assigns a fractionρ i,n ∈[0,1]of the
+task to remote execution, leaving(1−ρ i,n)Ci,n cycles for
+its local processor andρ i,nCi,n cycles for the MEC. Here,
+ρi,n refers to the fraction actually offloaded: a request rejected
+before upload, or dispatched without a service connection, falls
+back to local execution withρ i,n = 0and no upload energy.
+For an admitted request, the serving satellites up
+i,n =b +
+i (td
+i,n)
+receives the remote workload, whose execution server may
+later change through handover.
+1) Local execution:Since each terminal serves its sched-
+uled local workloads serially, dispatch does not necessarily
+coincide with the start of local computation. LetA i denote the
+processor’s next available time at dispatch andfi its processing
+rate in CPU cycles per second. A nonempty local branch waits
+forW loc
+i,n = max{Ai −ui,n,0}before receiving service, giving
+T loc
+i,n =W u
+i,n +W loc
+i,n + (1−ρ i,n)Ci,n
+fi
+.(7)
+For the same workload, the local computing energy follows
+Eloc
+i,n =κ i(1−ρ i,n)Ci,nf2
+i ,(8)
+whereκ i captures the effective switched capacitance of the
+processor. In the full-offloading case,ρ i,n = 1, no local branch
+is scheduled and we setT loc
+i,n = 0.

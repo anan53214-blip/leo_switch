@@ -1,0 +1,1444 @@
+
+===== PAGE 1 =====
+arXiv:2310.20215v1  [cs.IT]  31 Oct 2023
+1
+Handover Protocol Learning for LEO Satellite
+Networks: Access Delay and Collision Minimization
+Ju-Hyung Lee, Member , IEEE, Chanyoung Park, Soohyun Park, and Andreas F. Molisch, Fellow, IEEE
+Abstract— This study presents a novel deep reinforcement
+learning (DRL)-based handover (HO) protocol, called DHO,
+speciﬁcally designed to address the persistent challenge o f long
+propagation delays in low-Earth orbit (LEO) satellite netw orks’
+HO procedures. DHO skips the Measurement Report (MR)
+in the HO procedure by leveraging its predictive capabiliti es after
+being trained with a pre-determined LEO satellite orbital p attern.
+This simpliﬁcation eliminates the propagation delay incur red
+during the MR phase, while still providing effective HO deci sions.
+The proposed DHO outperforms the legacy HO protocol across
+diverse network conditions in terms of access delay, collis ion
+rate, and handover success rate, demonstrating the practic al
+applicability of DHO in real-world networks. Furthermore, the
+study examines the trade-off between access delay and colli sion
+rate and also evaluates the training performance and conver gence
+of DHO using various DRL algorithms.
+Index Terms—LEO satellite network, handover , protocol learn-
+ing, deep reinforcement learning, 6G.
+I. I NTRODUCTION
+In the realm of beyond-5G and 6G networks, satellite
+constellations utilizing low-Earth orbit (LEO) and medium -
+Earth orbit (MEO) satellites (SA Ts) have emerged as a crucia l
+solution for providing global coverage. These constellati ons,
+composed of thousands of SA Ts in close proximity to the
+Earth, enable high-speed, low-latency broadband internet ac-
+cess in remote and underserved areas across the globe [1],
+[2]. However, as the number of SA Ts in mega-constellation
+networks continues to rise and these networks are increas-
+ingly utilized for a diverse range of applications, there is a
+corresponding increase in the number of devices attempting to
+access the network, known as massive access. This can lead to
+a potential for network congestion and an increase in latenc y,
+which is a signiﬁcant concern in these networks [3]–[5].
+Since massive access may negatively impact network perfor-
+mance, new approaches are required to handle it [6]. Conven-
+tional transparent-type LEO SA T, which relies on centralized
+reservation methods, where a limited number of ground sta-
+tions manage various functions such as handover (HO) and
+resource allocation for all user equipment (UEs) connected
+to the mega-constellation, may not be efﬁcient in handling
+this massive access scenario. To overcome this limitation,
+regenerative-type LEO SA T has emerged, which is capable
+of making decisions and performing functions without relyi ng
+J.-H. Lee and A. F. Molisch are with Ming Hsieh Department of
+Electrical and Computer Engineering, University of Southe rn California, Los
+Angeles, USA (Emails: {juhyung.lee, molisch }@usc.edu).
+C. Park and S. Park are with the School of Electrical
+Engineering, Korea University, Seoul 02841, Korea (Emails :
+{cosdeneb,soohyun828}@korea.ac.kr).
+S. Park is a corresponding author of this paper.
+on ground stations 1 [7]. However, applying traditional HO
+protocols used in terrestrial networks to regenerative-ty pe LEO
+SA T networks may not be optimal as these protocols were
+not designed for the high dynamics of LEO SA T networks or
+the long propagation delay encountered in them, leading to
+unnecessary delay and power consumption from burdensome
+HO procedures.
+In this paper, we propose a novel HO protocol speciﬁcally
+designed for the regenerative-type LEO SA T networks using
+the deep reinforcement learning (DRL) approach. Our contri -
+butions can be summarized as follows:
+• A novel HO protocol is proposed for the LEO SA T
+networks, called DHO. DHO re-designs conventional HO
+procedures to suit LEO SA T network requirements. The
+protocol leverages locally observable information, tai-
+lored to the unique characteristics of LEO SA T networks.
+• The proposed DHO protocol minimizes access delay and
+collision rate while simplifying the HO process by skip-
+ping the Measurement Report (MR), achieving bet-
+ter performance even with lower power consumption. The
+DHO employs the importance-weighted Actor-Learner
+architecture, IMP ALA algorithm [8], which ensures stable
+training of cases with large state and action spaces
+(see Sec. IV -E) compared to other DRL algorithms (see
+Appendix B).
+• Numerical results corroborate that the DHO protocol
+demonstrates its superiority under various conditions ove r
+conventional HO protocol, achieving up to 6.86x and
+4.18x lower access delay than conventional HO and
+heuristic methods, respectively, (see T able IV and V in
+Sec. V). Also, the DHO agent behavior (trained policy)
+reveals the underlying mechanism for its improved perfor-
+mance and its adaptability in various network scenarios
+(see T able VI in Sec. V).
+• Furthermore, the versatility of the DHO protocol in adapt-
+ing to different network scenarios is also demonstrated
+(see T able VII in Sec. V).
+The rest of the paper is organized as follows: After dis-
+cussing the related works on HO processes for LEO SA T-based
+non-terrestrial networks (NTN) in Sec. II, Sec. III provide s a
+background and covers the challenges of HO in LEO SA T
+networks. Sec. IV presents the proposed DHO algorithm and
+its evaluation method. Sec. V provides simulation results
+and performance analysis, followed by concluding remarks i n
+Sec. VI.
+Notation: Throughout this paper, we use the normal-face
+font to denote scalars, and boldface font to denote vectors. We
+1Transparent-type SA Ts function by amplifying and forwardi ng signals,
+while regenerative-type SA Ts possess the capability for on -board processing
+(OBP) and are able to perform functions, such as HO decision [ 7].
+===== PAGE 2 =====
+2
+use RD× 1 to represent the D-dimensional space of real-valued
+vectors. ∇ xf (x) denotes the gradient vector of function f (x).
+II. R ELATED WORKS
+V arious HO strategies have been proposed to address the
+challenges posed by HO in LEO SA T networks. One such
+strategy employs a graph theory-based approach, where the
+relationship between LEO SA T and UE is represented as a
+graph and node [9]–[12]. While this graph-based approach ha s
+the potential to ﬁnd efﬁcient HO decisions, it is only applic able
+to the central reservation method in transparent-type LEO S A T
+networks, but not for the regenerative-type LEO SA T networks,
+which require real-time decisions to be made through on-boa rd
+processing.
+To address this limitation, DRL can be used to make real-
+time decisions. The use of DRL in wireless communications
+has been extensively studied, as reviewed in [13]. For insta nce,
+in dynamic spectrum sensing/access in cognitive radio, DRL
+has been applied to determine appropriate spectrum access
+strategies [14]–[16]. Furthermore, the use of DRL can be
+extended to random access performance improvements in LEO
+SA T networks [17]–[19]. In the context of LEO SA T networks,
+some studies have applied DRL to improve resource allocatio n
+and capacity management, which, however, primarily focus o n
+central decisions [20]–[22].
+Several studies have also investigated the application of
+machine learning in HO procedures [23]–[26]. For instance,
+[24] utilizes a DRL methodology in certain HO processes,
+although in a centralized manner. [25] aims to optimize both
+beamforming and HO jointly but only addresses the HO
+process at a high level without consideration for detailed H O
+procedures. [26] employs a supervised learning approach to
+enhance the predictive capability of a speciﬁc HO procedure ;
+however, this approach yields limited improvements and hea v-
+ily relies on a data-driven approach. Although previous stu dies
+demonstrate the potential of machine learning integration in
+the HO process, they primarily employ methods that are eithe r
+too high-level or overly specialized; besides, these studi es do
+not sufﬁciently account for the dynamic environments typic al
+of NTN.
+Considering the outlined approaches, our research aims to
+enhance the DRL-based approach, particularly focusing on
+HO in LEO SA T networks. We propose a novel DRL-based
+HO protocol designed to enable efﬁcient real-time decision -
+making, thereby broadening the scope of DRL-based solution s
+within LEO SA T network contexts.
+III. H ANDOVER FOR LEO SAT- BASED NON-T ERRESTRIAL
+NETWORKS
+A. Overview of HO Process
+As mentioned previously, transparent-type LEO SA Ts
+mainly operate on schedule-based HO mechanisms, such as
+centralized reservation methods. In these methods, a limit ed
+number of ground stations manage various functionalities,
+including HO and resource allocation for all UEs connected t o
+thousands of LEO SA Ts. However, in this paper, our primary
+focus is on another type of platform, regenerative-type LEO
+SA T. This type of platform is capable of making autonomous
+Fig. 1: The sequence diagram of conventional HO procedure.
+decisions and employs a trigger-based HO process, correspo nd-
+ing to the conventional HO process utilized in the 3GPP New
+Radio (NR).
+HO in 3GPP NR, the primary 5G cellular standard, consists
+of three main phases: preparation, execution, and comple-
+tion [26]. This process, shown in Fig. 1, ensures the continu ous
+transfer of data sessions or calls when a UE moves from one
+cell to another [27].
+Preparation phase. During the preparation phase , the UE
+measures signals from the serving and target Node Bs (gNBs),
+deciding if a HO event is necessary based on ﬁve potential
+conditions outlined in Table I. The handover margin (HOM)
+and time-to-trigger (TTT) are used to evaluate these condit ions.
+If satisﬁed, the UE sends a MR to the serving-gNB, leading to a
+HO Request to the target-gNB. If accepted, the serving-gNB
+sends a HO Command to the UE, moving to the execution
+phase.
+Execution phase. In the execution phase , the serving-gNB
+transfers the UE’s data and a sequence number to the target-
+gNB [28], and the UE connects to the target-gNB through
+a random access channel (RACH) process [29], [30]. The
+UE sends a HO Confirm message when the connection is
+successful.
+Completion phase. The completion phase includes the net-
+work entities’ request to switch the packet path from the
+serving-gNB to the target-gNB, releasing the resources fro m
+the serving-gNB once the HO Complete message is trans-
+mitted.
+The HO process, particularly the preparation phase, is
+vulnerable to failure under conditions of poor signal quali ty,
+where issues such as transmission/reception failure of HO-
+related messages or radio link failure (RLF) can occur. Con-
+===== PAGE 3 =====
+3
+TABLE I: The entering conditions of HO event.
+Event Entering Condition
+A1 serving-gNB’s signal becomes stronger (better) than the th resholda.
+A2 serving-gNB’s signal becomes weaker (worse) than the thres hold.
+A3 target-gNB’s signal becomes stronger (better) than servin g-gNB’s signal by a margin of the offset value.
+A4 target-gNB’s signal becomes stronger (better) than the thr eshold.
+A5 serving-gNB’s signal becomes weaker than threshold 1, and t arget-gNB’s signal becomes stronger than threshold 2.
+aEvent A1 is mainly used to stop the measurement of a certain ce ll rather than triggering the HO.
+sidering the increased vulnerability in the preparation ph ase in
+LEO SA T-based NTN, which often faces challenging channel
+conditions due to their ultra-long link distance, our work
+focuses on enhancing this initial stage of the HO process.
+B. Challenges in LEO SAT-based NTN
+In LEO SA T-based NTN, HO poses unique challenges
+compared to terrestrial cellular networks. These challeng es
+include:
+1) Long propagation delay : The signal from a UE to an
+SA T and back to a ground station takes a signiﬁcant
+amount of time, leading to delays in the HO process.
+2) Large coverage area: The coverage area of SA T is much
+larger than that of a terrestrial cell, which can make it
+more difﬁcult to identify the best target gNB for HO.
+3) Limited resources : The limited resources available on
+SA T can make it harder to support HO, especially when
+multiple UEs need to conduct HO at the same time.
+As a result of these challenges, HO in LEO SA T networks
+is considered a more challenging process than the one in
+terrestrial cellular networks.
+1) Challenge: Outdated, Power-Consuming, and Unreliable
+MR: Speciﬁc challenges in LEO SA T networks are the out-
+dated, power-consuming, and unreliable MR. The transmission
+of the signaling is hampered by a long propagation delay,
+which is a result of the physical distance between the ground
+UE and the LEO SA T providing network services at an altitude
+of 500 ∼ 2000 [km]. As the propagation speed is constant ( e.g.,
+c = 2.997 × 108), the propagation delay is proportional to the
+distance between the two terminals. The one-way propagatio n
+delay can be as long as 1.6 ∼ 6 [ms], as shown in Fig. 2a,
+which can result in MR sent from ground UE to LEO SA T
+becoming outdated.
+Additionally, the long link distance between the UE and
+LEO SA T necessitates high uplink (UL) signal power con-
+sumption during the MR. By calculating the carrier-to-noise
+ratio (CNR), it is possible to see the required UL transmit
+power for the UE to periodically transmit signaling to the
+LEO SA T to report the HO condition and also to estimate
+its reliability.
+For the NTN scenario, CNR can be calculated as:
+CNR [dB] = EIRP [dBW] − PFS [dB] − PA [dB]
+− PSM [dB] − PSL [dB] + G/T [dB/K]
+− k [dBW/K/Hz] − B [dBHz],
+(1)
+where EIRP is the equivalent, isotropically radiated power
+(EIRP) in the transmitter (TX); PFS = 20 log 10(f ) +
+20 log10(d) + 92.45 with being the carrier frequency f in GHz
+TABLE II: Parameters of UL transmission in LEO SA T
+networks (see Tables 6.1.1.1-1 and 6.1.1.1-3 of [7]).
+Parameter Value (Handheld) Value (VSAT)
+Carrier frequency, f 2 [GHz] ( S-band) 30 [GHz] ( Ka-band)
+Bandwidth, B 0.4 [MHz] 400 [MHz]
+TX transmit power 200 [mW] (23 [dBm]) 2 [W] (33 [dBm])
+TX antenna gain, GT 0 [dBi] 43.2 [dBi]
+Atmospheric loss, PA 0.1 [dB] 0.5 [dB]
+Shadowing margin, PSM 3 [dB] 0 [dB]
+Scintillation loss, PSL 2.2 [dB] 0.3 [dB]
+G/T 1.1 [dB/K] 13 [dB/K]
+Boltzmann constant, k -228.6 [dBW/K/Hz]
+and the link distance d in km; PA is the atmospheric path
+loss due to gases and rain fades in between groud-to-space;
+PSM is a shadowing margin; PSL is scintillation loss; G/T
+is is antenna-gain-to-noise-temperature in the receiver ( RX);
+k is the theoretical noise ﬂoor or the minimum sensitivity
+of the receiver as the Boltzmann constant; B is the channel
+bandwidth. Here, for the UL communication between the LEO
+SA T at an altitude of 600 [km] and the ground UE, the S-band
+(2 [GHz]) is considered for handheld-type UE and Ka-band
+(30 [GHz]) is considered for VSA T-type UE. Note that the
+parameter values for (1) are summarized in Table. II.
+Fig. 2 highlights the challenges faced in the traditional HO
+process, which can result in signiﬁcant power consumption f or
+the UE in the uplink transmission, as well as low reliability ,
+due to the procedure of sending the MR.
+2) Challenge: High Correlation and Density of Ground
+UEs: In LEO SA T networks, handling massive HO requests
+for UEs in densely populated areas poses another challenge,
+as there is a high correlation among UEs in such areas, as
+shown in Fig. 3. For instance, in scenarios where ground
+UEs are situated in a street canyon, they may encounter
+simultaneous loss and gain of line-of-sight due to the overh ead
+passage of the SA T. As a consequence, the probability of
+collision increases when multiple UEs attempt to execute HO
+simultaneously. This high correlation leads to many simult a-
+neous requests from UEs ( e.g., A3 events for multiple UEs
+occurring simultaneously), resulting in a high collision r ate
+and prolonged access delays, negatively impacting network
+performance. To tackle this challenge, an efﬁcient and effe ctive
+HO protocol is needed to manage such a large volume of HO
+requests, minimize the collision rate and access delay, and
+ensure a high HO success rate. To this end, we propose a novel
+HO protocol to address these issues, which will be discussed
+in the following.
+IV. DRL- BASED HANDOVER PROTOCOL FOR LEO
+SATELLITE NETWORKS
+===== PAGE 4 =====
+4
+600 800 1000 1200 1400 1600 1800
+Link Distance [km]
+2
+3
+4
+5
+6Propagation Delay [ms]
+(a) Propagation delay DP.
+600 800 1000 1200 1400 1600 1800
+Link distance [km]
+12
+14
+16
+18
+20
+22
+24
+26Uplink CNR [dB]
+(b) CNR (VSA T).
+600 800 1000 1200 1400 1600 1800
+Link distance [km]
+-4
+-2
+0
+2
+4
+6
+8
+10Uplink CNR [dB]
+(c) CNR (Handheld).
+Fig. 2: Propagation delay, CNR, and BER in networks between g round UE and LEO SA T. Each result is calculated by the
+parameters speciﬁed by [7], respectively.
+Existing HO methods for LEO SA T networks are limited
+by long propagation delays and high power consumption
+for uplink signaling. To address these issues, we propose
+a DRL-based HO protocol in which the serving-gNB agent
+predicts the UE’s network signal information and sends a
+HO Request to the target-gNB without the need for a MR.
+This simpliﬁes the HO preparation phase and improves HO
+performance by overcoming long propagation delays while
+saving signaling power. Fig. 4 illustrates the proposed pro tocol.
+In this section, we introduce the LEO SA T network scenario,
+evaluation metrics, and detailed protocol design.
+A. Network Scenario
+Conﬁguration of LEO SA Ts and Ground UEs. Consider a
+set K of orbital planes around Earth. For each orbital plane
+k ∈ K , there is a set Ik of LEO SA Ts orbiting on that
+plane. Additionally, there is a set J of UEs deployed on
+the ground 2 inside an area A. The position of UE j ∈ J
+is expressed as a 3-dimensional real vector on Cartesian
+coordinates denoted by qj = ( qx
+j , qy
+j , qz
+j ) ∈ R3. Similarly,
+the position and velocity of SA T i at time t ≥ 0 are
+denoted by qi(t) = ( qx
+i (t), qy
+i (t), qz
+i (t)) ∈ R3 and vi(t) =
+(vx
+i (t), vy
+i (t), vz
+i (t)) ∈ R3, respectively. The set of all SA Ts is
+denoted by ⋃
+k∈K Ik. We assume that the number of SA Ts on
+each orbital plane is equal to each other, given as |Ik| = I
+for all k ∈ K , and all SA Ts are moving in a uniform circular
+motion with the same orbital period T which is an acceptable
+approximation for the duration of visibility of the SA T to th e
+UE. The arc length between any two neighboring SA Ts on the
+same orbital plane is also assumed to be equal to each other.
+Consider that time is discretized in slots of length τ . Let
+qi[0] be the initial position of the SA T i ∈ ⋃ k ∈ KI k at
+time t = 0 . Then, by following the discrete-time state-space
+model [31], [32], the position of SA T i at time t = mτ can
+be expressed as
+qi[m] = qi[0] + τ
+m∑
+m′=1
+vi[m′τ ]. (2)
+HO Procedure. Consider LEO SA T HO scenario, where UEs
+in the cell O connect to a serving-SA T, which is acting as a
+serving-gNB. There are other SA Ts in the ﬁeld-of-view (FoV)
+2Our primary focus is on ﬁxed V AST-type UEs, but mobile handheld-type
+UEs can also be considered with minor adjustments.
+target-SAT2serving-SAT 
+target-SAT1
+ground UEs 
+Measurement 
+Report 
+Fig. 3: Network scenario. UEs are required to perform HO,
+transitioning their connections from the serving-SA T to ei ther
+target-SA T1 or target-SA T2.
+that are candidates for the HO target, referred to as target-
+gNBs (or target-SA Ts), and the serving-SA T can initiate a HO
+request to the target-SA Ts if it estimates it necessary. Sup pose
+that the source-SA T and target-SA Ts are the closest SA Ts on
+each orbital plane for the UEs in A. Suppose that there are
+N HO opportunities during an interval T , after which a UE
+loses connectivity with the serving-SA T unless it successf ully
+conducts a HO to a target-SA T. The time duration of each HO
+time slot is τ = T
+N , such that τ ∈ Z+. For simplicity, we
+will focus only on the N HO opportunities in the rest of this
+section, and suppose the ﬁrst time slot starts at t = 0 . Here,
+the time duration of each n-th HO is discretized with τ , i.e.,
+t = nτ, ∀n ∈ { 1, 2, . . . , N}.
+At each HO opportunity, each UE decides whether to send a
+HO Request and, if so, selects target-SA Ts to which it will
+send it. Such a set of actions is represented by {0, 1, . . . , K−
+1}, where K := |K|is the number of orbital planes and k = 0
+corresponds to the serving-SA T. The HO action of UE j ∈ J
+at the n-th HO opportunity is denoted by
+aj[n] ∈ { 0, 1, . . . , K − 1}. (3)
+Note that aj[n] = 0 means that the serving-SA T does not send
+a HO Request to any target-SA T at the n-th HO opportunity
+and waits for the next one. Also, note that there can be no HO
+to another SA T on the same orbital plane.
+===== PAGE 5 =====
+5
+Successful HO or Collision. There can be two types of
+collisions in the LEO SA T HO scenario:
+1) negative acknowledgment (NACK) due to lack of re-
+source blocks (RBs) : If the number of received HO
+Request sent by serving-SA T is greater than the num-
+ber of RBs in the target-SA T, collisions will occur.
+2) physical random access channel (PRACH) collision :
+Collisions occur if multiple UEs that receive the HO
+Command attempt to access the same target-SA T with
+the same preamble signature.
+Note that once UEs receive the HO Command , the random
+access (RA) signaling is carried out in two steps, as speciﬁe d
+in Release 16 of 5G-NR [33]. Speciﬁcally, UEs select a pream-
+ble from a set of available preambles for each target-SA T uni -
+formly at random, represented by pk[n] ∈ { 1, 2, . . . , P}, ∀k ∈
+{1, . . . , K − 1}, where P represents the number of resources
+that each SA T can grant during the data transmission duratio n.
+In the ﬁrst step of the RA signaling process, UEs that have
+determined to access send preambles to the corresponding
+SA Ts. In the second step, SA Ts send feedback to conﬁrm
+whether there were collisions or not for each chosen preambl e.
+UEs that have chosen colliding preambles fail to access, whi le
+those that have chosen preambles without collision succeed in
+completing the HO, i.e., HO Completion , which is denoted
+by a binary indicator aHO
+j [n]. Speciﬁcally, aHO
+j [n] = 1 indi-
+cates the HO has been completed for UE j, while aHO
+j [n] = 0
+indicates the HO has not been completed for UE j at time slot
+n and aHO
+j [0] = 0 , ∀j.
+B. Evaluation
+The performance of HO in the LEO SA T networks can be
+evaluated mainly in terms of collision rate and access delay ,
+as explained in the following.
+1) Collision Rate: The collision rate is a measure of the
+proportion of unsuccessful HO attempts, which can occur due
+to two factors: NACK due to lack of RBs and PRACH collision.
+Collision ( NACK due to lack of RBs ). This type of collision
+occurs when there are not enough RBs available on the target-
+SA T to support the number of UEs attempting to access it.
+We can represent each HO Request by deﬁning the request
+indicator hR
+k,j [n] for UE j ∈ J attempting to access target-
+SA Tk ∈ K at n:
+hR
+k,j [n] =
+{
+1 aj[n] > 0, a HO
+j [n] = 0 ,
+0 otherwise, ∀j ∈ J , k ∈ K .
+(4)
+We can then calculate the collision rate CR
+k [n] for this type
+of collision as the ensemble proportion of UEs that attempte d
+to access a target-SA T k ∈ K\{ k = 0} with insufﬁcient RBs:
+CR
+k [n] =
+{
+0 R k[n] − ∑J
+j=1 hR
+k,j [n] > 0,∑J
+j=1 hR
+k,j [n]− Rk[n]
+J otherwise,
+(5)
+where Rk[n] represents the available RBs in target-SA T k at
+time slot n, and cR
+j [n] indicates the collision due to insufﬁcient
+RBs for UE j ∈ J at time slot n. In the event of a collision
+due to insufﬁcient RBs in the target-SA T, the UE that will
+receive the HO Request acknowledgment (ACK) is selected
+randomly based on the availability of the RBs. To identify th e
+UE that receives the HO Command , we deﬁne the command
+indicator hC
+j [n] ∈ { 0, 1, . . . , K− 1}. hC
+j [n] = 0 indicates that
+the UE has not received any HO Command , while hC
+j [n] = k
+indicates that the UE has received the command for target-SA T
+k.
+Collision (PRACH collision). This is another type of collision
+that occurs when multiple UEs attempt to access the same SA T
+with the same preamble signature.
+Denote the collision indicator of UE j ∈ J ’s RA at time
+slot n ∈ { 1, . . . , N} by cP
+j [n], and deﬁne it as
+cP
+j [n] =
+{
+1 ( hC
+j [n], pj[n]) = ( hC
+j′ [n], pj′[n]), a HO
+j [n] = 0 ,
+0 otherwise,
+(6)
+if aj[n] ̸= 0, and otherwise we have cP
+j [n] = 0 .
+The collision rate CP[n] is deﬁned as the ensemble pro-
+portion of UEs that experienced a PRACH collision and is
+calculated by averaging cP
+j [n] over all UEs in J , which is
+deﬁned as
+CP[n] = 1
+|J |
+∑
+j∈J
+cP
+j [n]. (7)
+Finally, the average collision rate C[n] is calculated by
+summing the collision rate for the lack of RBs CR
+k [n] over all
+target-SA Tsk ∈ K\{ k = 0} and adding the PRACH collision
+rate CP[n]:
+C[n] =
+K− 1∑
+k=1
+CR
+k [n] + CP[n]. (8)
+Note that a UE cannot experience both types of collisions
+(NACK due to lack of RBs and PRACH collisions), simulta-
+neously. This is due to the fact that the UE initiates the RA
+process only after receiving the HO Command, which is sent
+by the serving-SA T upon receiving the HO Request ACK from
+the target-SA T. Thus, the RA process can only be initialized
+when there is no collision in terms of NACK due to lack of
+RBs.
+2) Access Delay: Access delay is another metric in HO
+scenarios that measures the time it takes for a UE to success-
+fully HO to a target-SA T. The access delay is calculated as
+the average time it takes for a UE to successfully access a
+target-SA T, taking into account the number of failed attemp ts
+and the time duration between each time slot.
+The average access delay is then calculated as:
+D[n] = 1
+|J |
+∑
+j∈J
+(1 − aHO
+j [n]), (9)
+This calculation takes into account the total number of fail ed
+HO and the time duration between each time slot to provide
+an accurate measure of the average access delay.
+3) Successful HO (Access) Rate: The successful HO rate is
+a metric that measures the proportion of UEs that successful ly
+hand over to a target-SA T among all UEs that attempted to do
+===== PAGE 6 =====
+6
+so. It is calculated as the average of the access indicator of all
+UEs:
+H = 1
+|J |
+∑
+j∈J
+aHO
+j [N ]. (10)
+C. Protocol Design
+In this section, we propose a novel HO protocol for LEO
+SA T networks, called DHO. As the DHO utilizes DRL tech-
+niques for training, we ﬁrst formulate the problem and cast
+the problem into a Markov decision process (MDP) model.
+1) Sequence of DHO: The proposed DHO protocol for LEO
+SA T networks includes the following sequence of steps:
+1) HO Decision : serving-SA T makes a decision for HO
+Request, including target-SA T selection and backoff
+for each UE.
+2) HO Admission : target-SA T sends HO Request
+ACK if it has available RBs to support the HO request.
+The serving-SA T then sends HO Command to the UEs
+that are permitted to hand over to the target-SA T.
+3) Random Access : UEs that receive HO Command at-
+tempt to access the target-SA T designated by the serving-
+SA T, by randomly choosing preambles for RACH ac-
+cess.
+4) HO Completion : Completing HO if the UE success-
+fully transfers to the target-SA T speciﬁed by the serving-
+SA T.
+Notably, the proposed DHO protocol simpliﬁes the process by
+eliminating the need for the MR.
+To achieve our objective, we employ the DRL approach,
+driven by two crucial factors: Firstly, the DRL algorithm
+has the ability to handle complex, high-dimensional decisi on-
+making problems, making it a suitable choice for optimizing
+HO procedure in LEO SA T networks. Secondly, the envi-
+ronment in LEO SA T networks is dynamic and stochastic,
+characterized by rapidly changing network conditions. The
+DRL algorithm is capable of adapting to these ﬂuctuations
+and making decisions in real-time, whereas other optimizat ion
+techniques, such as convex optimization or dynamic program -
+ming, may not be equipped to handle such a complex and
+unpredictable environment.
+2) MDP Modeling: The optimization problem mathemati-
+cally formulated in DHO is to minimize both access delay and
+collision rate while taking into account the constraints of LEO
+SA T networks. The problem can be represented as:
+min
+aj [n]
+N∑
+n=1
+D[n] + νC [n], s.t. (2) . (11)
+where ν is a normalization coefﬁcient that balances the trade-
+off between access delay and collision rate, and N is the period
+of time during which HO may occur.
+To recast the problem in (11) as a DRL problem, in the
+following, we ﬁrst model the network scenario of LEO SA T-
+based NTN as an MDP .
+Environment. Environment consists of ground UEs, serving-
+SA T, and target-SA Ts interacting with each other, which
+follows an MDP model. At each time step n, the serving-SA T
+is an agent that observes a state s[n] ∈ S , and takes action
+a[n] ∈ A based on a state-action policy π. Given this action,
+the state of the agent transitions to s[n + 1] , and in return,
+the agent receives a reward r[n] that reinforces following an
+optimal policy π∗ .
+State. In the MDP model, the state at time index n is deﬁned
+as:
+s[n] = {n, aHO[n], a[n − 1]}, (12)
+where n represents the time index, aHO[n] =
+{aHO
+1 [n], aHO
+2 [n], · · ·, aHO
+J [n]}, and a[n − 1] is the previous
+action taken by the UEs. The inclusion of the time index
+and previous action serves as a ﬁngerprint for stabilizing
+experience replay in the DRL process. Besides, the binary
+indicator of accessed UEs provides information on the curre nt
+state of the network. Note that s[0] represents the state for
+n = 0, which is initialized randomly.
+The state information is designed to be minimal while still
+providing sufﬁcient information for decision-making. Eac h
+piece of information in the state is carefully selected thro ugh
+extensive tests, as shown in our ablation study in Appendix
+A. It is worth noting that our proposed DHO utilizes the
+locally-observable information and does not require addit ional
+information, such as the position of the SA Ts or others, as th e
+accessed UEs provide sufﬁcient information for DHO trainin g.
+This minimal state design not only reduces data collection
+overhead but also enhances the convergence of DRL training.
+Action. The action space A in our environment pertains to
+HO decisions. In order to determine the HO Request for
+each UE at each HO opportunity, our agent, representing the
+serving-SA T, employs the HO action aj[n] as deﬁned in (3).
+To deﬁne the set of HO actions, A, we utilize a one-hot
+encoded representation. Speciﬁcally, we deﬁne the set of HO
+actions for UE j at time index n as:
+aj [n] = {a0, a1, a2, · · ·, aK− 1}, s.t.
+K− 1∑
+k=0
+ak = 1, (13)
+where ak for k ̸= 0 denotes the association with the k-
+th orbital plane, and a0 implies that the serving-SA T does
+not send a HO Request to any target-SA T at the n-th HO
+opportunity and instead waits for the next one. This one-
+hot encoded representation ensures that exactly one action is
+selected at each time step, and allows for a clear and efﬁcien t
+representation of the HO decisions made by the agent. Thus,
+the complete set of action is given as:
+a[n] =
+
+
+
+
+
+a1[n]
+a2[n]
+.
+.
+.
+aJ [n]
+
+
+
+
+ . (14)
+Reward. The reward function in our proposed DHO is de-
+signed to reinforce the serving-SA T to make optimal access
+decisions by penalizing access delay and collision rate. Th e
+reward function, r[n], is deﬁned as the negative of the objective
+function in (11), which captures this goal:
+r[n] = − D[n] − νC [n]. (15)
+===== PAGE 7 =====
+7
+(a) Conventional HO protocol.
+ (b) Proposed DRL-based HO protocol (DHO).
+Fig. 4: The sequence diagrams of traditional and proposed HO protocols for LEO SA T networks.
+Here, the normalization coefﬁcient ν balances the trade-off be-
+tween access delay and collision rate, which will be discuss ed
+in Sec. V -D, speciﬁcally in Table VII.
+It is worth noting that the state and reward information used
+in our MDP model is locally observable, making it possible to
+train and execute the DHO in a fully distributed manner. This
+means that the regenerative type SA Ts can easily implement
+our proposed DHO.
+D. Algorithm Details
+The proposed DHO employs IMP ALA [8], which is a DRL
+algorithm that provides several advantages over other DRL
+algorithms, such as DQN [34], A3C [35], and PPO [36] 3.
+IMP ALA is an off-policy reinforcement learning algorithm
+that utilizes parallel actor-learners and importance samp ling
+to improve sampling efﬁciency and scalability.
+In off-policy training, the variance is largely due to the di f-
+ference between the policy that is used to generate the behav ior
+(behavior policy) and the policy that is being improved (tar get
+policy). IMP ALA addresses the policy mismatch issue in off-
+policy learning by using V-trace targets, which are estimated
+using truncated importance sampling. V -trace targets corr ect
+the value estimate by incorporating the difference between the
+behavior policy and the target policy, which can signiﬁcant ly
+improve learning performance. IMP ALA provides scalabilit y
+and improved sample efﬁciency by employing asynchronous
+updates and importance sampling. It allows for efﬁcient par al-
+lelization and effective utilization of collected data, st riking a
+balance between exploration and exploitation. These advan ta-
+geous features make IMP ALA particularly suitable for large -
+scale environments and complex tasks, such as the HO process
+in LEO SA T networks.
+The process of how the learner updates its policy in IM-
+P ALA is as follows:
+1) Initialize and update the actor’s policy based on the
+current learner’s policy.
+3DHOs can also be trained with other DRL algorithms that suppo rt multi-
+discrete actions.
+2) The actor collects experience in environments.
+3) The actor delivers the collected experience and its polic y
+to the learner.
+4) The learner trains its policy based on the experience and
+the actor’s policy it receives.
+In IMP ALA, which is an asynchronous distributed training
+model, even if different actors update their policies based
+on the same learner, they may diverge due to the inherent
+randomness and asynchrony of the training process.
+1) V-trace: In the context of discounted inﬁnite-horizon RL
+in MDP , we aim to ﬁnd a policy π that maximizes the expected
+sum of future discounted rewards. The value function V π(s)
+represents the expected cumulative rewards starting from s tate
+s, and it is deﬁned as Eπ
+[∑N
+n=1 γtr[n]
+]
+, where γ is the
+discount factor in the range [0, 1).
+Consider a trajectory (s[n], a[n], r[n]])n=s+k
+n=s generated by
+the actor following a policy µ. The k-steps V-trace target vn
+for approximating the value at state s[n], is deﬁned as:
+v[n] = V (s[n]) + ∑s+k− 1
+n=s γ[n − s]
+(∏n− 1
+i=s c[i]
+)
+δnV , (16)
+where δnV = ρ[n] (r[n] + γV (s[n + 1]) − V (s[n])) is the
+temporal difference for V . The terms ρ[n] and c[n] are
+truncated importance sampling (IS) weights, with ρ[n] =
+min
+(
+¯ρ, π(a[n]|s[n])
+µ(a[n]|s[n])
+)
+and c[n] = min
+(
+¯c, π(a[n]|s[n])
+µ(a[n]|s[n])
+)
+. It is
+assumed that the truncation levels satisfy ¯ρ ≥ ¯c. The truncation
+levels ¯c and ¯ρ play different roles in the algorithm: ¯ρ impacts
+the nature of the value function we converge to, whereas ¯c
+impacts the speed at which we converge to this function.
+Off-policy learning is important in the decoupled distribu ted
+actor-learner architecture because of the lag between when
+actions are generated by the actors and when the learner
+estimates the gradient. By incorporating the V -Trace targe t,
+IMP ALA addresses the challenge of policy mismatch (policy-
+lag) in distributed environments, allowing for a more accur ate
+estimation of the advantage function and improved learning
+performance.
+2) V-Trace Actor-Critic algorithm: Under off-policy set-
+tings, we can use the IS weight between the policy being
+===== PAGE 8 =====
+8
+Algorithm 1: Training process for the proposed DHO
+1 Initialize the learner network’s weights φ → φ0 ;
+2 for Epoch = 1, MaxEpoch do
+3 for each actor i, ∀i ∈ [1, I ] do
+4 ⊲ Initialize LEO SAT Environments : Set
+replay buffer Di = {} and si[n] → si[0] ;
+5 ⊲ Update actor weight θi from the learner:
+Download weights θi = φ ;
+6 for Step = 1, MaxStep do
+7 ⊲ Select the action ai[n] based on its policy
+µ θi (ai[n] | si[n]) at every step ;
+8 ⊲ Get reward ri[n] and move si[n] → si[n + 1] ;
+9 ⊲ Set experience
+ξi[n] = {si[n], ai[n], r i[n], si[n + 1]} ;
+10 ⊲ Update replay buffer: Di = Di ∪ ξi[n] ;
+11 end
+12 ⊲ Upload µ θi and Di to the learner ;
+13 ⊲ Update weights φ of the learner network π φ on
+the basis of µ θi and Di ;
+14 end
+15 end
+evaluated π¯ρ and the behavior policy µ to update our policy
+parameter in the direction of
+Ea[n]∼ µ(·|s[n])
+[ π¯ρ(a[n]|s[n])
+µ(a[n]|s[n]) · ∇ log π¯ρ(a[n]|s[n])q[n]|s[n]
+]
+.
+Here, q[n] := r[n] + γv[n + 1] is an approximation of
+Qπ ¯ρ(s[n], a[n]), built from the V -trace estimate vs+1 at the
+next state xs+1.
+Consider a parametric representation of the value function
+Vφ and the current policy πθ. Trajectories are generated by
+actors following a behavior policy µ. The V -trace targets v[n]
+are deﬁned by the equation (16). During training, the value
+parameters φ are updated using gradient descent on the l2
+loss towards the target v[n]. This update is performed in the
+direction of
+(
+v[n] − Vφ(s[n])
+)
+∇ φVφ(s[n]).
+The policy parameters θ are updated in the direction of the
+policy gradient, which is given by
+ρ[n]∇ θ log πθ(a[n]|s[n])
+(
+r[n] + γv[n + 1] − Vφ(s[n])
+)
+.
+To prevent premature convergence, an entropy bonus, simila r
+to A3C, can be added in the direction
+−∇ θ
+∑
+a
+πθ(a|s[n]) log πθ(a|s[n]).
+The detailed process of the training is described in Algo-
+rithm 1.
+E. Complexity Analysis
+In the complexity analysis, we ﬁrst discuss the training
+complexity of the DHO, which utilizes the IMP ALA algorithm
+for training. We then introduce the execution complexity of our
+proposed DHO compared to the conventional HO protocol.
+Training complexity. Policy-based DRL, utilizing policy gra-
+dient, has been demonstrated to possess superior reward con -
+vergence compared to value-based DRL [37]. One example of
+policy-based DRL is the actor-critic algorithm, such as A2C
+and A3C. However, as the actor-critic network is an on-policy
+method, it lacks the ability to utilize an experience replay
+buffer, as seen in off-policy training methods like DQN [38] .
+This lack of experience replay buffer can lead to a higher
+susceptibility to converge to a local minimum or experience
+oscillations due to correlations between training samples and
+rapidly changing data distributions.
+IMP ALA, on the other hand, leverages off-policy multiple
+actors-learner distributed learning with V -Trace to provi de a
+faster learning rate and improved performance. The use of
+multiple actors and a distributed learning approach also al lows
+for the efﬁcient utilization of computing resources, makin g
+faster convergence possible.
+After training, our DRL-based HO agent, DHO, can output
+an action ( i.e., HO Request ) in less than a few milliseconds
+on NVIDIA GeForce RTX 3080 Ti GPU. Further details of
+the comparison and convergence study of the IMP ALA DRL
+algorithm can be found in Appendix B.
+Execution complexity. One of the key advantages of the
+proposed DHO is its simpliﬁcation of the HO procedure by
+skipping the MR step. This simpliﬁcation reduces the overall
+HO processing time and conserves UL signaling power that
+would otherwise be used for the MR in conventional HO
+protocols. In the DHO, the serving-SA T agent is capable of
+directly sending a HO Request to the target-SA Ts without
+relying on the MR. This is achieved by leveraging the serving-
+SA T agent’s learned understanding and prediction of the UE’ s
+channel condition. The elimination of the MR step signiﬁcantly
+reduces the execution complexity, enhancing the efﬁciency
+and effectiveness of the proposed DHO compared to the
+conventional HO protocol.
+V. N UMERICAL RESULTS
+In this section, we demonstrate the effectiveness of the
+proposed DHO for LEO SA T networks by evaluating the
+performance metrics of access delay and collision rate.
+TABLE III: Simulation parameters.
+Environment Parameter [1]
+Region (area) of interest 1000 × 1000 [m2]
+Number of UE J = 10 − 200
+# of orbital plane 3
+Altitude of LEO SA T HL = 550 [km]
+Speed of LEO SA T |v| = 7 .59 × 103 [m/s]
+V elocity of serving-SA T (k = 1 ) vk ∈
+{
+[0, |v|, 0]T }
+V elocity of target-SA Ts (k = 2 , 3) vk ∈
+{[
+|v|√
+2 , |v|√
+2 , 0
+]T
+,
+[
+− |v|√
+2 , |v|√
+2 , 0
+]T }
+HO Parameter [39]–[41]
+Period of measurement TM = 150 [ms]
+IIR ﬁlter order kIIR = 4
+Forgetting factor βL3 = 0 .5
+Period of HO update TU = 300 [ms]
+Offset for A3 event 1 [dB]
+DRL Training Parameter
+Learning rate 10− 4 ∼ 5 × 10− 4
+Discount factor 0.85 ∼ 0.99
+Batch size 10000
+# of iterations per update 10000
+# of iterations per episode 20
+# of of episodes for training 1000 ∼ 8000
+===== PAGE 9 =====
+9
+HO (Conventional)          Random (Heuristic)          DHO (Proposed) 
+0.3 0.4 0.5 0.6 0.7 0.8 0.9 1
+# of RBs [1/# of UEs]
+100
+101
+Avg. Access Delay
+(a) Average access delay
+0.3 0.4 0.5 0.6 0.7 0.8 0.9 1
+# of RBs [1/# of UEs]
+10-3
+10-2
+10-1
+100
+101
+Avg. Collision Rate (Lack of RB)
+(b) Average collision rate (NACK due to lack of RBs)
+0.3 0.4 0.5 0.6 0.7 0.8 0.9 1
+# of RBs [1/# of UEs]
+10-1
+100
+101
+Avg. Collision Rate
+(c) Average collision rate
+Fig. 5: Impact of the number of RBs. x-axis represents the number of RBs per UE on each target-SA T, i.e., Rk/J (J = 10
+and P = 5J).
+Case 1 : Enough RBs ( Rk = J, k ∈ {1, 2})
+Schemes Avg. Access Delay Avg. Collision (Insufﬁcient RB) A vg. HO Success
+HO (Conventional) 0.789 0 1
+Random (Heuristic) 0.582 0 1
+DHO (Proposed) 0.116 0 1
+Case 2 : Insufﬁcient RBs ( Rk = 0.3J, k ∈ {1, 2})
+Schemes Avg. Access Delay Avg. Collision (Insufﬁcient RB) A vg. HO Success
+HO (Conventiona) 13.52 12.7 0.59
+Random (Heuristic) 8.156 5.22 0.60
+DHO (Proposed) 8.053 4.15 0.60
+TABLE IV: Comparison of access delay and collision rate of DH O with benchmark methods (HO, Random) for the number
+of RBs in each target-SA T ( J = 10 and P = 5J).
+A. Simulation Setup
+1) Environment: In this study, unless otherwise speciﬁed,
+the ground UEs are uniformly distributed within a 1000× 1000
+[m2] area. The scenario includes one serving-SA T ( k = 0) and
+two target-SA Ts (k = 1 or 2 ), orbiting at an altitude of 550
+[km] in three different orbital planes. Given that LEO forms
+a spherical shape with its center corresponding with that of
+the Earth, the orbital speed of LEO SA Ts is determined based
+on their altitude using Kepler’s law. The FoV of the UEs in a
+speciﬁc area of interest ( A) is assumed to cover one SA T for
+each orbital lane.
+The parameters for conventional HO decision-making are
+as follows: The ﬁltered HO measurement, ML1[n] (i.e., re-
+ceived signal strength indicator (RSSI)), is updated every
+HO measurement period ( TM) at the UE. The measurement
+ML3[n] is evaluated by L3 inﬁnite impulse response (IIR)
+ﬁltering of L1 received power of downlink reference signals
+(RSRP) measurements for each HO decision update period
+(TU = TM/βL3) with a forgetting factor βL3 = 1 /2(kIIR/4),
+where kIIR is the IIR ﬁlter order. The L3 ﬁltered measurement
+is given as [40], [41]:
+ML3[n] = βL3 ML1[n] + (1 − βL3)ML3 [n − 1]. (17)
+Note that in scenarios with high doppler shift and high speed ,
+such as in the LEO SA T networks, the log-normal shadowing
+samples may not be highly correlated. In such cases, a shorte r
+ﬁltering period may result in more accurate HO decision-
+making. When the event A3 criterion is met, i.e., the L3 ﬁltered
+RSRP of the target cell exceeds that of the serving cell by a
+predetermined hysteresis margin (referred to as the event A 3
+offset), the UE sends a notiﬁcation to the serving cell and
+relays this event A3 condition through a MR, thereby initiating
+the HO preparation process.
+Table III presents a summary of the main parameters for the
+environment, the network scenario, speciﬁcally those rela ted
+to HO, and the DRL training.
+2) Benchmark: Throughout this section, we evaluate the
+performance of two benchmark HO methods and our proposed
+LEO SA T networks-oriented HO, referred to as DHO, as
+outlined below:
+1) HO (Conventional) protocol is a traditional method
+employed in 4G-LTE and 5G-NR networks. This method
+utilizes the A3 event to trigger HO 4, and the ground UE
+performs HO measurements using the estimated RSRP ,
+while also applying ﬁlters to mitigate the impact of
+fading and measurement inaccuracies. At the start of
+the HO opportunity, the serving-SA T selects a target-
+SA T based on favorable RSRP . Additional details on
+this process can be found in Sec. III-A and in Table
+III, which lists the relevant parameters.
+2) Random (Heuristic) protocol selects actions randomly
+for each HO opportunity in the environment. As a result,
+each UE receives a HO Command for a speciﬁc target-
+SA T or none at all. However, collisions may occur if
+multiple UEs try to access the same target-SA T with
+4Here, the A3 event is used as it is widely used and has a higher
+occurrence probability in practical deployments. Other en tering conditions,
+e.g., A2, A4, or A5, can also be used for the conventional HO (see Ta ble I).
+===== PAGE 10 =====
+10
+HO (Conventional)          Random (Heuristic)          DHO (Proposed) 
+0.5 1 1.5 2 2.5 3 3.5 4 4.5 5
+# of Pramble Signatures [1/# of UEs]
+100
+Avg. Access Delay
+(a) Average access delay.
+0.5 1 1.5 2 2.5 3 3.5 4 4.5 5
+# of Pramble Signatures [1/# of UEs]
+10-1
+100
+Avg. Collision Rate (Contention)
+(b) Average collision rate (PRACH collision)
+Fig. 6: Impact of the number of preamble signatures. x-axis represents the number of preambles per UE on each targe t-SA T,
+i.e., P/J (J = 10 and Rk = J, ∀k).
+Case 3 : Enough preamble signatures ( P = 2J)
+Schemes Avg. Access Delay Avg. Collision (PRACH Collision)
+HO (Conventional) 1.231 3.31
+Random (Heuristic) 0.661 1.02
+DHO (Proposed) 0.255 2.13
+Case 4 : Insufﬁcient preamble signatures ( P = 0.8J)
+Schemes Avg. Access Delay Avg. Collision (PRACH Collision)
+HO (Conventional) 1.740 9.41
+Random (Heuristic) 0.858 3.65
+DHO (Proposed) 0.648 4.24
+TABLE V: Comparison of access delay and collision rate of DHO with benchmark methods (HO, Random) for the number
+of preamble signatures for each target-SA T ( J = 10 and Rk = J, ∀k).
+the same preamble signature (PRACH) when there is an
+insufﬁcient amount of RB available on the target SA T.
+Here, the two-step RACH process is assumed for RA
+signaling, following the guidelines of Release 16 of 5G-
+NR [33].
+3) DHO (Proposed) is our proposed HO method trained
+using the IMP ALA framework, as presented in Algo-
+rithm 1. This approach enables each serving-SA T to
+select the optimal HO action ( e.g., HO Request ) for
+all ground UEs to be sent to target-SA Ts. This method
+operates under partial state observability, whereby each
+serving-SA T agent interacts only with ground UEs and
+utilizes observable state information without communi-
+cating with other entities. The learning process can be
+seen as a partially observable MDP (POMDP).
+As discussed in Sec. III, the challenge of massive HO arises
+in LEO SA T networks due to the high density of ground
+UEs that need to HO simultaneously; besides, the fast orbita l
+movement of LEO SA Ts leads to more frequent HO. Therefore,
+to evaluate the performance of LEO SA T networks under these
+conditions, we examine our proposed techniques based on
+two critical factors for a massive HO scenario: the number
+of available RBs and the number of preamble signatures.
+B. HO Performance Analysis
+1) Impact of Number of RBs: The impact of the number of
+available RBs in each target-SA T on access delay and collisi on
+rate is shown in Fig. 5. The x-axis represents the ratio of the
+number of RBs in a target-SA T to the number of ground UEs,
+indicating the proportion of available RBs that each target -SA T
+can be allocateed to ground UEs. It is important to note that
+in order to express the massive HO situation more efﬁciently ,
+we consider the ratio of the number of resources per UE rather
+than directly considering the number of UEs and resources.
+Speciﬁcally, Fig. 5b presents the collision rate caused by
+the lack of RBs in the target-SA T, resulting in HO Request
+NACK. Our proposed DHO approach outperforms the two
+benchmark methods in terms of access delay and collision
+rate, especially when there are sufﬁcient RBs available.
+To further investigate the impact of the number of RBs,
+in Table IV, we present a comparison of the performance of
+our proposed DHO, under two scenarios: one in which enough
+RBs are available ( Rk = J, k ∈ { 1, 2})), and another in which
+the available RBs are insufﬁcient ( Rk = 0 .3J, k ∈ { 1, 2})).
+While all methods eventually do a successful HO for a given
+RB, the proposed DHO achieves an average access delay that
+is 6.8x and 5.02x faster than conventional HO and random
+methods, respectively, when there are sufﬁcient number of
+RBs available. Similarly, the DHO also enables ground UE
+to succeed in HO faster and with less collision when there is
+an insufﬁcient number of RBs available.
+Overall, the results of Fig. 5 and Table IV indicate that our
+proposed DHO exhibits a distinct advantage in terms of acces s
+delay, collision rate, and HO success rate when compared to
+the other two baselines. These ﬁndings emphasize the inhere nt
+ﬂexibility of DHO in adapting and learning based on the
+speciﬁc network conditions, particularly with regard to th e
+===== PAGE 11 =====
+11
+TABLE VI: DHO agent behavior for various scenarios ( J = 10).
+Scenario HO Request for target-SA Ts (aj = 1, 2) No HO Request (aj = 0)
+Enough RB and PRACH (Case 1 + 3 ) 93.7 % 6.33 %
+Insufﬁcient RB and PRACH (Case 2 + 4 ) 8.12 % 91.8 %
+TABLE VII: Trade-off between access delay and collision rat e ( J = 10, Rk = J, ∀k, and P = 5J).
+Objective Avg. Access Delay Avg. Collision (PRACH Collisio n)
+Delay-Aware (ν = 5) 0.0875 0.0845
+Collision-Aversion (ν = 1/20) 0.3461 0.0613
+availability of RBs.
+2) Impact of Number of Preamble Signatures: Fig. 6 and
+Table V shows the impact of the number of RACH preamble
+signatures used in the RA process between the target-SA T and
+ground UEs, which is conducted after the UE receiving HO
+Command. The ﬁgure and table investigate the performance
+of HO methods in terms of access delay and collision rate.
+The x-axis in Fig. 6 represents the ratio of the number of
+preamble signatures to the number of ground UEs, indicating
+the proportion of preamble signatures available for the RA
+procedure. As the number of preamble signatures increases,
+the probability of PRACH contention (collision) decreases .
+Still, the proposed DHO technique demonstrates superior
+performance in terms of access delay, achieving up to 4.83x
+and 2.59x faster than conventional HO and random methods,
+respectively. Interestingly, it, however, lags behind the random
+method in terms of PRACH collision rate, as shown in Fig. 6b.
+This can be attributed to the fact that DHO prioritizes acces s
+delay over collision rate, thus somewhat accepting a higher
+collision rate in order to achieve better access delay; this is
+more clearly indicated in Table V.
+Overall, the results Figs. 5 and 6, as well as Tables IV
+and V provide validation for the effectiveness of our propos ed
+DHO in selecting efﬁcient actions based on speciﬁc network
+conditions, particularly in relation to the number of pream ble
+signatures available. This DHO protocol ﬂexibly behaves wh en
+resources are sufﬁcient and when they are insufﬁcient, as
+elaborated in the following subsection.
+C. DHO Protocol Behavior
+In Table VI, the behavior of the DHO protocol is demon-
+strated. The results demonstrate that when resources are su fﬁ-
+cient, DHO sends HO Requests to the greatest extent possi-
+ble at every opportunity, while when resources are insufﬁci ent,
+DHO frequently opts not to send HO Requests for a few
+UEs. This adaptive behavior of the DHO agent showcases its
+capability to adjust its actions based on network condition s,
+ultimately leading to optimal HO performance.
+The behavior of the DHO agent is determined by the current
+network conditions, and it continuously updates its behavi or as
+the conditions change over time through additional trainin g5.
+This ability to adapt to changing network conditions sets th e
+DHO protocol apart from traditional HO methods, which may
+5The use of transfer learning techniques will allow our DHO agent,
+trained under speciﬁc network conditions, to adapt to new ne twork conditions
+with only a few additional training episodes; this will be th e focus of our
+future research.
+have limitations in adapting effectively to various networ k
+scenarios.
+D. Trade-off: Access Delay and Collision Rate
+The proposed DHO uses a reward function that considers
+both access delay and collision rate to train the serving-SA T’s
+policy in selecting actions that minimize both factors. How ever,
+these two factors are interrelated and present a trade-off. For
+instance, in order to minimize the collision rate, the numbe r of
+HO Request attempts needs to be minimized, but this can
+increase the access delay.
+The importance placed on either access delay or collision
+rate may vary depending on the speciﬁc application. For
+instance, in applications requiring ultra-reliable low-l atency
+communications (URLLC) capability, such as real-time wire -
+less control and monitoring systems, minimizing access del ay
+is crucial to ensure timely and reliable transmission of cri tical
+data. On the other hand, in massive machine-type communica-
+tion (MMTC) scenarios, where a large number of devices are
+connected, minimizing collision rate becomes more importa nt
+to maximize the overall network efﬁciency and capacity.
+The proposed DHO enables the adjustment of the relative
+importance of these factors according to the speciﬁc requir e-
+ments of the application, by changing the coefﬁcients of the
+access delay and collision rate functions in the reward func tion,
+represented by ν in Table VII 6.
+E. Training and Convergence
+10 50 100 150 200
+-10
+-5
+0
+5
+Norm. Reward
+10k
+50K
+100K
+120K
+# of Ep. for Convergence
+# of UEs
+Fig. 7: Impacts of the number of UE ( J = 10, Rk = 0.5J, ∀k,
+and P = 2J).
+The training process for DRL can become increasingly dif-
+ﬁcult as the dimensions of the state and action spaces increa se.
+6The coefﬁcient in the reward function ν is experimentally tuned to
+balance access delay and collision rate for optimal perform ance of the HO
+protocol.
+===== PAGE 12 =====
+12
+This is especially relevant in our network scenario, where t he
+number of UEs is a signiﬁcant factor, making DRL learning
+more challenging. Speciﬁcally, the action space and state s pace
+of DHO are represented by ZJ× K and RJ× (2J+1), respectively.
+In general, as the dimensions of the state space and action
+space increase, the number of training steps required for th e
+DRL agent to converge also increases. Furthermore, the lear n-
+ing reward tends to decrease with increasing dimensionalit y.
+Fig. 7 shows the correlation between the number of UEs and
+the training step (episode) required. As shown in this resul t,
+training with 100 UEs takes approximately ﬁve times longer
+than training with 10 UEs. Our employed IMP ALA algorithm
+is empirically known to be robust and stable in such a high-
+dimensional state and action space [8]. Our DRL-based HO
+algorithm can be efﬁciently scaled up to more UE cases using
+transfer learning or distributed training, which is deferr ed for
+future work.
+VI. C ONCLUSION
+In conclusion, this work presents a novel HO protocol called
+DHO to address the challenge of massive access in LEO
+SA T networks. By using a DRL approach, the DHO protocol
+is able to minimize access delays and collision rates while
+simplifying the HO process. The numerical results demonstr ate
+the superiority of the DHO protocol compared to conventiona l
+HO methods, with up to 6.8x and 5.02x lower access delay
+than conventional and heuristic methods, respectively.
+As the next step, to fully realize the potential of regenerat ive-
+type LEO SA T networks, this will require optimization or a
+new design of existing speciﬁc functions in gNB in terrestri al
+networks, taking into account the unique characteristics o f the
+NTN, such as their high-dynamic characteristics and massiv e
+access.
+APPENDIX A
+SELECTION OF STATE INFORMATION
+The state space of an agent should contain sufﬁcient infor-
+mation for decision-making while minimizing additional da ta
+collection overhead from the environment to promote DRL
+training convergence. To identify the important informati on
+to include in the state space, we conducted an extensive
+study to evaluate the impact of various locally observable
+information on the performance of the proposed DHO protocol .
+Our ﬁndings are presented in an ablation study in Fig. 8, whic h
+illustrates the contribution of each piece of information t o the
+overall system.
+We ﬁrst study the centralized case, referred to as DHO-
+Centralized, as shown in Fig. 8a. In this case, the state info r-
+mation includes both locally observable and non-observabl e
+(centralized) information ( e.g., A3 event A3[n]), which is
+deﬁned as:
+sc[n] = {s[n], A3[n]}. (18)
+Here, the performance of DHO-Centralized serves as an upper -
+bound result of our proposed DHO scheme. As shown in the
+ﬁgure, the DHO protocol achieves near-optimal performance
+while minimizing complexity. Note that sc[n] \ A3[n] is equiv-
+alent to s[n] and that DHO utilizes only locally observable
+information.
+Secondly, Fig. 8b demonstrates that the DHO protocol
+primarily depends on two locally observable pieces of infor -
+mation: 1) the time index and 2) the accessed UEs. These two
+pieces of information have a signiﬁcant impact on the traini ng
+of DHO. Interestingly, that information is locally observa ble
+which highlights the potential for a distributed multi-age nt
+DRL approach in future work.
+(a) DHO-Centralized.
+(b) DHO.
+Fig. 8: Impact of each information included in s[n].
+APPENDIX B
+SELECTION OF DRL ALGORITHM
+We empirically demonstrate the superior performance of
+IMP ALA over DQN, PPO, and A3C in our speciﬁc envi-
+ronment. Fig. 9 showcases the convergence behavior of the
+three algorithms and provides insights into their performa nce
+characteristics. Firstly, as shown in Fig. 9a, we observe th at
+DQN faces challenges in achieving convergence due to the
+large action space. Unlike IMP ALA, A3C, and PPO, which can
+handle multi-discrete type actions, DQN requires alternat ive
+approaches, such as ﬂattening the action space, to select
+an action from all possible actions. Secondly, as shown in
+Fig. 9b, IMP ALA exhibits better performance compared to
+A3C and PPO in terms of stable convergence, thanks to its
+scalability and improved sample efﬁciency (see Sec. IV -D).
+These results highlight the advantages of IMP ALA over other
+DRL algorithms in our study.
+REFERENCES
+[1] Starlink, Accessed: Sep- 2021. [Online]. Available:
+https://www.starlink.com/
+[2] Federal Communication Commission (FCC). (2020, Jul.)
+FCC authorizes kuiper satellite constellation. [Online]. Available:
+https://www.fcc.gov/document/fcc-authorizes-kuiper-satellite-constellation
+===== PAGE 13 =====
+13
+(a) DQN, PPO, A3C, and IMPALA
+ (b) PPO, A3C, and IMPALA
+Fig. 9: Comparison of DRL algorithms ( J = 10 , Rk = 0 .3J, ∀k, and P = 5 J). The shaded region represents the variance,
+while the line represents the average of the cumulative rewa rd for an episode.
+[3] B. Di, L. Song, Y . Li, and H. V . Poor, “Ultra-Dense LEO: Int egration of
+satellite access networks into 5G and beyond,” IEEE Wireless Commun.,
+vol. 26, no. 2, pp. 62–69, 2019.
+[4] O. Kodheli, E. Lagunas, and et al., “Satellite communica tions in the new
+space era: A survey and future challenges,” IEEE Commun. Surveys Tuts.,
+vol. 23, no. 1, pp. 70–109, 2021.
+[5] N. Saeed, M.-S. Alouini, and et al., “CubeSat communicat ions: Recent
+advances and future challenges,” IEEE Commun. Surveys Tuts. , vol. 22,
+no. 3, pp. 1839–1862, 2020.
+[6] M. Handley, “Delay is not an option: Low latency routing i n space,” in
+Proc. ACM W orkshop on Hot Topics in Networks , 2018, pp. 85–91.
+[7] 3GPP TR38.821 v16.1.0, “Solutions for NR to support non- terrestrial
+networks (NTN),” Jun. 2021.
+[8] L. Espeholt, H. Soyer, and et al., “IMPALA: Scalable dist ributed deep-
+RL with importance weighted actor-learner architectures, ” in Proc. Int.
+Conf. mach. learn. (ICML) , vol. 80, Stockholm, Sweden, July 2018, pp.
+1407–1416.
+[9] Z. Wu, F. Jin, J. Luo, Y . Fu, J. Shan, and G. Hu, “A graph-bas ed satellite
+handover framework for LEO satellite communication networ ks,” IEEE
+Commun. Lett. , vol. 20, no. 8, pp. 1547–1550, August 2016.
+[10] Y . Wu, G. Hu, F. Jin, and J. Zu, “A satellite handover stra tegy based on
+the potential game in LEO satellite networks,” IEEE Access , vol. 7, pp.
+133 641–133 652, 2019.
+[11] L. Feng, Y . Liu, L. Wu, Z. Zhang, and J. Dang, “A satellite handover
+strategy based on MIMO technology in LEO satellite networks ,” IEEE
+Commun. Lett. , vol. 24, no. 7, pp. 1505–1509, July 2020.
+[12] S. Zhang, A. Liu, C. Han, X. Ding, and X. Liang, “A network -ﬂows-
+based satellite handover strategy for LEO satellite networ ks,” IEEE
+Wireless Commun. Lett. , vol. 10, no. 12, pp. 2669–2673, 2021.
+[13] N. C. Luong, D. T. Hoang, and et al., “Applications of dee p reinforce-
+ment learning in communications and networking: A survey,” IEEE
+Commun. Surveys Tuts. , vol. 21, no. 4, pp. 3133–3174, 2019.
+[14] M. Chen, A. Liu, and et al., “RDRL: A recurrent deep reinf orcement
+learning scheme for dynamic spectrum access in reconﬁgurab le wireless
+networks,” IEEE Trans. on Netw. Sci. Eng. , vol. 9, no. 2, pp. 364–376,
+March/April 2022.
+[15] H.-H. Chang, H. Song, and et al., “Distributive dynamic spectrum
+access through deep reinforcement learning: A reservoir co mputing-
+based approach,” IEEE Internet Things. J. , vol. 6, no. 2, pp. 1938–1948,
+April 2019.
+[16] Y . Xu, J. Y u, and R. M. Buehrer, “The application of deep r einforce-
+ment learning to distributed spectrum access in dynamic het erogeneous
+environments with partial observations,” IEEE Trans. Wireless Commun.,
+vol. 19, no. 7, pp. 4494–4506, July 2020.
+[17] J.-H. Lee, H. Seo, J. Park, M. Bennis, and Y .-C. Ko, “Lear ning emergent
+random access protocol for LEO satellite networks,” IEEE Transactions
+on Wireless Communications, vol. 22, no. 1, pp. 257–269, January 2023.
+[18] J.-H. Lee, D. P . Selvam, A. F. Molisch, and J. Kim, “Reinf orcement
+learning empowered massive IoT access in LEO-based non-ter restrial
+networks,” in Proc. IEEE Int. Conf. on ICT Convergence (ICTC) , 2022,
+pp. 1347–1350.
+[19] J.-H. Lee, H. Seo, J. Park, M. Bennis, Y .-C. Ko, and J. Kim , “Random
+access protocol learning in LEO satellite networks via rein forcement
+learning,” in Proc. IEEE V eh. Technol. Conf. (VTC) , 2022, pp. 1–5.
+[20] P . V . R. Ferreira, R. Paffenroth, and et al., “Reinforce ment learning for
+satellite communications: from LEO to deep space operation s,” IEEE
+Commun. Mag. , vol. 57, no. 5, pp. 70–75, May 2019.
+[21] J.-H. Lee, J. Park, M. Bennis, and Y .-C. Ko, “Integratin g LEO satellites
+and multi-UA V reinforcement learning for hybrid FSO/RF non-terrestrial
+networks,” IEEE Trans. V eh. Technol., pp. 1–16, 2022.
+[22] C. Jiang and X. Zhu, “Reinforcement learning based capa city manage-
+ment in multi-layer satellite networks,” IEEE Trans. Wireless Commun. ,
+vol. 19, no. 7, pp. 4685–4699, 2020.
+[23] J. Du, C. Jiang, and et al., “Machine learning for 6G wire less net-
+works: Carrying forward enhanced bandwidth, massive acces s, and
+ultrareliable/low-latency service,” IEEE V eh. Tech. Mag., vol. 15, no. 4,
+pp. 122–134, 2020.
+[24] V . Y ajnanarayana, H. Ryd´ en, and L. H´ evizi, “5G handov er using
+reinforcement learning,” in IEEE 5G W orld F orum (5GWF) , 2020, pp.
+349–354.
+[25] S. Khosravi, H. Shokri-Ghadikolaei, and M. Petrova, “L earning-based
+handover in mobile millimeter-wave networks,” IEEE Trans. on Cogn.
+Commun. Netw., vol. 7, no. 2, pp. 663–674, 2021.
+[26] C. Lee, H. Cho, S. Song, and J.-M. Chung, “Prediction-ba sed conditional
+handover for 5G mm-wave networks: A deep-learning approach ,” IEEE
+V eh. Technol. Mag., vol. 15, no. 1, pp. 54–62, January 2020.
+[27] A. F. Molish, Wireless Communications - From Fundamentals to Beyond
+5G. 3rd ed., IEEE Press - Wiley, 2023.
+[28] K. Alexandris, N. Nikaein, and et al., “Analyzing X2 han dover in
+LTE/LTE-a,” in Proc. IEEE Int. Symp. on Modeling and Optimization in
+Mobile, Ad Hoc, and Wireless Networks (WiOpt) , May 2016, pp. 74–80.
+[29] M. Hasan, E. Hossain, and et al., “Random access for mach ine-to-
+machine communication in LTE-advanced networks: Issues an d ap-
+proaches,” IEEE Commun. Mag. , vol. 51, no. 6, pp. 86–93, June 2013.
+[30] E. Bj¨ ornson, E. de Carvalho, and et al., “A random acces s protocol
+for pilot allocation in crowded massive MIMO systems,” IEEE Trans.
+Wireless Commun., vol. 16, no. 4, pp. 2220–2234, April 2017.
+[31] Y . Zeng and R. Zhang, “Energy-efﬁcient UA V communicati on with
+trajectory optimization,” IEEE Trans. Wireless Commun. , vol. 16, no. 6,
+pp. 3747–3760, Jun. 2017.
+[32] J.-H. Lee, J. Park, M. Bennis, and Y .-C. Ko, “Integratin g LEO satellite
+and UA V relaying via reinforcement learning for non-terres trial net-
+works,” in Proc. IEEE Global Commun. Conf. (GLOBECOM) , Taipei,
+Taiwan, 2020, pp. 1–6.
+[33] 3GPP TR 21.916 v0.5.0, “Release 16 description; summar y of Rel-16
+work items,” Sep. 2021.
+[34] V . Mnih, K. Kavukcuoglu, D. Silver, and et al., “Human-l evel control
+through deep reinforcement learning,” Nature, vol. 518, pp. 529–533,
+2015.
+[35] V . Mnih, A. P . Badia, M. Mirza, A. Graves, T. Lillicrap, T . Harley,
+D. Silver, and K. Kavukcuoglu, “Asynchronous methods for de ep
+reinforcement learning,” in Proc. of International Conf. on Machine
+Learning (ICML) , vol. 48, 20–22 Jun 2016, pp. 1928–1937.
+[36] J. Schulman, F. Wolski, P . Dhariwal, A. Radford, and O. K limov,
+“Proximal policy optimization algorithms,” arXiv:1707.06347 [cs.AI] ,
+2017.
+[37] R. S. Sutton, D. McAllester, and et al., “Policy gradien t methods
+for reinforcement learning with function approximation,” in Proc. Adv.
+Neural Inf. Process. Syst. (NeurIPS) , vol. 12, Denver, CO, USA, Novem-
+ber/December 1999.
+===== PAGE 14 =====
+14
+[38] V . Mnih, D. Silver, and et al., “Playing atari with deep r einforcement
+learning,” arXiv preprint arXiv:1312.5602 , 2013.
+[39] D. Lopez-Perez, I. Guvenc, and X. Chu, “Mobility manage ment chal-
+lenges in 3GPP heterogeneous networks,” IEEE Commun. Mag. , vol. 50,
+no. 12, pp. 70–78, 2012.
+[40] M. Anas, F. D. Calabrese, and et al., “Performance analy sis of handover
+measurements and layer 3 ﬁltering for utran LTE,” in IEEE Int. Symp.
+on Personal, Indoor and Mobile Radio Commun. (PIMRC) , 2007.
+[41] U. Karabulut, A. Awada, and et al., “RACH optimization w ith decision
+tree based supervised learning for conditional handover in 5G beam-
+formed systems,” arXiv preprint arXiv:1910.11890 , 2019.

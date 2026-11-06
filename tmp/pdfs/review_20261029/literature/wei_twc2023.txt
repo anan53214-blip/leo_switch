@@ -1,0 +1,1833 @@
+
+===== PAGE 1 =====
+1
+Joint Mobility Control and MEC Ofﬂoading for
+Hybrid Satellite-Terrestrial-Network-Enabled Robots
+Peng Wei, Wei Feng, Senior Member, IEEE, Yanmin Wang, Yunfei Chen, Senior Member, IEEE,
+Ning Ge, Member, IEEE, and Cheng-Xiang Wang, Fellow, IEEE
+Abstract—Beneﬁting from the fusion of communication and
+intelligent technologies, network-enabled robots have become
+important to support future machine-assisted and unmanned
+applications. To provide high-quality services for robots in wide
+areas, hybrid satellite-terrestrial networks are a key technology.
+Through hybrid networks, computation-intensive and latency-
+sensitive tasks can be ofﬂoaded to mobile edge computing (MEC)
+servers. However, due to the mobility of mobile robots and unreli-
+able wireless network environments, excessive local computations
+and frequent service migrations may signiﬁcantly increase the
+service delay. To address this issue, this paper aims to minimize
+the average task completion time for MEC-based ofﬂoading
+initiated by satellite-terrestrial-network-enabled robots. Different
+from conventional mobility-aware schemes, the proposed scheme
+makes the ofﬂoading decision by jointly considering the mobility
+control of robots. A joint optimization problem of task ofﬂoading
+and velocity control is formulated. Using Lyapunov optimization,
+the original optimization is decomposed into a velocity control
+subproblem and a task ofﬂoading subproblem. Then, based on
+the Markov decision process (MDP), a dual-agent reinforcement
+learning (RL) algorithm is proposed. The convergence and com-
+plexity of the improved RL algorithm are theoretically analyzed,
+and the simulation results show that the proposed scheme can
+effectively reduce the ofﬂoading delay.
+Index Terms—Mobile edge computing, reinforcement learning,
+satellite-terrestrial network, task ofﬂoading, velocity control.
+I. I NTRODUCTION
+With the rapid development of communication and in-
+telligent technologies, network-enabled robots have become
+an important application for the advancement of the future
+The work of Peng Wei, Wei Feng, and Ning Ge was supported by the
+National Key Research and Development Program of China under Grant
+2020YFA0711301, the National Natural Science Foundation of China under
+Grants U22A2002 and 61901298, and the Suzhou Science and Technology
+Project. The work of Yunfei Chen was supported by the King Abdullah
+University of Science and Technology Research Funding (KRF) under Award
+ORA-2021-CRG10-4696. The work of Cheng-Xiang Wang was supported by
+the National Natural Science Foundation of China under Grant 61960206006,
+the Key Technologies R&D Program of Jiangsu (Prospective and Key Tech-
+nologies for Industry) under Grants BE2022067 and BE2022067-1, and the
+EU H2020 RISE TESTBED2 project under Grant 872172. Part of this paper
+has been accepted by the IEEE ICC 2023. (Corresponding author: Wei Feng.)
+Peng Wei, Wei Feng, and Ning Ge are with the Department of Elec-
+tronic Engineering, Beijing National Research Center for Information Sci-
+ence and Technology, Tsinghua University, Beijing 100084, China (e-mail:
+wpwwwhttp@163.com; fengwei@tsinghua.edu.cn; gening@tsinghua.edu.cn).
+Yanmin Wang is with the School of Information Engineering, Minzu
+University of China, Beijing 100041, China (e-mail: yanmin-226@163.com).
+Yunfei Chen is with the Department of Engineering, University of Durham,
+Durham DH1 3LE, U.K. (e-mail: yunfei.chen@durham.ac.uk).
+Cheng-Xiang Wang is with the National Mobile Communications Research
+Laboratory, School of Information Science and Engineering, Southeast Univer-
+sity, Nanjing 210096, China, and also with the Purple Mountain Laboratories,
+Nanjing 211111, China (e-mail: chxwang@seu.edu.cn).
+society, such as in assisted-living, industry, and transport
+environments [1]–[5]. When robots operate in wide areas, the
+hybrid satellite-terrestrial network is key to provide ubiquitous
+coverage and information perception [6], [7]. Since robots,
+especially mobile robots, always have limited computing ca-
+pabilities and storage capacities, their computation-intensive
+and delay-sensitive tasks can be uploaded to powerful edge
+servers with the aid of hybrid networks. This is known as task
+ofﬂoading in mobile edge computing (MEC) [8]. Meanwhile,
+to efﬁciently complete speciﬁc missions within a given time,
+such as in cooperation among multiple robots, these robots
+also need to perform some constrained movements. However,
+due to the mobility of robots and time-varying requirements of
+task ofﬂoading, hybrid satellite-terrestrial networks are highly
+dynamic. A service migration occurs when a robot moves
+away from its original location, and thus, its current MEC
+server that provides mobile service is different from the previ-
+ous MEC server [9]. Furthermore, compared with conventional
+clouds, MEC systems have limited computation and storage
+resources [8]. On the other hand, wireless environments are
+unreliable [10]–[15]. In this regard, when a large number
+of mobile robots access the hybrid network, frequent service
+migrations may deteriorate the hybrid network environment,
+such as network overload and packet loss. As a result, the
+service delay of ofﬂoaded tasks for hybrid satellite-terrestrial-
+network-enabled robots will be signiﬁcantly increased.
+Many methods have been proposed to address the migration
+problem in MEC-based terrestrial networks [16]–[21]. In [16],
+considering distributed user mobility, a multi-agent reinforce-
+ment learning (RL) algorithm was presented. To minimize the
+task ofﬂoading delay with the accumulated service migration
+cost, the MEC-based digital twin network was optimized by
+RL in [17]. To balance the high quality of services (QoS) and
+migration cost, [18] proposed a deep RL enabled optimization
+scheme in a vehicular network. Furthermore, according to
+predictable trajectories and mobility-induced communication
+rates, a mobility-aware task ofﬂoading policy was designed
+in [19]. By assigning velocity-based access priorities to mo-
+bile devices [20], speed-aware task ofﬂoading was optimized
+by RL. Leveraging mobility, [21] devised a microservice
+coordination scheme to minimize the overall service delay.
+However, when the satellite communication is incorporated,
+the heterogeneity between satellite and cellular communication
+systems, such as different propagation delays and different
+communication rates, may result in higher service latencies.
+Thus, an increasing number of studies on MEC based
+on satellite-terrestrial networks have been conducted for co-
+arXiv:2210.00268v2  [cs.IT]  29 Mar 2023
+===== PAGE 2 =====
+2
+operative ofﬂoading [22]–[26] and service migrations [27]–
+[30]. In [22], a cooperative computation ofﬂoading model was
+designed to provide high-speed services. In [23], to minimize
+energy consumption in computation ofﬂoading, a cloud-edge
+collaboration problem was optimized by RL and successive
+convex approximation algorithms. By considering user pref-
+erence and evolved satellite processing capabilities, [24] pro-
+posed satellite-terrestrial cooperation-based double-edge net-
+works to relieve terrestrial backhaul burdens. To efﬁciently
+allocate the distributed MEC servers, the joint optimization
+of energy consumption and delay was considered in double-
+edge networks [25]. To jointly optimize the user association,
+resource allocation, and ofﬂoading policy in Internet of Things
+(IoT) networks using multiple satellites and their gateways,
+the cost of delay and energy consumption was minimized by
+the Lagrange multiplier and RL algorithms [26]. In addition,
+to reduce the migration cost, a service migration model was
+devised in [27] based on task characteristics to make a tradeoff
+between task completion time and energy consumption. In
+[28], the live migration of a virtual network function (VNF)
+with its reinstantiation and scheduling was studied. Then, two
+Tabu search-based algorithms were employed for dynamic
+VNF mapping and scheduling. For low-delay airplane ap-
+plications in [29], the in-ﬂight service provisioning problem
+was formulated by routing and reconﬁguration and solved
+by the online heuristic algorithm. Furthermore, a distributed
+two-layer decomposition model was proposed to minimize the
+migration cost in [30]. These existing works consider how to
+optimize task ofﬂoading based on the mobility of devices, but
+they do not consider how to optimize task ofﬂoading based on
+mobility control.
+Even in MEC-based terrestrial networks, most mobility-
+related network optimization works for task processing and
+resource allocation are from the supply side that involve
+resource scheduling [31]; wireless control [32], [33]; and task
+ofﬂoading [34], [35]. In these methods, the use of mobility
+includes mobility prediction [31]; mobility state sharing [32];
+mobility control and its stability [33]; and velocity-based task
+classiﬁcation [34], [35]. Additionally, in [36], Wuet al. studied
+computation ofﬂoading in multi-access MEC to minimize
+the overall ofﬂoading delay of mobile users. In [37], using
+wireless power transfer for mobile devices with limited energy
+capacities, a joint optimization of total energy consumption
+and the learning convergence latency was proposed. Although
+the effect of mobility control has been analyzed in [33], task
+ofﬂoading and service migration in hybrid satellite-terrestrial
+networks have not been considered, and the case of no wireless
+network coverage caused by damage to network infrastructures
+or heavy network loads is not included either.
+Different from conventional network optimization ap-
+proaches [31]–[37], a demand shaping-based approach was
+designed from the user side in [38]–[41]. Based on the
+willingness of users to move, a closed-loop system model
+for spatial control and temporal control was developed. In
+spatial control, users are encouraged to move from a severely
+congested location to a less congested location. In temporal
+control, an incentive design for reducing the data demand of
+users in a severely congested location is proposed. However,
+these approaches are intended for humans, not robots. Fur-
+thermore, when all wireless channels are unavailable, mobility
+control for mobile robots with ofﬂoading requirements is not
+considered. The channel unavailability might be due to a large
+number of mobile robots accessing limited communication
+resources, severe channel fading, damage to the access point
+(AP), and so on. In this case, in the AP coverage where all
+channels are unavailable, the low-speed movements of mobile
+robots increase local computations. When wireless channels
+are available in the AP coverage, high-speed movements of
+mobile robots lead to more service migrations. As a result,
+the total service delay is signiﬁcantly increased.
+Motivated by the above observations, in this work, we
+develop a joint velocity control and MEC-based ofﬂoading
+strategy to improve the QoS in hybrid satellite-terrestrial net-
+works. We consider a scenario where multiple mobile robots
+cooperate with each other to complete the assigned mission.
+At the same time, they periodically sense their surroundings,
+ofﬂoad data to cellular/satellite MEC servers for process-
+ing, and receive computational results from selected MEC
+servers. Among the surrounding information, the availability
+of wireless communication is the crucial state information for
+velocity control, where wireless communication refers to radio
+communication in this paper. Our objective is to minimize the
+average task completion time for MEC-based ofﬂoading when
+a mobile robot travels an entire trip. We formulate the long-
+term ofﬂoading problem as a Markov decision process (MDP)
+problem and propose a joint optimization for velocity control
+and task ofﬂoading. Our main contributions are summarized
+as follows.
+• A joint optimization problem of task ofﬂoading, veloc-
+ity control, and service migration is proposed in this
+paper, which is formulated to minimize the average
+task completion time. The non-deterministic polynomial-
+time hardness (NP-hardness) of the optimization problem
+is proven. Then, the relationship between the velocity
+control and task ofﬂoading is explored.
+• According to the coverage regions of APs, a Lyapunov
+optimization-based decomposition is employed, which
+can achieve task ofﬂoading optimization and velocity
+control optimization. Then, based on the MDP, a dual-
+agent RL algorithm is employed to obtain the effective
+decision-making of task ofﬂoading and velocity control.
+Furthermore, the convergence and complexity of the
+improved RL algorithm are analyzed in terms of Q func-
+tions. Finally, simulation results show that compared with
+conventional ofﬂoading schemes, the proposed scheme
+can save up to 40% of the average task completion time.
+The rest of this paper is organized as follows. In Section
+II, the system model of task ofﬂoading and velocity control
+for satellite-terrestrial-network-enabled robots is introduced. In
+Section III, the optimization model and its NP-hardness are
+given, and the dual-agent RL algorithm and its convergence
+are proposed. In Section IV , simulation results are provided.
+Finally, in Section V , conclusions are drawn.
+===== PAGE 3 =====
+3
+Ċ Ċ
+ Ċ Ċ
+Offloading interval 
+vn-1=10 m/s vn=20 m/s 
+Cooperation 
+Coverage n-1 Coverage n
+Ċ Ċ 
+Coverage n+1 
+Service migration 
+vn+1 =20 m/s 
+Internet 
+MEC server 
+Earth station 
+Cellular AP 
+Satellite 
+Robot 
+Moving trajectory 
+Offloading flow 
+Result delivery 
+Wired link 
+Satellite coverage 
+Cellular coverage 
+Fig. 1. System model for multiple robots in the hybrid satellite-terrestrial-network with MEC, where vn denotes the average moving velocity in the nth AP
+coverage region.
+II. S YSTEM MODEL
+A. System Description
+As shown in Fig. 1, a hybrid satellite-terrestrial network
+with MEC is considered, which can enable multiple robots.
+Through the hybrid network, these robots intelligently co-
+operate to complete a speciﬁc mission within a given time.
+To avoid collisions and to complete the collaborative mission
+on time, efﬁcient control of robot mobility is needed, such
+as velocity control. Using appropriate velocity control, these
+robots can move to their designated positions to complete the
+collaborative mission in time. During the movement, mobile
+robots also need to complete other tasks to make autonomous
+decisions. For example, to handle computation-intensive or
+latency-sensitive tasks, they periodically ofﬂoad these tasks
+(such as sensor data) to and receive the computational re-
+sults from MEC servers through APs. Thus, these robots are
+multitasking robots that not only complete mobility-controlled
+cooperative missions but also execute MEC-empowered of-
+ﬂoading. For the multi-mobile robot scenario, we focus on a
+mobile robot moving from one place to another place within
+a given time in a complex network environment. The reasons
+include the following. 1) The joint optimization of velocity
+control and MEC-powered ofﬂoading for a satellite-terrestrial-
+network-enabled robot has not been studied in existing works.
+Since joint optimization involves two different systems, a
+hybrid network system and a motion control system, it is also
+a complex optimization problem. 2) The autonomous decision-
+making behaviors and mobility behaviors of other robots
+may complicate the network environment, such as generating
+the dynamic network load and intermittent communication
+environment. Hence, other robot-induced network dynamics
+are regarded as an important part of the complex network
+environment. A severely degraded network environment will
+signiﬁcantly affect data uploading and result downloading. As
+a result, the velocity control and task ofﬂoading decisions of
+the selected mobile robot cannot be executed in time.
+The availability of wireless communication is also included
+in the periodically perceived surrounding information of the
+mobile robot. When wireless communication is available,
+periodic ofﬂoading is executed by the mobile robot. Each
+period is referred to as an ofﬂoading interval ∆T . The wireless
+communication system has N APs, including N1 cellular
+APs and N2 satellites, i.e., N = N1 +N2. When wireless
+communication is unavailable, the mobile robot can process
+tasks using its limited computing capability. When the velocity
+of the robot is too low, it cannot reach the destination on time
+and complete the cooperative mission with other robots. Thus,
+an average velocity should be maintained by the appropriate
+velocity control to guarantee that the moving time of the
+mobile robot is smaller than or equal to the due time Tmove in
+the whole trip. To coordinate ofﬂoading and mobility, we focus
+on the joint optimization of task ofﬂoading and velocity control
+as a complement to conventional ofﬂoading approaches.
+In the sequel, we focus on cellular AP-based MEC servers
+and satellite-based MEC servers, indexed by N1 and N2
+(N1∪N 2 ={1, 2,...,N }), respectively. For each cellular
+AP/Earth station, an independent MEC server is equipped,
+where the MEC server equipped with the Earth station has
+more computing capabilities than the MEC server equipped
+with the cellular AP. The MEC server receives and computes
+the ofﬂoaded tasks, and sends the computational results back
+to the mobile robot. Optical connections are assumed between
+===== PAGE 4 =====
+4
+MEC servers, between APs, and between APs and MEC
+servers. It is noted that the satellite MEC servers and cellular
+MEC servers are connected through the Internet.
+In each AP coverage region, when the mobile robot is
+assumed to move a ﬁxed distance, the number of ofﬂoading
+intervals depends on its moving velocity. A low velocity
+increases the ofﬂoading intervals as well as the moving time.
+As a result, the mobile robot may not be able to reach the
+destination on time. More importantly, when wireless commu-
+nication is unavailable in the current AP coverage region, more
+computational tasks are undertaken by the selected mobile
+robot. Since the mobile robot has much smaller computational
+resources than the MEC server, the task completion time will
+be signiﬁcantly increased. On the other hand, a high velocity
+increases the handover of the mobile robot between multiple
+APs. In this case, we assume that the information of all
+robots (in terms of locations and ofﬂoading requests) served
+by different MEC servers is available [42]. Based on such
+global information, the incomplete task in the current MEC
+server may be migrated to another MEC server closest to the
+mobile robot. As a result, the migration time is increased [17],
+[42], [43]. Therefore, due to the uncertainty of wireless link
+availability, inappropriate velocities could increase the task
+completion time in MEC-based ofﬂoading.
+An example of task ofﬂoading and velocity control is shown
+in Fig. 1. A mobile robot periodically generates tasks (e.g., in
+each ofﬂoading interval). In the (n− 1)th coverage region,
+the mobile robot with vn−1 = 10 m/s has twice as many
+ofﬂoading intervals as the mobile robot with vn = 20 m/s.
+As a result, when wireless communication is unavailable in
+the (n− 1)th AP, a slower movement will further increase the
+ofﬂoading intervals and the number of local computations. In
+contrast, in thenth AP with available wireless communication,
+the rapid movement reduces the dwell time of the mobile
+robot. In this case, some tasks ofﬂoaded to the nth MEC
+server may not be fully processed, and their computational
+results cannot be returned by the nth AP. Based on the
+global information of the robot-located coverage region and
+ofﬂoading request, the uncompleted tasks can be migrated
+from the nth MEC server to the (n + 1)th MEC server, and
+their computational results will be sent back by the (n + 1)th
+AP. As a result, the rapid movement increases the number of
+service migrations. According to [34], the low velocity has
+a high delay tolerance, and the high velocity has a low delay
+tolerance. Thus, considering the velocity control of the mobile
+robot and wireless communication availability, we focus on
+minimizing the process-oriented average task completion time
+in MEC-based ofﬂoading using the hybrid satellite-terrestrial
+network.
+B. Ofﬂoading Model
+For the task ofﬂoading of the mobile robot, the local
+computation, wireless communication, MEC computation, and
+service migration are described below.
+1) Local computation model: When wireless communica-
+tion is unavailable in the current AP, the task is computed by
+the mobile robot. The local computation delay Tlocal(t) in the
+tth interval is expressed as
+Tlocal(t) = (1− 1α(m,t )) D(t)Φ
+flocal(t), (1)
+where the indicator function 1α(m,t ) stands for the ofﬂoading
+decision in the tth interval, 1α(m,t ) = 1 for m ∈ α =
+{1, 2,...,N } denotes that all data are ofﬂoaded to the mth
+MEC server in the tth interval, 1α(m,t ) = 0 for m = 0
+indicates the local computation,D(t) is the data size generated
+by the mobile robot in the tth interval, Φ is the required CPU
+cycles per bit, and flocal(t) denotes the CPU frequency at the
+mobile robot.
+2) Communication model: We assume that the same com-
+munication rate exists in the uplink and downlink. When
+wireless communication is available in the current cellular AP,
+the task generated from the mobile robot can be ofﬂoaded to
+an MEC server over wireless channels. In the tth interval, the
+communication delay Tcom(t) is expressed as
+Tcom(t) = 1α(m,t )
+(
+D(t) + ¯D(t)
+)
+W log2
+(
+1 + ph2
+σ2
+) , (2)
+where ¯D(t) is the data size of the computational results, p is
+the transmit power, andh,W , andσ2 denote the channel gain,
+bandwidth, and noise power, respectively.
+When the ofﬂoaded task is transferred from the satellite to
+the Earth station, the communication delay Tcom(t) is
+Tcom(t)= 1α(m,t )
+(
+2dGS+dSE
+c +
+(
+D(t)+ ¯D(t)
+)( 1
+rGS
++ 1
+rSE
+))
+,
+(3)
+where dGS and dSE denote the distances from the mobile
+robot to the satellite and from the satellite to the Earth
+station, respectively, c is the speed of light, and rGS =
+WGS log2
+(
+1 + pGSh2
+GS
+σ2
+GS
+)
+and rSE = WSE log2
+(
+1 + pSEh2
+SE
+σ2
+SE
+)
+denote the communication rates in the links between the
+mobile robot and the satellite and between the satellite and
+the Earth station, respectively. WGS (or WSE), pGS (or pSE),
+hGS (orhSE), and σ2
+GS (orσ2
+SE) stand for bandwidth, transmit
+power, channel gain, and noise power in robot-satellite (or
+satellite-Earth station) transmission.
+3) MEC model: With the aid of wireless transmission in
+the current AP, when the task is ofﬂoaded to the mth MEC
+server in the tth interval, the computation delay TMEC(t) is
+given by
+TMEC(t) = 1α(m,t )D(t)Φ
+fMEC,m(t) , (4)
+where fMEC,m(t) is the CPU frequency of the mth MEC
+server.
+4) Migration model: Due to the mobility of the robot, the
+corresponding service provider (e.g., virtual machine (VM)) is
+migrated from the initial MEC server to the current counterpart
+through one- or multi-hop optical communications. In this
+case, the service downtime may cause a delay that cannot be
+ignored. In our model, when the MEC server in the (t− 1)th
+===== PAGE 5 =====
+5
+interval is different from the MEC server in the tth interval,
+a migration delay will be incurred, which is expressed as
+Tmig(t) =I
+{
+M(t−1)̸= M(t)∩ (M(t−1)̸= 0∪ M(t)̸= 0)
+∩ (M(t−1)∈N 1∪ M(t)∈N 1)
+}
+C
++I
+{
+(M(t−1)∈N 1∩ M(t)∈N 2)
+∪ (M(t−1)∈N 2∩ M(t)∈N 1)
+}
+∆C, (5)
+where M(t)∈N 1∪N 2∪{ 0}, M(t) = 0 denotes the local
+computing, M(t) = 1, 2,...,N denotes the MEC server, and
+I{·} = 1 if the condition in {·} is satisﬁed and otherwise,
+I{·} = 0.C denotes the migration time cost, which is replaced
+by ρTMEC(t) with the scaling factor ρ (ρ ∈ [0, 1]) in this
+paper. ∆C is the extra migration cost between the cellular
+MEC server and the satellite-based MEC server.
+C. Velocity Control Model
+We ﬁrst assume that the robot has a preplanned timestamped
+reference trajectory to reduce its mobility model to one-
+dimensional motion, that is, velocity control without consider-
+ing direction. Then, we assume thatvn(l0) andvn(lend) are the
+initial velocity and ﬁnal velocity in thenth AP coverage region
+(n = 1, 2,...,N ), respectively. We also assume vn(lend) =
+vgoal,n with the target velocity vgoal,n∈ [vmin,v max] and a
+given acceleration a> 0. Note that the target velocity vgoal,n
+is not known in advance and needs to be solved in the joint
+optimization problem in the next section. When the mobile
+robot enters the nth AP coverage region, its velocity control
+policy should be ﬁrst determined by the relationship between
+vn(l0) and vgoal,n. Thus, the instantaneous velocity vn(l) in
+thelth interval of thenth AP coverage region can be expressed
+as
+vn(l)=
+
+
+
+min{vn(l0) +al,v goal,n}, v n(l0)<v goal,n,
+vn(l0), v n(l0) =vgoal,n,
+max{vn(l0)−al,v goal,n}, vn(l0)>v goal,n,
+(6)
+wherevn(l0)<v goal,n,vn(l0) =vgoal,n, andvn(l0)>v goal,n
+correspond to the velocity controls of acceleration, constant
+movement, and deceleration,l∈L n ={1, 2,...,L n}, andLn
+is the number of ofﬂoading intervals in the nth AP coverage
+region, which is calculated by
+Ln =
+⌊Tgoal,n
+∆T
+⌋
+, (7)
+where Tgoal,n is the travel time across the nth AP coverage
+region, given as
+Tgoal,n =
+
+
+
+1
+vgoal,n
+(
+cn+ (vgoal,n−vn(l0))2
+2a
+)
+, v n(l0) ⩽vgoal,n,
+1
+vgoal,n
+(
+cn− (vn(l0)−vgoal,n)2
+2a
+)
+, v n(l0)>v goal,n,
+(8)
+wherecn is the moving distance in thenth AP coverage region.
+Therefore, when the mobile robot passes through the nth
+AP, fort = 1, 2,..., ∑N
+n=1Ln, the task completion timeTn(t)
+in the tth interval can be formulated as
+Tn(t)=Tlocal(t)+µn (Tcom(t)+TMEC(t)+Tmig(t)), (9)
+where µn = 0 and 1 denote the states when all wireless
+channels in the nth AP are unavailable or available, respec-
+tively. In the entire journey, the average task completion time
+is expressed as
+Tmean = 1
+N∑
+n=1
+Ln
+N∑
+n=1
+Ln∑
+l=1
+Tn(l). (10)
+III. J OINT MOBILITY CONTROL AND MEC O FFLOADING
+A. Optimization Problem
+To enhance the QoS for delay-sensitive applications, the
+optimization problem is formulated as
+min
+vgoal,n,1α(m,t)
+Tmean (11a)
+s.t. Tn(t) ⩽Tn,max(t) (11b)
+N∑
+n=1
+Tgoal,n ⩽Tmove (11c)
+N∑
+m=1
+1α(m,t ) ⩽ 1 (11d)
+vgoal,n∈ [vmin,v max] (11e)
+1α(m,t )∈{ 0, 1} (11f)
+Constraint (11b) indicates that the task completion time cannot
+be larger than the maximal completion time, where Tn,max(t)
+is the computation time for all data to be computed locally.
+Constraint (11c) denotes the tolerable total moving time across
+the whole journey. Constraint (11d) guarantees that only
+one MEC server is selected or only one local computation
+is performed per ofﬂoading interval. Constraints (11e) and
+(11f) involve the decisions of the velocity control and task
+ofﬂoading.
+Theorem 1: The problem in (11) is NP-hard.
+Proof: See Appendix A.
+Furthermore, for the process-oriented optimization prob-
+lem (11), due to the robot’s mobility, time-varying wireless
+channel, and dynamic computing capability, conventional op-
+timization methods are computationally inefﬁcient. Machine
+learning is a promising alternative [44], [45], such as Q-
+learning. However, the conventionalQ-learning method cannot
+be directly employed to solve Problem (11). The ﬁrst reason
+is the curse of dimensionality caused by the large-scale state
+space and action space. The second reason involves asyn-
+chronous actions, where the ofﬂoading decision is updated
+per ofﬂoading interval, and the velocity control decision is
+made per AP coverage region. Thus, based on Lyapunov
+optimization [17], decomposing the optimization problem (11)
+over the whole journey into multiple subproblems over each
+AP coverage region yields
+min
+vgoal,n,αm(l)
+1
+Ln
+Ln∑
+l=1
+Tn(l) (12a)
+s.t. Tgoal,n ⩽knTmove (12b)
+(11b), (11d)− (11f) (12c)
+===== PAGE 6 =====
+6
+_
+Agent 1
+Environment sn(t)
+an(t)
+rn(t)
+Agent 2
+sn
+an
+rn
+Offloading 
+decision-making 
+Velocity 
+control 
+Delay Ln
+iron
+Cooperation 
+Internet 
+Fig. 2. The framework of dual-agent Q-learning.
+where kn =cn/∑N
+n=1cn.
+Theorem 2: Problem (12) is NP-hard.
+Proof: See Appendix B.
+B. Optimization Based on Dual-Agent Q-Learning
+In this subsection, as shown in Fig. 2, a general framework
+of dual-agent Q-learning is provided to optimize the decision-
+making of ofﬂoading and velocity control in (12). In the nth
+AP coverage region, Agent1 makes the ofﬂoading decision.
+Via accumulating the ofﬂoading reward and observing the
+channel state, the target velocity is determined by Agent2.
+It is implied that Agent1 is the local agent, and Agent2 is the
+global agent.
+Based on the MDP, the states, actions, and rewards for
+ofﬂoading-relatedQ-learning and mobility-related Q-learning
+are modeled below.
+In ofﬂoading-based Q-learning, the state includes: the cur-
+rent AP coverage region AP(t), current channel state µn, data
+sizeD(t), CPU frequency of the mobile robotflocal(t), current
+velocity vn(t), and previous MEC server M(t−1), given as
+sn(t)={AP(t),µn,D (t),f local(t),vn(t), M(t−1)}. (13)
+The action includes the ofﬂoaded data ratio and current MEC
+server, which is expressed as
+an(t) ={1α(m,t )}. (14)
+In the reward design, the same reward is obtained in
+the velocity control when all possible target velocities
+vgoal,n satisfy the moving constraint (12b). Thus, the in-
+stantaneous reward for the velocity control is designed as
+max
+{
+1
+Ln
+(Tgoal,n−knTmove), 0
+}
+. According to (7), this re-
+ward can be simpliﬁed as max
+{
+∆T−kn
+Ln
+Tmove, 0
+}
+. By com-
+bining the ofﬂoading reward and velocity control reward, the
+instantaneous reward ¯rn(t) is given as
+¯rn(t) =(1−θ) exp
+(
+1− Tn(t)
+Tn,max(t)
+)
++θ exp
+
+1−
+max
+{
+∆T− kn
+Ln
+Tmove, 0
+}
+kn
+Ln
+(Tlow−Tmove)
+
+, (15)
+whereθ is the preference factor between ofﬂoading and veloc-
+ity control, Tlow =∑N
+n=1cn/vmin. Finally, when legal action
+is obtained in the training, the reward in (15) will be employed.
+On the contrary, when an illegal action occurs, the reward
+value is set to -1. Thus, in the training, the instantaneous
+reward is expressed as
+¯rn(t) =
+{
+(15), legal action,
+−1, illegal action. (16)
+In mobility-controlled Q-learning, the state includes: the
+previous AP coverage region APn−1, the current AP coverage
+region APn, and the initial velocityvn(l0), which is expressed
+as
+sn ={APn−1, APn,vn(l0)}. (17)
+The action is the target velocity, expressed as
+an ={vgoal,n}. (18)
+The reward is the accumulated instantaneous reward ¯rn(t) in
+an AP coverage region, formulated as
+rn =
+Ln∑
+l=1
+¯rn(l). (19)
+The details of the dual-agent Q-learning algorithm for joint
+velocity control and task ofﬂoading are shown in Algorithm 1.
+In this algorithm, the information of the robot-located coverage
+region (sequentially increasing from 1 to N) and ofﬂoaded
+data size is leveraged for service migration.
+Remark: The relationship between task ofﬂoading and
+robot mobility is shown by the difference knTmove− ∆TLn.
+Since the increased velocity decreases the number of of-
+ﬂoading intervals Ln, when the reduced ofﬂoading time is
+smaller than the moving time per AP coverage region, that
+is, ∆TLn < knTmove, a positive reward can be obtained.
+Otherwise, a negative/zero reward will be incurred.
+In the following, the convergence of Algorithm 1 will
+be analyzed. According to [46], when ∑TEpi
+j=1 λj = ∞ and∑TEpi
+j=1 λ2
+j <∞, the Q function can converge to the optimal
+Q function Q∗ based on the following update rule
+Qj+1(sj,aj) =Qj(sj,aj) +λj
+(
+rj + max
+b∈A
+Qj(sj+1,b )
+−Qj(sj,aj)
+)
+, (20)
+where A is the set of action spaces. In our proposed Al-
+gorithm 1, two Q functions are updated, where one is for
+task ofﬂoading and the other is for velocity control. Since
+the update rule in (20) is utilized for two Q functions and
+λj = λ (0 < λ < 1), the optimal Q functions can be
+obtained separately from these two Q tables. Thus, Algorithm
+1 is convergent. In the sequel, we specify the convergence of
+Algorithm 1.
+===== PAGE 7 =====
+7
+Algorithm 1 Joint Task Ofﬂoading and Velocity Control Based on
+a Dual-Agent Q-Learning Algorithm
+Input: Initialize the table entry Q1(s,a ) = 0 andQ2(s,a ) =
+0, velocity range [vmin,v max], moving distance cn, learn-
+ing rate λ, greedy factor ϵ, discount factor γ.
+Output: Ofﬂoading decision 1α(m,t ), target velocityvgoal,n.
+1: forj = 1, 2,...,T Epi do
+2: Reset t = 1 and sn(t);
+3: forn = 1, 2,...,N do
+4: Observe state sn;
+5: Chose action an with ϵ-greedy algorithm;
+6: while AP(t) =n do
+7: Observe state sn(t);
+8: Chose action an(t) with ϵ-greedy algorithm;
+9: Calculate reward ¯rn(t) and next state sn(t + 1);
+10: Update the Q-table for task ofﬂoading:
+Q1(sn(t),an(t)) =Q1(sn(t),an(t))+λ
+(
+¯rn(t)+γ
+· maxQ1(sn(t+1),an(t+1))
+−Q1(sn(t),an(t))
+)
+(21)
+11: Update state sn(t) =sn(t + 1);
+12: t =t + 1;
+13: end while
+14: Calculate reward rn and next state sn+1;
+15: Update the Q-table for velocity control:
+Q2(sn,an) =Q2(sn,an) +λ
+(
+rn−Q2(sn,an)
++γ maxQ2(sn+1,an+1)
+)
+(22)
+16: Update state sn =sn+1.
+17: end for
+18: end for
+According to [47], we have the ﬁrst convergence theorem
+as follows.
+Theorem 3: Assume that ∥Q1,1(sn(t),an(t))∥ ⩽ rmax
+1−γ and
+∥Q2,1(sn,an)∥ ⩽ Lmaxrmax
+1−γ . Then, one has
+∥Q1,j(sn(t),an(t))∥ ⩽ rmax
+1−γ, (23)
+∥Q1,j(sn(t),an(t))−Q∗
+1∥ ⩽ 2rmax
+1−γ, (24)
+∥Q2,j(sn,an)∥ ⩽ Lmaxrmax
+1−γ , (25)
+∥Q2,j(sn,an)−Q∗
+2∥ ⩽ 2Lmaxrmax
+1−γ , (26)
+where rmax = max
+n
+∥¯rn(t)∥, Lmax = max
+n
+Ln, j =
+1, 2,...,T Epi,n = 1, 2,...,N ,Q∗
+1 andQ∗
+2 denote the optimal
+functions ofQ1,j(sn(t),an(t)) andQ2,j(sn,an), respectively.
+Proof: Mathematical induction is employed to prove
+Theorem 3. First, forj = 1, the two initializedQ tables satisfy
+∥Q1,1(sn(t),an(t))∥ ⩽ rmax
+1−γ and∥Q2,1(sn,an)∥ ⩽ Lmaxrmax
+1−γ .
+For example, the initial values of twoQ tables can be from the
+intervals
+[
+−rmax
+1−γ, rmax
+1−γ
+]
+and
+[
+−Lmaxrmax
+1−γ , Lmaxrmax
+1−γ
+]
+. When
+∥Q1,j(sn(t),an(t))∥ ⩽ rmax
+1−γ , for the (j + 1)th iteration, we
+derive
+∥Q1,j+1(sn(t),an(t))∥
+⩽ (1−λ)∥Q1,j(sn(t),an(t))∥ +λ∥¯rn(t)∥
++λγ max
+an(t+1)∈A1
+∥Q1,j(sn(t + 1),an(t + 1))∥
+⩽ rmax
+1−γ +λrmax +λγ rmax
+1−γ
+= rmax
+1−γ. (27)
+Thus, (23) is proven.
+Similarly, when ∥Q2,j(sn,an)∥ ⩽ Lmaxrmax
+1−γ , for the (j +
+1)th iteration, we obtain
+∥Q2,j+1(sn,an)∥ ⩽ (1−λ)∥Q2,j(sn,an)∥ +λ∥rn∥
++λγ max
+an+1∈A2
+∥Q2,j(sn+1,an+1)∥
+⩽ Lmaxrmax
+1−γ +λLmaxrmax+λγLmaxrmax
+1−γ
+= Lmaxrmax
+1−γ . (28)
+Thus, (25) is proven.
+Based on the above proof, (24) and (26) can be proven as
+∥Q1,j(sn(t),an(t))−Q∗
+1∥ ⩽∥Q1,j(sn(t),an(t))∥ +∥Q∗
+1∥
+⩽ 2rmax
+1−γ, (29)
+∥Q2,j(sn,an)−Q∗
+2∥ ⩽∥Q2,j(sn,an)∥+∥Q∗
+2∥ ⩽ 2Lmaxrmax
+1−γ .
+(30)
+This completes the proof.
+Theorem 3 shows that, with the reduced value of γ, the
+convergence performance of Algorithm 1 will be improved.
+Based on [48], Theorem 3 can be extended to the second
+convergence theorem. First, the Bellman operation T{·} is
+deﬁned as
+T{ Q(s,a )}=
+∑
+s′∈S
+pa(s,s′)
+(
+r(s,a )+γ max
+a′∈A
+Q(s′,a′)
+)
+, (31)
+where pa(s,s′) is the state transition probability from State
+s to State s′ and S is the set of state spaces. Then, an
+approximation error θi,j (i = 1, 2,j ∈ [1,T Epi]) is deﬁned
+as
+E
+{
+∥Qi,j+1−T{ Qi,j}∥2
+2
+}
+⩽θi,j. (32)
+Based on Theorem 3, we assume that θ2,j =Lmaxθ1,j.
+Theorem 4: The convergence of the improvedQ-learning in
+Algorithm 1 can be expressed as
+E
+{Q1,TEpi(sn(t),an(t))−Q∗
+1
+
+∞
+}
+⩽
+TEpi∑
+j=1
+γTEpi−j√
+θ1,j +γTEpiE
+{
+∥Q1,0(sn(t),an(t))−Q∗
+1∥∞
+}
+,
+(33)
+===== PAGE 8 =====
+8
+E
+{Q2,TEpi(sn,an)−Q∗
+2
+
+∞
+}
+⩽
+TEpi∑
+j=1
+γTEpi−j√
+Lmaxθ1,j +γTEpiE
+{
+∥Q2,0(sn,an)−Q∗
+2∥∞
+}
+.
+(34)
+When θ1,j =θ, (33) and (34) can be rewritten by
+E
+{Q1,TEpi(sn(t),an(t))−Q∗
+1
+
+∞
+}
+⩽
+√
+θ
+1−γ +γTEpiE
+{
+∥Q1,0(sn(t),an(t))−Q∗
+1∥∞
+}
+, (35)
+E
+{Q2,TEpi(sn,an)−Q∗
+2
+
+∞
+}
+⩽
+√Lmaxθ
+1−γ +γTEpiE
+{
+∥Q2,0(sn,an)−Q∗
+2∥∞
+}
+. (36)
+Proof: Considering the γ-contraction property of the
+Bellman operator and Q∗
+i =T{Q∗
+i} in [47], we can derive
+E
+{
+∥Qi,j+1−Q∗
+i∥∞
+}
+⩽E
+{
+∥Qi,j+1−T{ Qi,j}∥∞
+}
++E
+{
+∥T{ Qi,j}− Q∗
+i∥∞
+}
+⩽
+√
+E
+{
+∥Qi,j+ 1−T{Qi,j}∥2
+2
+}
++E
+{
+∥T{ Qi,j}−T{ Q∗
+i}∥∞
+}
+⩽
+√
+θi,j+1 +γE
+{
+∥Qi,j−Q∗
+i∥∞
+}
+. (37)
+Based on (37), we can derive
+E
+{Qi,TEpi−Q∗
+i
+
+∞
+}
+⩽
+√
+θi,TEpi +γE
+{Qi,TEpi−1−Q∗
+i
+
+∞
+}
+⩽
+√
+θi,TEpi +γ
+(√
+θi,TEpi−1+γE
+{Qi,TEpi−2−Q∗
+i
+
+∞
+})
+···
+⩽
+TEpi∑
+j=1
+γTEpi−j√
+θi,j +γTEpiE
+{
+∥Qi,0−Q∗
+i∥∞
+}
+. (38)
+Since θ2,j = Lmaxθ1,j, based on (38), (33) and (34) can be
+obtained.
+When θi,j =θ, (38) is simpliﬁed as
+E
+{Qi,TEpi−Q∗
+i
+
+∞
+}
+⩽ 1−γTEpi
+1−γ
+√
+θ +γTEpiE
+{
+∥Qi,0−Q∗
+i∥∞
+}
+. (39)
+Since 0 ⩽ γ < 1, when TEpi→∞ , we have γTEpi →∞ .
+Thus, (39) is reduced to
+E
+{Qi,TEpi−Q∗
+i
+
+∞
+}
+⩽
+√
+θ
+1−γ +γTEpiE
+{
+∥Qi,0−Q∗
+i∥∞
+}
+. (40)
+Finally, according to (40), (35) and (36) can be proved.
+Theorem 4 shows that the convergence of the proposed
+algorithm is affected by four factors: 1) the approximation
+error for Q1; 2) the approximation calculation of the Bellman
+operator for Q1; 3) the approximation error for Q2; and 4) the
+approximation calculation of the Bellman operator for Q2.
+In the following, the complexity of the proposed dual-agent
+Q-learning is analyzed in terms of sample complexity. The
+sample complexity is referred to as the total number of samples
+needed to yield an entrywise ξ1-accurate approximation of the
+optimalQ-function, to satisfy maxs,a∥Q(s,a )−Q∗(s,a )∥ ⩽
+ξ1 (orE{maxs,a∥Q(s,a )−Q∗(s,a )∥} ⩽ξ1) with probability
+at least 1−ξ2 for any ξ2∈ (0, 1) [49]. According to [49],
+we assume a γ-discounted inﬁnite-horizon MDP with state
+spaceS and action spaceA. We also assume that the Markov
+chain induced by a behavior policy πb is uniformly ergodic.
+The minimum state-action occupancy probability of the sam-
+ple trajectory is deﬁned as ωmin,i = min
+(s,a)∈Si×Ai
+ωπb,i(s,a ),
+where ωπb,i denotes the stationary distribution of the Markov
+chain for the ith agent with i = 1 , 2. Furthermore, the
+mixing time associated with the sample trajectory is deﬁned
+as tmix,i = min
+{
+t
+⏐⏐⏐⏐ max
+(s,a)∈Si×Ai
+dTV (Pt(·|s,a ),ωπb,i)≤ 1
+4
+}
+,
+where dTV(ω,ν ) = 0 .5∑
+x∈X|ω(x)−ν(x)| and Pt(·|s,a )
+indicates the distribution of (st,at) with the initialization
+of (s0,a 0) = ( s,a ). According to Theorem 3, in dual-
+agent Q-learning, the accuracy levels of the two agents are
+2rmax
+1−γ and 2Lmaxrmax
+1−γ . According to the complexity analysis of
+asynchronous Q-learning in [49], the total sample complexity
+of dual-agent Q-learning can be approximated as the sum of
+the sample complexity of the ofﬂoading agent and that of the
+velocity control agent as
+O
+( 1
+4r2max(1−γ)2
+( 1
+ωmin,1
++ 1
+L2maxωmin,2
+)
++ 1
+1−γ
+(tmix,1
+ωmin,1
++ tmix,2
+ωmin,2
+))
+. (41)
+IV. S IMULATION RESULTS AND DISCUSSION
+In this section, we will evaluate the stochastic task ofﬂoad-
+ing performance achieved from our proposedQ-learning-based
+algorithm.
+In our simulation, 20 APs and MEC servers are de-
+ployed, where N1 = {1, 2,..., 7}∪{ 14, 15,..., 20} and
+N2 = {8, 9,..., 13}. The computing capacities of cellu-
+lar and satellite-based MEC servers are from ﬁnite sets
+{10, 11,..., 19} (GHz) and{50, 51,..., 59} (GHz). The mov-
+ing distancecn is randomly chosen from a set{100, 200, 300}
+(m) for the cellular AP and from a set {1000, 2000, 3000}
+(m) for the satellite. In the cellular network, the bandwidth
+is W = 10 MHz, the transmit power of the mobile robot
+is p = 0.2 W, the channel noise power is σ2 = 2× 10−12
+W, and the channel power gain is h2 = 10 −6. In the
+satellite communication, for simplicity, we set the distances
+as dGS = dSE = 1000 km, and the transmission rates as
+rGS = 10 Mbps and rSE = 100 Mbps. The extra migration
+cost ∆C is set to the average delay of 500 ms. In each
+ofﬂoading interval ∆T = 1 s, the generated data size is
+randomly selected from the set{100, 250, 400, 550, 700} (KB)
+with Φ = 800 CPU cycles/bit, and the computing capacity
+of the mobile robot is randomly chosen from a ﬁnite set
+{0.5, 0.6,..., 1} (GHz). The random waypoint model without
+considering direction [50] is used as the mobility model of the
+robot. For the mobile robot with a = 2 m/s2, its velocity is
+from a discrete set V ={5, 6,..., 20} (m/s). In Q-learning,
+the hyperparameters are set as λ = 0.1,γ = 0.9, and ϵ = 0.05
+with a discount interval of 4× 10−6.
+===== PAGE 9 =====
+9
+0 2000 4000 6000 8000 10000 
+Episode 
+0
+0.5 
+1
+1.5 
+2
+Average Reward 
+Proposed 
+Simplified greedy 
+Conventional offloading, v=5 m/s 
+Conventional offloading, v=20 m/s 
+Fig. 3. Average reward in the training episode. The number of APs with
+unavailable wireless communication is NCH = 4 . The migration ratio is
+ρ = 0.1. The moving factor is θ = 0.1.
+For a fair performance comparison, we simulate three
+baselines below.
+• Conventional Ofﬂoading: The mobile robot has a constant
+velocity, as depicted in [30], and its ofﬂoading decision
+is made by Q-learning.
+• Local Execution: All scheduled computation tasks are
+processed by a mobile robot with its available CPU
+frequency while maintaining a constant velocity.
+• Simpliﬁed Greedy: Since conventional greedy searching
+for velocity decision-making has signiﬁcant complexity,
+i.e., O(|V|N), a simpliﬁed greedy algorithm using local
+searching for each AP is given for comparison. First,
+in the nth AP coverage region, the velocity with the
+maximal average of ¯rn(t) is searched from the candidate
+setV. Then, upon searching the maximal average of rn
+in all training, the target velocity for the whole trajectory
+will be selected.
+In Fig. 3, the convergence of the reward function in (19)
+is plotted for the proposed scheme compared to conventional
+ofﬂoading and simpliﬁed greedy schemes. The number of
+cellular/satellite APs with unavailable wireless communication
+is set to NCH = 4 . The migration ratio is set as ρ = 0.1.
+The moving factor is set as θ = 0.1. As observed in Fig. 3,
+the proposed scheme has higher rewards than conventional
+ofﬂoading using low velocities and has close rewards to
+conventional ofﬂoading using the highest velocity. It also has
+slightly lower rewards than the simpliﬁed greedy algorithm.
+Thus, the proposed scheme can achieve convergence as the
+training increases, which is consistent with the convergence
+analysis in Section III-B.
+In Fig. 4, the average task completion time of conventional
+ofﬂoading, local execution, simpliﬁed greedy, and the pro-
+posed schemes are plotted for different parameters. We ﬁrst
+compare the proposed scheme with conventional schemes in
+Fig. 4(a) for different values of NCH. It can be seen in Fig.
+4(a) that as the value of NCH increases, except for the local
+execution, the other schemes have increased task completion
+times. More importantly, the proposed scheme has a lower
+2 4 6 8 
+NCH 
+250 
+300 
+350 
+400 
+450 Task completion time (ms) 
+Conventional offloading, v=5m/s 
+Conventional offloading, v=13m/s 
+Conventional offloading, v=20m/s 
+Local execution 
+Simplified greedy 
+Proposed 
+(a)
+0 0.2 0.4 0.6 0.8 1 
+250 
+300 
+350 
+400 
+450 Task completion time (ms) 
+Conventional offloading, v=5m/s 
+Conventional offloading, v=13m/s 
+Conventional offloading, v=20m/s 
+Local execution 
+Simplified greedy 
+Proposed 
+(b)
+0 0.2 0.4 0.6 0.8 
+250 
+300 
+350 
+400 
+450 Task completion time (ms) 
+Conventional offloading, v=5m/s 
+Conventional offloading, v=13m/s 
+Conventional offloading, v=20m/s 
+Local execution 
+Simplified greedy 
+Proposed 
+(c)
+Fig. 4. Task completion time comparison among conventional ofﬂoading,
+local execution, simpliﬁed greedy, and the proposed schemes. (a) ρ = 0.1
+and θ = 0.1, (b) NCH = 4 and θ = 0.1, (c) NCH = 4 and ρ = 0.1.
+===== PAGE 10 =====
+10
+completion time than conventional schemes. For example,
+for NCH = 4 , compared to conventional ofﬂoading, local
+execution, and simpliﬁed greedy, the completion time of the
+proposed scheme is reduced by approximately 16%, 41%,
+and 11%, respectively. We also plot the task completion time
+curves for varying migration factors ρ in Fig. 4(b). It is shown
+that upon increasing the migration ratio, a slightly increased
+task completion time is incurred. For varying values of ρ,
+the proposed scheme also has a much lower completion time
+than conventional ofﬂoading, local execution, and simpliﬁed
+greedy, with average reduction ratios of 17%, 41%, and 12%,
+respectively. Moreover, in Fig. 4(c), we plot the task comple-
+tion time curves of these schemes for different moving factors
+θ. As seen from this ﬁgure, the moving factor has a slight
+effect on the task completion time of all MEC-based ofﬂoading
+schemes. In these schemes, the proposed scheme has the
+lowest task completion time, whose average reduction ratios
+over conventional ofﬂoading, local execution, and simpliﬁed
+greedy are 16%, 41%, and 11%, respectively. In addition, Fig.
+4 shows that, since velocity control is not considered in the
+conventional ofﬂoading scheme, the conventional scheme has
+almost the same average task completion time for different
+velocities. To summarize, as opposed to conventional schemes,
+the proposed scheme can effectively reduce the service delay
+of MEC-based ofﬂoading for the hybrid satellite-terrestrial-
+network-enabled robot.
+Fig. 5 portrays the task completion time versus the
+size of the data generated by the robot. The data size
+per ofﬂoading interval is randomly selected from the set
+{100, 250, 400, 550, 700}(KB) + ∆D, where the incremental
+parameter ∆D belongs to{1, 3, 5, 7, 9} (MB). It is shown that
+for different data sizes, the proposed scheme has the lowest
+task completion time. Furthermore, compared to conventional
+schemes, when the data size increases, a much higher time
+consumption reduction can be achieved by the proposed
+scheme.
+To show the effect of mobility control on service delay,
+we now investigate task completion time versus moving time
+in Fig. 6. It is noted that, when the marker size increases,
+the values of the parameters involving NCH, ρ, and θ are
+increased. First, in Fig. 6(a), we compare the task completion
+time versus moving time performance for conventional of-
+ﬂoading, local execution, simpliﬁed greedy, and the proposed
+schemes with different values of NCH. It is shown that since
+a constant velocity is assumed in conventional ofﬂoading and
+local execution, the effect of the velocity control on the com-
+pletion time performance cannot be clearly observed. Although
+the simpliﬁed greedy scheme has a lower moving time than
+the proposed scheme, it has a higher time consumption than
+the proposed scheme. Based on the joint optimization of task
+ofﬂoading and velocity control, the proposed scheme obtained
+the lowest task completion time at a moderate moving time.
+Fig. 6(a) also implies that the proposed scheme is sensitive
+to NCH, since communication state-based velocity control
+is employed. Second, we portray a scatterplot to compare
+the task completion time versus moving time performance
+for different migration ratios in Fig. 6(b). Similar to 6(a),
+Fig. 6(b) shows that, compared to conventional schemes, the
+1 3 5 7 9 
+D (MB) 
+0
+2
+4
+6
+8
+10 
+12 Task completion time (s) 
+Conventional offloading, v=5 m/s 
+Conventional offloading, v=13 m/s 
+Conventional offloading, v=20 m/s 
+Local execution 
+Simplified greedy 
+Proposed 
+Fig. 5. Task completion time comparison among conventional ofﬂoading,
+local execution, simpliﬁed greedy, and the proposed schemes for different
+data sizes, where NCH = 4, ρ = 0.1, and θ = 0.1.
+proposed scheme can achieve the lowest time consumption
+at a moderate moving time. It is also shown that compared
+to the communication state, the migration ratio has a smaller
+effect on the moving time (corresponding to velocity control)
+in the proposed scheme. Finally, in Fig. 6(c), we plot the
+task completion time scatters versus moving time for different
+moving factors. As shown in Fig. 6(c), the proposed scheme
+can also achieve the lowest time consumption at a moderate
+moving time. Moreover, with an increased moving factor, the
+proposed scheme can efﬁciently reduce the moving time while
+maintaining the lowest service delay among these schemes.
+It is also shown in Fig. 6 that all conventional schemes are
+insensitive to the moving time, and the proposed scheme
+beneﬁts from velocity control.
+Furthermore, to verify the efﬁciency of the proposed
+scheme, two possible cases for the joint optimization of
+velocity control and task ofﬂoading are considered. In Case
+I, according to the availability of all wireless channels in
+each AP, the mobile robot directly makes a velocity control
+decision. For the channel states µn = 1 and µn = 0, we have
+vgoal,n = vmin and vgoal,n = vmax, respectively. In Case II,
+based on the availability of all wireless channels per AP, the
+mobile robot directly makes a task ofﬂoading decision. For
+the channel states µn = 1 and µn = 0, we have 1α(m,t ) = 1
+with a given MEC server and 1α(m,t ) = 0 with the local
+computation, respectively. Our proposed scheme corresponds
+to Case III. Different from the ﬁxed velocity control in Case
+I and the ﬁxed ofﬂoading decision in Case II, a ﬂexible joint
+optimization is designed in the proposed scheme. Thus, Cases
+I and II can also be regarded as two special cases of Case III.
+In the following ﬁgures, the task completion time performance
+is comprehensively compared for these three cases.
+In Fig. 7(a), we ﬁrst compare the task completion times of
+these three cases for different values of NCH, where ρ = 0.1
+and θ = 0.1. We also plot the time consumption curves for
+different migration ratios in Fig. 7(b), where NCH = 4 and
+θ = 0.1. Moreover, we plot the time consumption curves for
+===== PAGE 11 =====
+11
+500 1000 1500 2000 2500 3000 
+Moving Time (s) 
+250 
+300 
+350 
+400 
+450 Task completion time (ms) 
+Conventional offloading, v=5m/s 
+Conventional offloading, v=13m/s 
+Conventional offloading, v=20m/s 
+Local execution, v=5m/s 
+Local execution, v=13m/s 
+Local execution, v=20m/s 
+Simplified greedy 
+Proposed 
+(a)
+500 1000 1500 2000 2500 3000 
+Moving Time (s) 
+250 
+300 
+350 
+400 
+450 Task completion time (ms) 
+Conventional offloading, v=5m/s 
+Conventional offloading, v=13m/s 
+Conventional offloading, v=20m/s 
+Local execution, v=5m/s 
+Local execution, v=13m/s 
+Local execution, v=20m/s 
+Simplified greedy 
+Proposed 
+(b)
+600 1000 1500 2000 2500 2830 
+Moving Time (s) 
+250 
+300 
+350 
+400 
+450 Task completion time (ms) 
+Conventional offloading, v=5m/s 
+Conventional offloading, v=13m/s 
+Conventional offloading, v=20m/s 
+Local execution, v=5m/s 
+Local execution, v=13m/s 
+Local execution, v=20m/s 
+Simplified greedy 
+Proposed 
+(c)
+Fig. 6. Task completion time versus moving time among conventional
+ofﬂoading, local execution, simpliﬁed greedy, and the proposed schemes.
+(a) NCH = 2 , 4, 6, 8, ρ = 0 .1, and θ = 0 .1. When the marker size
+increases, the value of NCH increases from 2 to 8. (b) NCH = 4 ,
+ρ = 0, 0.2, 0.4, 0.6, 0.8, 1, and θ = 0.1. When the marker size increases,
+the value of ρ increases from 0 to 1. (c) NCH = 4 , ρ = 0 .1, and
+θ = 0 , 0.2, 0.4, 0.6, 0.8. When the marker size increases, the value of θ
+increases from 0 to 0.8.
+2 4 6 8 
+NCH 
+240 
+260 
+280 
+300 
+320 
+340 Task completion time (ms) 
+Case I 
+Case II 
+Case III 
+(a)
+0 0.2 0.4 0.6 0.8 1 
+240 
+260 
+280 
+300 
+320 
+340 Task completion time (ms) 
+Case I 
+Case II 
+Case III 
+(b)
+0 0.2 0.4 0.6 0.8 
+240 
+260 
+280 
+300 
+320 
+340 Task completion time (ms) 
+Case I 
+Case II 
+Case III 
+(c)
+Fig. 7. Task completion time comparison of three cases for joint velocity
+control and task ofﬂoading. (a) ρ = 0.1 and θ = 0.1. (b) NCH = 4 and
+θ = 0.1. (c) NCH = 4 and ρ = 0.1.
+===== PAGE 12 =====
+12
+different moving factors in Fig. 7(c), where NCH = 4 and
+ρ = 0.1. Observe from Fig. 7 that as the parameter values
+involving NCH, ρ, and θ increase, all task completion times
+increase. Furthermore, Case II has a much higher service delay
+than Cases I and III, and Case III has a slightly higher service
+delay than Case I.
+From Fig. 8, the task completion time versus moving time
+performance is compared for Cases I, II, and III. The param-
+eters are set as follows: 1) NCH = 2, 4, 6, 8, ρ = 0.1, and
+θ = 0.1 in Fig. 8(a); 2) NCH = 4, ρ = 0, 0.2, 0.4, 0.6, 0.8, 1,
+and θ = 0.1 in Fig. 8(b); and 3) NCH = 4 , ρ = 0.1, and
+θ = 0, 0.2, 0.4, 0.6, 0.8 in Fig. 8(c). As shown in Fig. 8(a),
+although Case II has a lower moving time than Cases I and
+III, it has a much higher time completion time than Cases I
+and III. Furthermore, Case III can obtain a lower moving time
+than Case I at the price of a slightly increased task completion
+time. In addition, Figs. 8(b) and 8(c) show that due to the ﬁxed
+number of APs with unavailable wireless communication, the
+velocity control of Case III lacks ﬂexibility. As a result, Case
+III cannot adaptively reduce the moving time. In contrast, Case
+III can dramatically reduce the moving time, especially for a
+large value of the moving factor shown in Fig. 8(c), while
+maintaining a close task completion time to Case I.
+In summary, the proposed scheme can create an elegant
+balance between service delay reduction and moving time
+reduction, and thus, it is a better choice for task ofﬂoading
+and velocity control compared to conventional schemes.
+V. C ONCLUSION
+In this paper, a joint optimization problem of velocity
+control and task ofﬂoading has been proposed in a hybrid
+satellite-terrestrial network with multiple MEC servers. To
+reduce the service delay for a mobile robot caused by increased
+local computations and frequent service migrations, the effect
+of wireless communication availability and velocity control
+on task ofﬂoading has been studied. The analytical results
+of convergence rate and sample complexity of the improved
+Q-learning algorithm have been obtained. Simulation results
+have shown that, unlike conventional counterparts, based on
+velocity control, the proposed scheme can obtain an effective
+ofﬂoading performance improvement in terms of the task
+completion time. It was found that for mobile robots, mo-
+bility control is beneﬁcial for providing high-quality service
+ofﬂoading in complex network environments. However, further
+study is required to determine its effectiveness in the scenario
+of multiple mobile robots for multiple cooperative missions.
+While this paper has only considered the decision-making of
+ofﬂoading and velocity control for one robot in the multi-robot
+environment, other forms of dynamics, such as time-varying
+bandwidth, dynamic computational resources, and complex
+trajectory planning, have considerable impact on MEC-based
+ofﬂoading. These issues will constitute the direction of our
+future work.
+APPENDIX A
+PROOF OF THEOREM 1
+We ﬁrst assume that the mobile robot has a constant veloc-
+ity, that is, βn = 0, while the constraint Tgoal,n ⩽knTmove is
+800 1000 1500 2000 2400 
+Moving Time (s) 
+240 
+260 
+280 
+300 
+320 
+340 Task completion time (ms) 
+Case I 
+Case II 
+Case III 
+(a)
+800 1000 1200 1400 1600 1800 2000 
+Moving Time (s) 
+250 
+260 
+270 
+280 
+290 
+300 
+310 
+320 Task completion time (ms) 
+Case I 
+Case II 
+Case III 
+(b)
+800 1000 1200 1400 1600 1800 2000 
+Moving Time (s) 
+250 
+260 
+270 
+280 
+290 
+300 
+310 
+320 Task completion time (ms) 
+Case I 
+Case II 
+Case III 
+(c)
+Fig. 8. Task completion time versus moving time among three cases for joint
+velocity control and task ofﬂoading. (a) NCH = 2, 4, 6, 8, ρ = 0.1, and
+θ = 0.1. When the marker size increases, the value of NCH increases from
+2 to 8. (b) NCH = 4 , ρ = 0, 0.2, 0.4, 0.6, 0.8, 1, and θ = 0.1. When the
+marker size increases, the value of ρ increases from 0 to 1. (c) NCH = 4 ,
+ρ = 0.1, and θ = 0, 0.2, 0.4, 0.6, 0.8. When the marker size increases, the
+value of θ increases from 0 to 0.8.
+===== PAGE 13 =====
+13
+satisﬁed. Thus, (11) is simpliﬁed as
+min
+1α(m,t)
+Tmean (42a)
+s.t. Tn(t) ⩽Tn,max(t) (42b)
+N∑
+m=1
+1α(m,t ) ⩽ 1 (42c)
+1α(m,t )∈{ 0, 1} (42d)
+According to [51], the generalized assignment problem (GAP)
+can be formulated as
+min
+xij
+∑
+i
+∑
+j
+cijxij (43a)
+s.t.
+∑
+j
+aijxij ⩽bi (43b)
+∑
+i
+xij = 1 (43c)
+xij∈{ 0, 1} (43d)
+wherecij is the cost of assigning Taskj to Agenti,aij denotes
+the required capacity when Task j is assigned to Agent i, and
+bi is the available capacity of Agent i. Based on [51], [52],
+GAP is NP-hard.
+If we set xij = 1α(m,t ), bi = ∑Ln
+l=1Tn,max(l), cij =
+Tn(t)/(1α(m,t )∑N
+n=1Ln),∑N
+m=1 1α(m,t ) = 1 , and aij =
+Tn(t)/1α(m,t ), GAP is a special case of (42). Thus, (42) is
+NP-hard. Furthermore, since (42) is a special problem of (11),
+according to [53], the optimization problem (11) is NP-hard.
+APPENDIX B
+PROOF OF THEOREM 2
+A constant-moving robot is ﬁrst assumed, that is, βn =
+0, and the constraint Tgoal,n ⩽ knTmove should be satisﬁed.
+Then, the coverage region decomposition-based optimization
+problem (12) can be formulated as
+max
+αm(l)
+− 1
+Ln
+Ln∑
+l=1
+Tn(l) (44)
+s.t. (42b) − (42d)
+The 0-1 knapsack problem is expressed as follows. In a
+knapsack, its weight capacity is W . For a set of items, item
+n has a weight of wn and a value of vn. The objective is
+maximizing the summed value of items that can be packed in
+the knapsack, while maintaining the summed weight of items
+less than or equal to the weight capacity W . Thus, the 0-1
+knapsack problem is formulated as
+max
+O
+∑
+n∈O
+vn (45a)
+s.t. O⊆ I (45b)∑
+n∈O
+wn ⩽W (45c)
+where O denotes the set of items that should be packed.
+According to [19], [52], [54], the 0-1 knapsack problem is
+NP-hard.
+If we setvn =−Tn/Ln, I =Ln,wn =αm(l), andW = 1,
+the 0-1 knapsack problem becomes a special case of (44) for
+Tn(t) ⩽ Tn,max(t). Thus, the problem (44) is also NP-hard.
+Moreover, since (44) is a special case of (12), according to
+[53], problem (12) is also NP-hard.
+REFERENCES
+[1] P. Park, S. Coleri Ergen, C. Fischione, C. Lu, and K. H. Johansson,
+“Wireless network design for control systems: A survey,” IEEE Com-
+mun. Surveys Tuts., vol. 20, no. 2, pp. 978–1013, 2nd Quart. 2018.
+[2] Next G Alliance, “Next G alliance report: 6G applications and use
+cases,” Alliance for Telecommunications Industry Solutions, Washing-
+ton, DC, Next G Alliance Report, 2022.
+[3] X.-H. You, C.-X. Wang, J. Huang, et al. , “Towards 6G wireless com-
+munication networks: Vision, enabling technologies, and new paradigm
+shifts,” Sci. China Inf. Sci. , vol. 64, no. 1, pp. 1–74, Jan. 2021.
+[4] T. Ji, E. Ayday, E. Yilmaz, and P. Li, “Robust ﬁngerprinting of genomic
+databases,” Bioinformatics, vol. 38, no. Suppl 1, pp. i143–i152, Jun.
+2022.
+[5] T. Ji, P. Li, E. Yilmaz, E. Ayday, Y . F. Ye, and J. Sun, “Differentially
+private binary- and matrix-valued data query: An XOR mechanism,”
+Proc. VLDB Endow., vol. 14, no. 5, pp. 849–862, Mar. 2021.
+[6] Y . Wang, W. Feng, J. Wang, and T. Q. S. Quek, “Hybrid satellite-UA V-
+terrestrial networks for 6G ubiquitous coverage: A maritime communi-
+cations perspective,” IEEE J. Sel. Areas Commun. , vol. 39, no. 11, pp.
+3475–3490, Nov. 2021.
+[7] X. Li, W. Feng, J. Wang, Y . Chen, N. Ge, and C.-X. Wang, “Enabling
+5G on the ocean: A hybrid satellite-UA V-terrestrial network solution,”
+IEEE Wireless Commun., vol. 27, no. 6, pp. 116–121, Dec. 2020.
+[8] P. Mach and Z. Becvar, “Mobile edge computing: A survey on architec-
+ture and computation ofﬂoading,” IEEE Commun. Surveys Tuts., vol. 19,
+no. 3, pp. 1628–1656, 3rd Quart. 2017.
+[9] A. Machen, S. Wang, K. K. Leung, B. J. Ko, and T. Salonidis, “Live
+service migration in mobile edge clouds,” IEEE Wireless Commun. ,
+vol. 25, no. 1, pp. 140–147, Feb. 2018.
+[10] C. Liu, W. Feng, X. Tao, and N. Ge, “MEC-empowered non-terrestrial
+network for 6G wide-area time-sensitive Internet of Things,” Engineer-
+ing, vol. 8, pp. 96–107, Jan. 2022.
+[11] C.-X. Wang, Z. Lv, X. Gao, X. You, Y . Hao, and H. Haas, “Pervasive
+wireless channel modeling theory and applications to 6G GBSMs for all
+frequency bands and all scenarios,” IEEE Trans. Veh. Technol., vol. 71,
+no. 9, pp. 9159–9173, Sep. 2022.
+[12] C. Luo, J. Ji, Q. Wang, X. Chen, and P. Li, “Channel state information
+prediction for 5G wireless communications: A deep learning approach,”
+IEEE Trans. Netw. Sci. Eng. , vol. 7, no. 1, pp. 227–236, Jan. 2020.
+[13] P. Li, C. Zhang, and Y . Fang, “The capacity of wireless Ad Hoc
+networks using directional antennas,” IEEE Trans. Mobile Comput. ,
+vol. 10, no. 10, pp. 1374–1387, Oct. 2011.
+[14] Y . Guo, L. Yu, Q. Wang, T. Ji, Y . Fang, J. Wei-Kocsis, and P. Li,
+“Weak signal detection in 5G+ systems: A distributed deep learning
+framework,” in Proc. Int. Symp. Mobile Ad Hoc Networking Comput.
+(MobiHoc), Shanghai, China, Jul. 2021, pp. 201–210.
+[15] G. Wang, W. Xiang, and J. Yuan, “Outage performance for compute-
+and-forward in generalized multi-way relay channels,” IEEE Commun.
+Lett., vol. 16, no. 12, pp. 2099–2102, Dec. 2012.
+[16] C. Liu, F. Tang, Y . Hu, K. Li, Z. Tang, and K. Li, “Distributed
+task migration optimization in MEC by extending multi-agent deep
+reinforcement learning approach,” IEEE Trans. Parallel Distrib. Syst. ,
+vol. 32, no. 7, pp. 1603–1614, Jul. 2021.
+[17] W. Sun, H. Zhang, R. Wang, and Y . Zhang, “Reducing ofﬂoading latency
+for digital twin edge networks in 6G,”IEEE Trans. Veh. Technol., vol. 69,
+no. 10, pp. 12 240–12 251, Oct. 2020.
+[18] Y . Peng, L. Liu, Y . Zhou, J. Shi, and J. Li, “Deep reinforcement learning-
+based dynamic service migration in vehicular networks,” in Proc. IEEE
+Glob. Commun. Conf. (GLOBECOM) , Waikoloa, HI, Dec. 2019, pp.
+1–6.
+[19] W. Zhan, C. Luo, G. Min, C. Wang, Q. Zhu, and H. Duan, “Mobility-
+aware multi-user ofﬂoading optimization for mobile edge computing,”
+IEEE Trans. Veh. Technol., vol. 69, no. 3, pp. 3341–3356, Mar. 2020.
+[20] D. Zhu, T. Li, H. Tian, Y . Yang, Y . Liu, H. Liu, L. Geng, and J. Sun,
+“Speed-aware and customized task ofﬂoading and resource allocation
+in mobile edge computing,” IEEE Commun. Lett. , vol. 25, no. 8, pp.
+2683–2687, Aug. 2021.
+===== PAGE 14 =====
+14
+[21] S. Wang, Y . Guo, N. Zhang, P. Yang, A. Zhou, and X. Shen, “Delay-
+aware microservice coordination in mobile edge computing: A reinforce-
+ment learning approach,” IEEE Trans. Mobile Comput. , vol. 20, no. 3,
+pp. 939–951, Mar. 2021.
+[22] Z. Zhang, W. Zhang, and F.-H. Tseng, “Satellite mobile edge computing:
+Improving QoS of high-speed satellite-terrestrial networks using edge
+computing techniques,” IEEE Netw., vol. 33, no. 1, pp. 70–76, Jan. 2019.
+[23] Z. Tang, H. Zhou, T. Ma, K. Yu, and X. S. Shen, “Leveraging LEO
+assisted cloud-edge collaboration for energy efﬁcient computation of-
+ﬂoading,” in Proc. IEEE Glob. Commun. Conf. (GLOBECOM) , Madrid,
+Spain, Dec. 2021, pp. 1–6.
+[24] L. Liu, J. Zhang, X. Zhang, P. Wang, Y . Wang, and L. Ouyang, “Design
+and analysis of cooperative multicast-unicast transmission scheme in
+hybrid satellite-terrestrial networks,” in Proc. IEEE Int. Conf. Commun.
+Syst. (ICCS), Chengdu, China, Dec. 2018, pp. 309–314.
+[25] Y . Wang, J. Zhang, X. Zhang, P. Wang, and L. Liu, “A computation
+ofﬂoading strategy in satellite terrestrial networks with double edge
+computing,” in Proc. IEEE Int. Conf. Commun. Syst. (ICCS) , Chengdu,
+China, Dec. 2018, pp. 450–455.
+[26] G. Cui, X. Li, L. Xu, and W. Wang, “Latency and energy optimization
+for MEC enhanced SAT-IoT networks,”IEEE Access, vol. 8, pp. 55 915–
+55 926, 2020.
+[27] H. Han, H. Wang, and S. Cao, “Space edge cloud enabling service
+migration for on-orbit service,” in Proc. IEEE Int. Conf. Commun. Softw.
+Networks (ICCSN), Chongqing, China, Jun. 2020, pp. 233–239.
+[28] J. Li, W. Shi, H. Wu, S. Zhang, and X. Shen, “Cost-aware dynamic
+SFC mapping and scheduling in SDN/NFV-enabled space–air–ground-
+integrated networks for Internet of Vehicles,” IEEE Internet Things J. ,
+vol. 9, no. 8, pp. 5824–5838, Apr. 2022.
+[29] A. Varasteh, S. A. Amiri, and C. Mas-Machuca, “HOMA: Online
+in-ﬂight service provisioning with dynamic bipartite matching,” IEEE
+Trans. Netw. Service Manag. , pp. 1–1, 2022.
+[30] Z. Li, C. Jiang, and J. Lu, “Distributed service migration in satellite
+mobile edge computing,” in Proc. IEEE Glob. Commun. Conf. (GLOBE-
+COM), Madrid, Spain, Dec. 2021, pp. 1–6.
+[31] M. Li, J. Gao, L. Zhao, and X. Shen, “Adaptive computing scheduling for
+edge-assisted autonomous driving,” IEEE Trans. Veh. Technol., vol. 70,
+no. 6, pp. 5318–5331, Jun. 2021.
+[32] K. Sasaki, N. Suzuki, S. Makido, and A. Nakao, “Vehicle control system
+coordinated between cloud and mobile edge computing,” in Proc. Annu.
+Conf. Soc. Instrum. Control Eng. Japan (SICE) , Tsukuba, Japan, 2016,
+pp. 1122–1127.
+[33] P. M. de Sant Ana, N. Marchenko, P. Popovski, and B. Soret, “Wireless
+control of autonomous guided vehicle using reinforcement learning,” in
+Proc. IEEE Glob. Commun. Conf. (GLOBECOM) , Taipei, Taiwan, Dec.
+2020, pp. 1–7.
+[34] X. Huang, L. He, X. Chen, L. Wang, and F. Li, “Revenue and
+energy efﬁciency-driven delay-constrained computing task ofﬂoading
+and resource allocation in a vehicular edge computing network: A deep
+reinforcement learning approach,”IEEE Internet Things J., vol. 9, no. 11,
+pp. 8852–8868, Jun. 2022.
+[35] X. Huang, L. He, and W. Zhang, “Vehicle speed aware computing task
+ofﬂoading and resource allocation based on multi-agent reinforcement
+learning in a vehicular edge computing network,” in Proc. IEEE Int.
+Conf. Edge Comput. (EDGE) , Virtual, Beijing, China, Oct. 2020, pp.
+1–8.
+[36] Y . Wu, K. Ni, C. Zhang, L. P. Qian, and D. H. K. Tsang, “NOMA-
+assisted multi-access mobile edge computing: A joint optimization of
+computation ofﬂoading and time allocation,” IEEE Trans. Veh. Technol.,
+vol. 67, no. 12, pp. 12 244–12 258, Dec. 2018.
+[37] Y . Wu, Y . Song, T. Wang, L. Qian, and T. Q. S. Quek, “Non-orthogonal
+multiple access assisted federated learning via wireless power transfer:
+A cost-efﬁcient approach,” IEEE Trans. Commun. , vol. 70, no. 4, pp.
+2853–2869, Apr. 2022.
+[38] I. Bor-Yaliniz, A. El-Keyi, and H. Yanikomeroglu, “Spatial conﬁguration
+of agile wireless networks with drone-BSs and user-in-the-loop,” IEEE
+Trans. Wireless Commun., vol. 18, no. 2, pp. 753–768, Feb. 2019.
+[39] R. Schoenen and H. Yanikomeroglu, “User-in-the-loop: Spatial and
+temporal demand shaping for sustainable wireless networks,” IEEE
+Commun. Mag., vol. 52, no. 2, pp. 196–203, Feb. 2014.
+[40] R. Schoenen, G. Bulu, A. Mirtaheri, and H. Yanikomeroglu, “Green
+communications by demand shaping and user-in-the-loop tariff-based
+control,” in Proc. IEEE Online Conf. Green Commun. (GreenCom), New
+York, NY , Sep. 2011, pp. 64–69.
+[41] R. Schoenen, “On increasing the spectral efﬁciency more than 100% by
+user-in-the-control-loop,” in Proc. Asia-Pac. Conf. Commun. (APCC) ,
+Auckland, New Zealand, Oct. 2010, pp. 159–164.
+[42] X. Li, S. Chen, Y . Zhou, J. Chen, and G. Feng, “Intelligent service
+migration based on hidden state inference for mobile edge computing,”
+IEEE Trans. on Cogn. Commun. Netw., vol. 8, no. 1, pp. 380–393, Mar.
+2022.
+[43] R. Yang, H. He, and W. Zhang, “Multitier service migration framework
+based on mobility prediction in mobile edge computing,” Wireless
+Commun. Mobile Comput. , vol. 2021, pp. 1–13, Apr. 2021.
+[44] Q. Wang, Y . Guo, X. Wang, T. Ji, L. Yu, and P. Li, “AI at the edge:
+Blockchain-empowered secure multiparty learning with heterogeneous
+models,” IEEE Internet Things J. , vol. 7, no. 10, pp. 9600–9610, Oct.
+2020.
+[45] X. Chen, J. Ji, C. Luo, W. Liao, and P. Li, “When machine learning meets
+blockchain: A decentralized, privacy-preserving and secure design,” in
+Proc. IEEE Int. Conf. Big Data (Big Data) , Seattle, W A, Dec. 2018, pp.
+1178–1187.
+[46] F. S. Melo, “Convergence of Q-learning: A simple proof,” Institute Of
+Systems and Robotics, Tech. Rep , pp. 1–4, 2001.
+[47] H. Xiong, L. Zhao, Y . Liang, and W. Zhang, “Finite-time analysis for
+double Q-learning,” in Proc. Adv. Neural Inf. Proces. Syst. (NeurIPS) ,
+vol. 33, Virtual, Online, Dec. 2020, pp. 16 628–16 638.
+[48] D. Lee and N. He, “Periodic Q-learning,” in Proc. 2nd Conf. Learn.
+Dyn. Control, ser. Proceedings of Machine Learning Research (PMLR),
+vol. 120, Virtual, Online, Jun. 2020, pp. 582–598.
+[49] G. Li, C. Cai, Y . Chen, Y . Gu, Y . Wei, and Y . Chi, “Is
+Q-learning minimax optimal? a tight sample complexity analysis,”
+arXiv preprint arXiv:2102.06548 , Nov. 2021. [Online]. Available:
+https://arxiv.53yu.com/abs/2102.06548
+[50] F. Maan and N. Mazhar, “MANET routing protocols vs mobility models:
+A performance evaluation,” in Proc. Int. Conf. Ubiquitous Future
+Networks (ICUFN), Dalian, China, 2011, pp. 179–184.
+[51] D. G. Cattrysse and L. N. Van Wassenhove, “A survey of algorithms for
+the generalized assignment problem,” Eur. J. Oper. Res., vol. 60, no. 3,
+pp. 260–272, Aug. 1992.
+[52] K. Bernhard and J. Vygen, Combinatorial Optimization: Theory and
+Algorithms, 3rd ed. Berlin, Germany: Springer, 2008.
+[53] M. R. Garey and D. S. Johnson, “‘Strong’ NP-completeness results:
+Motivation, examples, and implications,” J. ACM , vol. 25, no. 3, pp.
+499–508, Jul. 1978.
+[54] R. M. Karp, “Reducibility among combinatorial problems,” in Complex-
+ity of Computer Computations , R. E. Miller, J. W. Thatcher, and J. D.
+Bohlinger, Eds. Boston, MA: Springer, 1972, pp. 85–103.

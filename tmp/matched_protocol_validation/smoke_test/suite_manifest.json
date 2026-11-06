@@ -1,0 +1,215 @@
+{
+  "output_dir": "D:\\program\\LEO_switch\\tmp\\matched_protocol_validation\\smoke_test",
+  "methods": [
+    "pdqn_matched",
+    "han_pdqn_joint"
+  ],
+  "user_counts": [
+    2
+  ],
+  "seeds": [
+    42
+  ],
+  "runs": 2,
+  "protocol_hash": "e48cd1428aadd477704c49a1133393cd6f812f810cf4f0ad297f055682f2705a",
+  "protocol": {
+    "version": "matched_pdqn_v1_20261106",
+    "model_schema_version": 5,
+    "geometry_schema_version": 3,
+    "environment_schema_version": 13,
+    "environment": {
+      "num_planes": 6,
+      "sats_per_plane": 11,
+      "altitude_km": 550.0,
+      "inclination_deg": 53.0,
+      "num_users": 0,
+      "user_center_lat": 39.9,
+      "user_center_lon": 116.4,
+      "user_radius_deg": 5.0,
+      "resample_users_on_reset": true,
+      "time_step_sec": 1.0,
+      "max_steps": 4,
+      "randomize_episode_start": true,
+      "episode_start_time_jitter_sec": 5730.127,
+      "min_elevation_deg": 10.0,
+      "handover_delay_sec": 0.6,
+      "rvt_threshold_sec": 60.0,
+      "pre_handover_rvt_sec": 60.0,
+      "handover_min_snr_db": -5.0,
+      "task_arrival_prob": 0.35,
+      "min_effective_offload_ratio": 0.05,
+      "task_arrival_seed_offset": 7919,
+      "enable_task_trace": false,
+      "carrier_frequency_ghz": 20.0,
+      "bandwidth_mhz": 10.0,
+      "satellite_tx_power_dbm": 40.0,
+      "satellite_antenna_gain_db": 34.0,
+      "user_tx_power_dbm": 24.0,
+      "user_antenna_gain_db": 38.5,
+      "user_pa_efficiency": 0.38,
+      "user_circuit_power_w": 0.05,
+      "ofdma_uplink_sharing": true,
+      "noise_temperature_k": 354.81,
+      "noise_figure_db": 2.0,
+      "rain_attenuation_db": 0.0,
+      "atmospheric_loss_db": 0.3,
+      "pointing_loss_db": 0.5,
+      "polarization_loss_db": 0.3,
+      "implementation_loss_db": 1.0,
+      "satellite_cpu_freq_ghz": 5.0,
+      "satellite_max_cpu_freq_ghz": 8.0,
+      "satellite_num_cores": 2,
+      "mec_max_concurrent_tasks": 2,
+      "max_queue_size": 6,
+      "user_cpu_freq_ghz": 1.0,
+      "user_max_cpu_freq_ghz": 1.5,
+      "kappa": 1e-27,
+      "user_idle_power_w": 0.05,
+      "result_ratio": 0.1,
+      "light_data_range": [
+        1000000.0,
+        3000000.0
+      ],
+      "light_compute_range": [
+        300000000.0,
+        800000000.0
+      ],
+      "light_delay_range": [
+        1.5,
+        3.0
+      ],
+      "medium_data_range": [
+        5000000.0,
+        10000000.0
+      ],
+      "medium_compute_range": [
+        1200000000.0,
+        2500000000.0
+      ],
+      "medium_delay_range": [
+        2.5,
+        5.5
+      ],
+      "heavy_data_range": [
+        12000000.0,
+        25000000.0
+      ],
+      "heavy_compute_range": [
+        3000000000.0,
+        7000000000.0
+      ],
+      "heavy_delay_range": [
+        4.0,
+        8.0
+      ],
+      "reward_delay_weight": 0.6,
+      "reward_energy_weight": 0.4,
+      "reward_energy_reference_j": 1.0,
+      "reward_interruption_weight": 0.3,
+      "reward_failed_handover_penalty": 0.2,
+      "reward_load_balance_weight": 0.05,
+      "seed": 0
+    },
+    "pdqn": {
+      "q_hidden_dims": [
+        256,
+        128
+      ],
+      "param_hidden_dims": [
+        128,
+        64
+      ],
+      "lr": 0.001,
+      "gamma": 0.99,
+      "batch_size": 4,
+      "replay_size": 32,
+      "warmup_steps": 4,
+      "target_update_interval": 3,
+      "epsilon_start": 1.0,
+      "epsilon_final": 0.02,
+      "epsilon_decay_steps": 5,
+      "grad_clip_norm": 0.5,
+      "param_loss_coef": 0.1,
+      "bc_loss_coef": 0.0
+    },
+    "han": {
+      "satellite_in_dim": 10,
+      "user_in_dim": 16,
+      "hidden_dim": 64,
+      "out_dim": 64,
+      "num_heads": 4,
+      "num_layers": 2,
+      "use_edge_features": true,
+      "user_sat_edge_dim": 5,
+      "serving_edge_dim": 2,
+      "nearby_user_edge_dim": 1,
+      "isl_edge_dim": 3,
+      "dropout": 0.0,
+      "metapaths": [
+        "user-visible-satellite-user",
+        "user-serving-satellite-user",
+        "user-nearby-user",
+        "satellite-visible-user-satellite",
+        "satellite-isl-satellite"
+      ]
+    },
+    "encoder_lr": 0.0001,
+    "microbatch_size": 2,
+    "total_timesteps": 12,
+    "eval_interval": 6,
+    "validation_seeds": [
+      1000000000,
+      1000000001
+    ],
+    "test_seeds": [
+      2000000000,
+      2000000001
+    ],
+    "save_interval": 4,
+    "log_interval_episodes": 1,
+    "torch_threads": 1,
+    "selection_metric": "validation mean reward; earliest checkpoint on ties",
+    "replay_terminal": "terminated only; bootstrap at time-limit truncation",
+    "updates_per_transition": 1,
+    "training_seed_rule": "training_seed * 1000000 + episode_index",
+    "encoder_gradient": "sum of TD and parameter losses; one Adam step; separate target HAN",
+    "source_sha256": {
+      "scripts\\run_matched_pdqn_suite.py": "4dd8ae1dd8cf42181e07d7fb5b1a8919d74d59ddac002a88ba9cea02679735c6",
+      "scripts\\train.py": "e326a08c460983f99d46ac71b137a44c5f5b00ef6d0dc452f0ebc8bd503d0e3c",
+      "scripts\\compare_system_baselines.py": "7fdd33048f4ea9f832e8d3ce779f9ee0f07189b3b7c53c6a4074a7062c721ca8",
+      "scripts\\paper_metrics.py": "325d93f83f2e853068f4881f48b819c555ba4dc47b655a7a21d783e9a47f09b3",
+      "src\\algorithm\\__init__.py": "8f26f2bab2925387eb0a33a880c5be5331e24c76057b4a5e492aedfe8479c8e7",
+      "src\\algorithm\\attention_mappo.py": "3a410bf633da9b24ff95804953fd8e9a5628880d4652da117e12669d719940da",
+      "src\\algorithm\\buffer.py": "aed17cdba799198ba8510d689afb10ec93d9180602f01f88a9058aad353cf547",
+      "src\\algorithm\\maddpg.py": "840ea5d3b168b049a4cec6e8e552a8b783024a8437276312342852f0367c640b",
+      "src\\algorithm\\mappo.py": "341fadd75b5ad34966595963efb759bfffa7a97c9cac45ac8523fd66e0887c62",
+      "src\\algorithm\\pdqn.py": "5e7185a86c392ba7bb8f6f1d466b87a6839406fb89553929a33b5277db2e9566",
+      "src\\algorithm\\replay_buffer.py": "3219a46dba0af18718f06ad119d2cd508cc903fcbd8ed2058082582fa5c9eee5",
+      "src\\algorithm\\sca_adapter.py": "f7fd47dc7e697d58cc78b39d8801612f3849b666e3f1a2ca1fca697872312078",
+      "src\\algorithm\\sca_offload.py": "9fd07451c6db5c2c79e454ed46f2f80eeb1a9787cd1de6f432a449db5eb0ac9a",
+      "src\\environment\\__init__.py": "0d79cad3c3c6bd8563e52b8f5bcdc630b3e49c823ded47114cc2d5397107ab23",
+      "src\\environment\\channel.py": "0882f8942578873e67b1743dd1b5a2ea3ac711b6ce2b09d209276d82aac950dc",
+      "src\\environment\\constellation.py": "0cb288bc6a6318f5869bb6631004b759ddfb848a4c2b1c4d947d99f3baffbe9f",
+      "src\\environment\\gym_env.py": "cd58922ef079f6cb8926b7ecffc7b41c4514d55776d8e84acced5a427f845b76",
+      "src\\environment\\mec.py": "05b547d45ffe0417a413c0fe0080ba4126739fb22b099be277636e00f82ec592",
+      "src\\environment\\task.py": "805441f677283e3d31cc854649f0367b14526d6d6181fcf493a60a3eba1fc1d0",
+      "src\\environment\\user.py": "7672ae6fa11c32676952602970a8e1d7db54c93aa1ac1dfcf9dd339b59afa67a",
+      "src\\environment\\visibility.py": "76c4b4cb08a7c0c9847e6cdbf28370fa6a654c907118895343c90e6fb601c6cb",
+      "src\\features\\__init__.py": "c689a8e8380eb1599a8b13d9ebe16aa6caed19036e28303b5e4da5a590b85d36",
+      "src\\features\\satellite_load.py": "befc5ff5f49d11e9b7b6f8181f399f779ad4d75c86687328b58e832787e1b6c4",
+      "src\\graph\\__init__.py": "c69d90281fe2e2664f88e4d0c0df393e48b5623894f1eb2ebfc1649d07b00a38",
+      "src\\graph\\builder.py": "bd40381f3c5f2b7ed356ee7b18d67c4bf9a4fc47674a9703b52414307e75b99b",
+      "src\\graph\\features.py": "abc669088ab8395683df9230f8507d670f22badeab3adcdb9712bd11978b97af",
+      "src\\model\\__init__.py": "27cce09a0812cbc3b9ed7ec1411d0e5356ff0e8e377207013e33511f90391738",
+      "src\\model\\actor.py": "18fb931c07c96376116053ddbaee37a6f8fd3e71114c722159503aac5bd80e4a",
+      "src\\model\\candidate_attention.py": "99533785c27c5c86528f6cd4694dc22e19946ebbce09ccb9a1178b8490be9a57",
+      "src\\model\\critic.py": "43222174c898915d7afba3dac7188f523782565a40f227a5bb2d07f2975809ce",
+      "src\\model\\hetero_gnn.py": "388c8a76925c62ee63e71841642fdc01ab379c4b6d3c49a64a51dad2cd3e19f7",
+      "src\\model\\layers.py": "14878cdbf08863a7c0d94818a1cd8b5c11b4ea9491d2214f5b844a08bbe02d21"
+    }
+  },
+  "python": "3.10.19",
+  "torch": "2.13.0+cpu",
+  "numpy": "2.2.6",
+  "initial_device": "cpu"
+}

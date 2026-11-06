@@ -1,0 +1,200 @@
+{
+  "protocol_hash": "f24812c7dec152659568d43dc8aa2f3d361a928baf26da85be5edce482c35c48",
+  "method": "pdqn_matched",
+  "seed": 42,
+  "num_users": 2,
+  "config": {
+    "protocol_hash": "f24812c7dec152659568d43dc8aa2f3d361a928baf26da85be5edce482c35c48",
+    "environment": {
+      "num_planes": 6,
+      "sats_per_plane": 11,
+      "altitude_km": 550.0,
+      "inclination_deg": 53.0,
+      "num_users": 2,
+      "user_center_lat": 39.9,
+      "user_center_lon": 116.4,
+      "user_radius_deg": 5.0,
+      "resample_users_on_reset": true,
+      "time_step_sec": 1.0,
+      "max_steps": 4,
+      "randomize_episode_start": true,
+      "episode_start_time_jitter_sec": 5730.127,
+      "min_elevation_deg": 10.0,
+      "handover_delay_sec": 0.6,
+      "rvt_threshold_sec": 60.0,
+      "pre_handover_rvt_sec": 60.0,
+      "handover_min_snr_db": -5.0,
+      "task_arrival_prob": 0.35,
+      "min_effective_offload_ratio": 0.05,
+      "task_arrival_seed_offset": 7919,
+      "enable_task_trace": false,
+      "carrier_frequency_ghz": 20.0,
+      "bandwidth_mhz": 10.0,
+      "satellite_tx_power_dbm": 40.0,
+      "satellite_antenna_gain_db": 34.0,
+      "user_tx_power_dbm": 24.0,
+      "user_antenna_gain_db": 38.5,
+      "user_pa_efficiency": 0.38,
+      "user_circuit_power_w": 0.05,
+      "ofdma_uplink_sharing": true,
+      "noise_temperature_k": 354.81,
+      "noise_figure_db": 2.0,
+      "rain_attenuation_db": 0.0,
+      "atmospheric_loss_db": 0.3,
+      "pointing_loss_db": 0.5,
+      "polarization_loss_db": 0.3,
+      "implementation_loss_db": 1.0,
+      "satellite_cpu_freq_ghz": 5.0,
+      "satellite_max_cpu_freq_ghz": 8.0,
+      "satellite_num_cores": 2,
+      "mec_max_concurrent_tasks": 2,
+      "max_queue_size": 6,
+      "user_cpu_freq_ghz": 1.0,
+      "user_max_cpu_freq_ghz": 1.5,
+      "kappa": 1e-27,
+      "user_idle_power_w": 0.05,
+      "result_ratio": 0.1,
+      "light_data_range": [
+        1000000.0,
+        3000000.0
+      ],
+      "light_compute_range": [
+        300000000.0,
+        800000000.0
+      ],
+      "light_delay_range": [
+        1.5,
+        3.0
+      ],
+      "medium_data_range": [
+        5000000.0,
+        10000000.0
+      ],
+      "medium_compute_range": [
+        1200000000.0,
+        2500000000.0
+      ],
+      "medium_delay_range": [
+        2.5,
+        5.5
+      ],
+      "heavy_data_range": [
+        12000000.0,
+        25000000.0
+      ],
+      "heavy_compute_range": [
+        3000000000.0,
+        7000000000.0
+      ],
+      "heavy_delay_range": [
+        4.0,
+        8.0
+      ],
+      "reward_delay_weight": 0.6,
+      "reward_energy_weight": 0.4,
+      "reward_energy_reference_j": 1.0,
+      "reward_interruption_weight": 0.3,
+      "reward_failed_handover_penalty": 0.2,
+      "reward_load_balance_weight": 0.05,
+      "seed": 42
+    },
+    "pdqn": {
+      "num_agents": 2,
+      "obs_dim": 76,
+      "max_candidates": 10,
+      "q_hidden_dims": [
+        256,
+        128
+      ],
+      "param_hidden_dims": [
+        128,
+        64
+      ],
+      "lr": 0.001,
+      "gamma": 0.99,
+      "batch_size": 4,
+      "replay_size": 32,
+      "warmup_steps": 4,
+      "target_update_interval": 3,
+      "epsilon_start": 1.0,
+      "epsilon_final": 0.02,
+      "epsilon_decay_steps": 5,
+      "grad_clip_norm": 0.5,
+      "param_loss_coef": 0.1,
+      "bc_loss_coef": 0.0,
+      "seed": 42,
+      "device": "cpu"
+    },
+    "han": null,
+    "encoder_lr": null,
+    "pretrained_han_path": null,
+    "encoder_update": null,
+    "parameter_count": 257580
+  },
+  "training": [
+    {
+      "total_steps": 4,
+      "episode": 1,
+      "scenario_seed": 42000000,
+      "mean_reward": 0.034571707248687744,
+      "length": 4,
+      "partial_episode": false,
+      "q_loss": 0.18563842587172985,
+      "param_loss": 0.005498905084095895,
+      "han_grad_norm": 0.0,
+      "epsilon": 0.804,
+      "optimizer_steps": 1
+    },
+    {
+      "total_steps": 8,
+      "episode": 2,
+      "scenario_seed": 42000001,
+      "mean_reward": 0.4165706932544708,
+      "length": 4,
+      "partial_episode": false,
+      "q_loss": 0.23324045538902283,
+      "param_loss": -0.022118658758699894,
+      "han_grad_norm": 0.0,
+      "epsilon": 0.020000000000000018,
+      "optimizer_steps": 5
+    },
+    {
+      "total_steps": 12,
+      "episode": 3,
+      "scenario_seed": 42000002,
+      "mean_reward": -0.39051108062267303,
+      "length": 4,
+      "partial_episode": false,
+      "q_loss": 0.41725949943065643,
+      "param_loss": -0.009179405868053436,
+      "han_grad_norm": 0.0,
+      "epsilon": 0.020000000000000018,
+      "optimizer_steps": 9
+    }
+  ],
+  "validation": [
+    {
+      "total_steps": 6,
+      "mean_reward": 0.6567053347826004,
+      "episode_rewards": [
+        1.016906887292862,
+        0.29650378227233887
+      ]
+    },
+    {
+      "total_steps": 12,
+      "mean_reward": 0.7382215112447739,
+      "episode_rewards": [
+        1.118918091058731,
+        0.35752493143081665
+      ]
+    }
+  ],
+  "summary": {
+    "total_steps": 12,
+    "episodes": 3,
+    "best_reward": 0.7382215112447739,
+    "best_step": 12,
+    "training_seconds": 0.5613971999991918
+  }
+}

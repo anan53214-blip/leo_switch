@@ -1,0 +1,115 @@
+2
+may also face potential contention when their visible satellite
+sets overlap and subsequent decisions direct their workloads
+to the same server. An aggregate load indicator does not
+explicitly preserve these different relationships or identify the
+task demands contributing to them. The state representation
+must therefore retain node heterogeneity, relation semantics,
+and unequal neighbor importance. Accurately representing
+this contention, however, is only part of the problem. The
+controller must also jointly optimize a discrete satellite choice
+and its continuous offloading ratio. The relevant action is a
+pair(s, ρ s), wheresdenotes the serving-satellite choice and
+ρs is its associated task fraction. Because execution conditions
+differ across candidates, the ratio must be satellite-specific. A
+conventional discrete-action deep Q-network (DQN) would re-
+quire discretizing the ratio, whereas independently determining
+the satellite and workload fraction can overlook their mutual
+dependence. Moreover, handover interruptions and residual
+workloads affect subsequent service conditions, making the
+problem sequential rather than a collection of independent
+single-slot optimizations.
+To address these challenges, we propose HAN–PDQN,
+which combines a heterogeneous graph attention network
+(HAN) with a parameterized deep Q-network (PDQN) for joint
+serving-satellite selection and partial task offloading. HAN
+provides a contention-aware relational representation of the
+user’s service environment. Conditioned on this representa-
+tion, PDQN generates an offloading ratio for each satellite
+action and estimates the long-term value of the corresponding
+satellite–ratio pair. The framework thus connects information
+about competing users and satellite resources to both workload
+allocation and satellite selection within a unified decision
+process.
+To capture the heterogeneous contention relationships iden-
+tified above, we construct a graph with user and satellite
+nodes and organize their interactions through five types of
+meta-paths. On the user side, connectivity-based and visibility-
+based U–S–U meta-paths characterize established and poten-
+tial contention, respectively, while a U–U path incorporates
+neighboring-user information. On the satellite side, S–U–S
+and S–S–S meta-paths describe overlapping service opportuni-
+ties and inter-satellite topological dependencies. These meta-
+paths provide complementary views of user demand, service
+alternatives, and satellite connectivity. Following hierarchical
+attention-based aggregation [12], node-level attention weights
+contributing neighbors within each meta-path, while semantic-
+level attention combines the applicable meta-path representa-
+tions for each node type. The resulting user representation
+organizes task and resource information through these distinct
+relationships, with serving and visibility paths explicitly dis-
+tinguishing established from potential contention.
+Given this contention-aware relational representation,
+PDQN then addresses the action-coupling challenge by com-
+bining the HAN output with local task information and
+candidate-satellite features. Following the parameterized ac-
+tion formulation [10], action-specific parameter branches gen-
+erate continuous offloading ratios for the available satellite
+actions, including retaining the current association. The Q-
+network evaluates the same state together with a satellite
+action and its corresponding ratio to estimate the cumulative
+return of the complete decision. Thus, the same relational
+contention information influences both how much workload a
+candidate should receive and whether that candidate should be
+selected. A feasibility mask excludes actions disallowed by the
+current connection and handover conditions, and the selected
+satellite action and its associated ratio are executed together.
+By evaluating cumulative returns, the controller accounts for
+immediate handover costs and subsequent task outcomes while
+balancing task completion, processing delay, terminal energy
+consumption, service continuity, and satellite resource utiliza-
+tion.
+The main contributions of this work are summarized as
+follows:
+•We formulate joint serving-satellite selection and partial
+task offloading as a sequential decision problem with a
+parameterized hybrid action space. Each discrete satellite
+action is associated with a continuous workload fraction.
+The formulation accounts for stochastic task arrivals,
+time-varying visibility, shared communication and com-
+puting resources, parallel local and remote execution, and
+handover interruptions with unfinished workloads.
+•We develop a heterogeneous relational representation of
+the multi-user satellite service environment. User-side
+connectivity, visibility, and neighbor meta-paths are com-
+plemented by satellite-side visibility and inter-satellite-
+link meta-paths. Hierarchical attention integrates these
+relationships into contention-aware representations, ex-
+plicitly distinguishing established resource sharing from
+potential competition through common satellite alterna-
+tives.
+•We develop HAN–PDQN, a joint controller in which the
+same relational representation conditions both satellite-
+specific offloading-ratio generation and satellite–ratio
+value estimation. This design connects multi-user con-
+tention modeling to the joint selection of the destination
+and amount of offloaded work according to their long-
+term consequences.
+II. SYSTEMMODEL
+A. Network Model
+We consider the multi-user LEO satellite edge computing
+network shown in Fig. 1, where ground terminals can access
+onboard MEC servers through their serving satellites. Specifi-
+cally, each terminal has a local processor, while each satellite
+provides computing resources shared by its associated users.
+We denote the sets of users and satellites byU={1, . . . , N}
+andS={1, . . . , M}, respectively. For divisible tasks, a user
+can offload part of its workload to the serving MEC and
+process the remaining part locally.
+To describe the network evolution, we divide time into slots
+indexed byt∈ T, each lasting∆t. As the satellites move, the
+distanced i,s(t)and elevation angleθ i,s(t)between useriand
+satellitesvary over time. A satellite becomes available for
+service when its elevation meets the minimum requirement
+θmin. Accordingly, userican observe the satellite set
+Vi(t) ={s∈ S:θ i,s(t)≥θ min}.(1)

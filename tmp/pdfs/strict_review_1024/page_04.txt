@@ -1,0 +1,157 @@
+4
+2) Satellite execution:At satellites, remote workloads
+share a finite MEC queue and a limited number of process-
+ing slots. To distinguish resident tasks from those receiving
+service, we denote them byQ s(t)andP s(t)⊆ Q s(t),
+respectively. With total task capacityQ max
+s and concurrency
+limitK s, the server satisfies
+|Qs(t)| ≤Q max
+s ,|P s(t)| ≤K s.(9)
+Here, the task capacity includes both waiting and processing
+tasks. At each slot boundary, available processing slots are
+filled in FCFS order according to task entry into the current
+server’s queue. Within each time slot, the total processing rate
+Fs is divided equally among active tasks:
+fMEC
+s,q (t) = Fs
+|Ps(t)| , q∈ P s(t).(10)
+Holding these shares fixed within the slot, we update the
+remaining cyclesC res
+q (t)of an active taskqaccording to
+Cres
+q (t+ 1) = max
+{︁
+Cres
+q (t)−f MEC
+s,q (t)∆t,0
+}︁
+,(11)
+whereas waiting tasks retain their remaining workloads. Both
+Fs andf MEC
+s,q (t)are measured in CPU cycles per second.
+In addition to MEC service, a remote branch incurs com-
+munication costs for uploading its input and returning its
+output. Forρ i,n >0, the transmitted volumes areρ i,nDi,n
+andζρ i,nDi,n, respectively, whereζis the output-to-input size
+ratio. Evaluating the initial link ats=s up
+i,n andt=t d
+i,n gives
+T up
+i,n = ρi,nDi,n
+Rup
+i,s(t) + di,s(t)
+c ,(12)
+T dl
+i,n = ζρ i,nDi,n
+Rdl
+s,i(t) + di,s(t)
+c .(13)
+For a remote branch that completes, we distinguish MEC
+waiting from processor service across all visited servers. Let
+W MEC
+i,n accumulate the intervals from queue entry to service
+start, or to reassignment if a task leaves before receiving
+service. LetS MEC
+i,n accumulate the intervals from service start
+to completion or reassignment. Both are measured on the
+slotted MEC service timeline and exclude user-queue waiting,
+communication costs, and fixed handover overhead. The MEC
+component is
+T MEC
+i,n =W MEC
+i,n +S MEC
+i,n .(14)
+WithH i,n denoting the accumulated fixed association-
+change overhead, the remote-branch delay becomes
+T rem
+i,n =W u
+i,n +T up
+i,n +W MEC
+i,n
++S MEC
+i,n +T dl
+i,n +H i,n.
+(15)
+The terminal and MEC process their assigned portions in
+parallel. For a task whose required branches complete, the
+overall delay therefore follows
+Ti,n = max
+{︁
+T loc
+i,n , Trem
+i,n
+}︁
+.(16)
+For local-only execution, the remote branch is absent and we
+setT rem
+i,n = 0.
+For energy evaluation, we focus on the terminal’s local com-
+puting and uplink transmission costs. With power-amplifier
+efficiencyη i and circuit powerP cir
+i , an admitted remote branch
+consumes
+Eup
+i,n =
+(︃Pi
+ηi
++P cir
+i
+)︃ρi,nDi,n
+Rup
+i,s(t) ,(17)
+wheresandtagain refer to the initial admission snapshot.
+No upload energy is incurred for a local-only task. Together
+with local computing, the terminal-energy cost is
+Ei,n =E loc
+i,n +E up
+i,n,(18)
+withE up
+i,n = 0whenρ i,n = 0. Satellite computing and
+downlink energy do not enter this terminal-energy objective.
+We count a task as successful only when its required
+workload completes without branch termination and its eval-
+uated delay satisfiesT i,n ≤τ i,n. Tasks exceeding this limit,
+including those expiring in user or MEC queues, contribute
+to deadline violations. We record disconnection-induced ter-
+minations separately, while tasks unresolved at the evaluation
+horizon remain pending. For an expired or terminated task,
+we record its outcome rather than assign a normal completion
+delay.
+In evaluating performance, we normalize success and
+deadline-violation counts by the number of generated tasks
+and average successful-task delay over successful tasks only.
+Energy per successful task divides the total terminal energy
+of all dispatched workloads by the successful-task count;
+its numerator includes energy charged to unsuccessful and
+unresolved tasks.
+D. Handover and Service Model
+To maintain service as the constellation moves, a user
+may retain its association or request a handover to another
+visible satellite. Such a request is enabled when the user is
+disconnected, its current link becomes invalid, the remaining
+visibility falls belowv trig, or the serving MEC reaches its
+utilization threshold. The target must meet the minimum
+elevation requirement, remaining visibility thresholdv min, and
+reference uplink SNR thresholdΓ min, with the reference SNR
+evaluated over total uplink bandwidthB s.
+Besides link feasibility, the target must accommodate the
+user’s unfinished remote workloads. Specifically, ifmi(t)tasks
+require migration from the current MEC, a target satellites
+must satisfy
+|Qs(t)|+m i(t)≤Q max
+s .(19)
+The action mask filters candidate targets using these condi-
+tions and always retains the stay action. Since other users’
+association decisions may change the target queue, we recheck
+capacity before committing the handover.
+Once committed, the handover updatesb +
+i (t)and reassigns
+the user’s pending MEC tasks together. Each task preserves
+its remaining cycles, generation time, and deadline, but joins
+the tail of the target queue and waits for a processing slot
+under the same FCFS rule. If a request fails, the user keeps its
+old association as long as that link remains valid. Otherwise,
+it becomes disconnected and its stranded remote tasks are
+terminated. Local execution remains available for new tasks,
+and a feasible association can restore remote service through

@@ -1,0 +1,1450 @@
+
+
+===== PAGE 1 =====
+1
+Joint Handover and Partial Task Offloading in LEO
+Satellite Edge Networks via Heterogeneous
+Graph-Based Parameterized Reinforcement Learning
+Author Name
+Abstract—Integrating low Earth orbit (LEO) satellites with
+edge computing extends computation services to areas with
+limited terrestrial coverage and to terminals with constrained
+local resources. However, satellite motion continually changes
+link quality, satellite visibility, and remaining service time, while
+multiple users compete for limited onboard communication and
+computing resources. For divisible tasks, a user must select a
+serving satellite and determine a continuous offloading ratio
+matched to that satellite’s link, resource, and contention con-
+ditions. We therefore formulate joint serving-satellite selection
+and partial task offloading as a sequential decision problem with
+a parameterized hybrid action space. To solve this problem, we
+propose HAN–PDQN, which combines a heterogeneous graph
+attention network (HAN) with a parameterized deep Q-network
+(PDQN). A heterogeneous graph distinguishes user and satel-
+lite nodes as well as serving and visibility relations. Relation-
+specific meta-path aggregation and hierarchical attention capture
+established resource sharing and potential contention among
+users with overlapping satellite alternatives. Conditioned on this
+relational representation, local task information, and candidate-
+satellite features, PDQN generates a continuous offloading ratio
+for each feasible satellite action and estimates the long-term value
+of the resulting satellite–ratio pair. The same contention context
+therefore affects both how much workload is assigned to each
+candidate and whether that candidate is selected. HAN–PDQN
+consequently supports coordinated serving-satellite selection and
+partial task offloading in dynamic multi-user LEO satellite edge
+networks.Simulations across five training seeds and network sizes
+of 20–40 users show that, compared with PDQN, HAN–PDQN
+reduces average successful-task delay, energy per successful task,
+and the deadline violation rate by 2.16%, 5.72%, and 21.26%,
+respectively, while increasing the task success rate by 2.12%.
+Index Terms—Heterogeneous graph attention, joint handover
+and offloading, LEO satellite edge computing, parameterized
+deep reinforcement learning, partial task offloading.
+I. INTRODUCTION
+Ubiquitous connectivity and computing are important objec-
+tives of sixth-generation (6G) networks. However, terrestrial
+infrastructure cannot consistently provide edge services in
+remote regions, maritime environments, and other areas with
+limited network coverage. Satellite edge computing can com-
+plement terrestrial systems by extending communication and
+computation services to these areas [1]. In particular, low Earth
+orbit (LEO) satellites offer shorter propagation distances than
+satellites in higher orbits and can host onboard edge servers to
+process tasks from ground terminals. These capabilities make
+LEO satellite edge computing a promising option for users
+with limited local computing resources.
+Providing sustained computing services in LEO networks
+requires coordinated decisions on satellite association and
+workload allocation. Satellite motion continuously changes
+the visible satellite set, link quality, and remaining service
+time, making handovers necessary to maintain service [2].
+Meanwhile, multiple users share the limited uplink bandwidth
+and computing resources of each satellite. For divisible tasks,
+a user must decide both which satellite to select and what frac-
+tion of its workload to offload, while processing the remaining
+fraction locally in parallel. A suitable offloading ratio depends
+on the selected satellite’s link conditions, computing capacity,
+queued workload, and remaining visibility. Conversely, users’
+offloading ratios change resource occupancy and the execu-
+tion conditions experienced by other users. Under stochastic
+task arrivals, unfinished workloads carry these effects across
+time slots, while handovers may interrupt service and require
+workload migration. Serving-satellite selection and partial task
+offloading must therefore be considered jointly: the former
+determines remote execution conditions, whereas the latter
+determines the workload assigned to those conditions.
+Existing studies provide two complementary foundations
+for addressing this coupled decision problem. Graph-based
+resource management and satellite handover methods use
+relational representations to organize network interactions and
+support access decisions [3], [4]. Such representations are use-
+ful for identifying service opportunities and resource-sharing
+relationships, but satellite selection alone does not specify the
+continuous task fraction to assign to the selected server. Mean-
+while, satellite edge computing studies have investigated joint
+access selection, offloading, and resource allocation [5], [6],
+including multi-agent and hierarchical reinforcement learning
+approaches to dynamic multi-user control [7]–[9]. Parameter-
+ized reinforcement learning further supports discrete decisions
+with associated continuous controls [10]. For example, an
+existing satellite formulation selects among local, satellite, and
+cloud execution modes while allocating computing resources
+and transmission power [11]. These advances motivate a more
+specific design question for partial offloading: how should
+the relationships among competing users inform both the
+workload proposed for each candidate satellite and the value
+of selecting that satellite? Addressing this question requires in-
+tegrating relational contention modeling with satellite-specific
+discrete–continuous control.
+Achieving this integration gives rise to two technical chal-
+lenges. The first is how to represent dynamic multi-user
+contention. Users currently connected to the same satellite ex-
+perience established contention for shared communication and
+computing resources. Users connected to different satellites
+
+===== PAGE 2 =====
+2
+may also face potential contention when their visible satellite
+sets overlap and subsequent decisions direct their workloads
+to the same server. An aggregate load indicator does not
+explicitly preserve these different relationships or identify the
+task demands contributing to them. The state representation
+must therefore retain node heterogeneity, relation semantics,
+and unequal neighbor importance. Accurately representing
+this contention, however, is only part of the problem. The
+controller must also jointly optimize a discrete satellite choice
+and its continuous offloading ratio. The relevant action is a
+pair(s, ρ s), wheresdenotes the serving-satellite choice and
+ρs is its associated task fraction. Because execution conditions
+differ across candidates, the ratio must be satellite-specific. A
+conventional discrete-action deep Q-network (DQN) would re-
+quire discretizing the ratio, whereas independently determining
+the satellite and workload fraction can overlook their mutual
+dependence. Moreover, handover interruptions and residual
+workloads affect subsequent service conditions, making the
+problem sequential rather than a collection of independent
+single-slot optimizations.
+To address these challenges, we propose HAN–PDQN,
+which combines a heterogeneous graph attention network
+(HAN) with a parameterized deep Q-network (PDQN) for joint
+serving-satellite selection and partial task offloading. HAN
+provides a contention-aware relational representation of the
+user’s service environment. Conditioned on this representa-
+tion, PDQN generates an offloading ratio for each satellite
+action and estimates the long-term value of the corresponding
+satellite–ratio pair. The framework thus connects information
+about competing users and satellite resources to both workload
+allocation and satellite selection within a unified decision
+process.
+To capture the heterogeneous contention relationships iden-
+tified above, we construct a graph with user and satellite
+nodes and organize their interactions through five types of
+meta-paths. On the user side, connectivity-based and visibility-
+based U–S–U meta-paths characterize established and poten-
+tial contention, respectively, while a U–U path incorporates
+neighboring-user information. On the satellite side, S–U–S
+and S–S–S meta-paths describe overlapping service opportuni-
+ties and inter-satellite topological dependencies. These meta-
+paths provide complementary views of user demand, service
+alternatives, and satellite connectivity. Following hierarchical
+attention-based aggregation [12], node-level attention weights
+contributing neighbors within each meta-path, while semantic-
+level attention combines the applicable meta-path representa-
+tions for each node type. The resulting user representation
+organizes task and resource information through these distinct
+relationships, with serving and visibility paths explicitly dis-
+tinguishing established from potential contention.
+Given this contention-aware relational representation,
+PDQN then addresses the action-coupling challenge by com-
+bining the HAN output with local task information and
+candidate-satellite features. Following the parameterized ac-
+tion formulation [10], action-specific parameter branches gen-
+erate continuous offloading ratios for the available satellite
+actions, including retaining the current association. The Q-
+network evaluates the same state together with a satellite
+action and its corresponding ratio to estimate the cumulative
+return of the complete decision. Thus, the same relational
+contention information influences both how much workload a
+candidate should receive and whether that candidate should be
+selected. A feasibility mask excludes actions disallowed by the
+current connection and handover conditions, and the selected
+satellite action and its associated ratio are executed together.
+By evaluating cumulative returns, the controller accounts for
+immediate handover costs and subsequent task outcomes while
+balancing task completion, processing delay, terminal energy
+consumption, service continuity, and satellite resource utiliza-
+tion.
+The main contributions of this work are summarized as
+follows:
+•We formulate joint serving-satellite selection and partial
+task offloading as a sequential decision problem with a
+parameterized hybrid action space. Each discrete satellite
+action is associated with a continuous workload fraction.
+The formulation accounts for stochastic task arrivals,
+time-varying visibility, shared communication and com-
+puting resources, parallel local and remote execution, and
+handover interruptions with unfinished workloads.
+•We develop a heterogeneous relational representation of
+the multi-user satellite service environment. User-side
+connectivity, visibility, and neighbor meta-paths are com-
+plemented by satellite-side visibility and inter-satellite-
+link meta-paths. Hierarchical attention integrates these
+relationships into contention-aware representations, ex-
+plicitly distinguishing established resource sharing from
+potential competition through common satellite alterna-
+tives.
+•We develop HAN–PDQN, a joint controller in which the
+same relational representation conditions both satellite-
+specific offloading-ratio generation and satellite–ratio
+value estimation. This design connects multi-user con-
+tention modeling to the joint selection of the destination
+and amount of offloaded work according to their long-
+term consequences.
+II. SYSTEMMODEL
+A. Network Model
+We consider the multi-user LEO satellite edge computing
+network shown in Fig. 1, where ground terminals can access
+onboard MEC servers through their serving satellites. Specifi-
+cally, each terminal has a local processor, while each satellite
+provides computing resources shared by its associated users.
+We denote the sets of users and satellites byU={1, . . . , N}
+andS={1, . . . , M}, respectively. For divisible tasks, a user
+can offload part of its workload to the serving MEC and
+process the remaining part locally.
+To describe the network evolution, we divide time into slots
+indexed byt∈ T, each lasting∆t. As the satellites move, the
+distanced i,s(t)and elevation angleθ i,s(t)between useriand
+satellitesvary over time. A satellite becomes available for
+service when its elevation meets the minimum requirement
+θmin. Accordingly, userican observe the satellite set
+Vi(t) ={s∈ S:θ i,s(t)≥θ min}.(1)
+
+===== PAGE 3 =====
+3
+Serving Link
+LEO SatelliteGround User Device
+Inter-satellite Link Satellite Coverage
+Onboard MEC Server
+Fig. 1. System architecture of the multi-user LEO satellite edge computing
+network.
+For each visible satellite, we usev i,s(t)to denote its
+remaining visibility time. Although several satellites may be
+visible simultaneously, a connected user maintains one serving
+association. To distinguish the association before and after a
+decision, we writeb −
+i (t)andb +
+i (t), respectively, and use0
+for a disconnected state. Task admission and communication
+resource allocation then follow the resulting associationb +
+i (t).
+In addition to user–satellite connections, the constellation
+contains ISLs that provide the satellite-neighborhood topol-
+ogy for HAN. We represent task migration through logical
+reassignment of residual workloads between MEC queues,
+together with a fixed service-interruption overhead.
+B. Communication Model
+To separate simultaneous uplink requests, we adopt
+OFDMA and distribute each satellite’s bandwidth among its
+newly admitted uploads. In slott, letA s(t)collect the users
+admitted by satellites, withn s(t) =|A s(t)|. Given total
+uplink bandwidthB s, each user in this admission batch
+receives
+Bi,s(t) = Bs
+ns(t) , i∈ A s(t).(2)
+The allocation is renewed for each decision slot.
+For the user–satellite link, we account for free-space propa-
+gation and additional attenuation through the large-scale power
+gain
+gi,s(t) = GiGs
+ℓi,s(t) (4πfcdi,s(t)/c)2 ,(3)
+whereG i andG s denote the user and satellite antenna gains,
+respectively,f c is the carrier frequency, andcis the speed of
+light. The factorℓ i,s(t)combines atmospheric, pointing, po-
+larization, and implementation losses. Under this gain model,
+transmitting with radiated powerP i over bandwidthB i,s(t)
+gives the uplink rate
+Rup
+i,s(t) =B i,s(t) log2
+(︃
+1 + Pigi,s(t)
+N0Bi,s(t)
+)︃
+,(4)
+withN 0 denoting the effective noise power spectral density.
+For result return, we evaluate the communication cost
+using reference downlink bandwidthB dl
+s and satellite radiated
+powerP s. Assuming the same large-scale gain for both link
+directions, the corresponding reference rate can be expressed
+as
+Rdl
+s,i(t) =B dl
+s log2
+(︃
+1 + Psgi,s(t)
+N0Bdls
+)︃
+.(5)
+We determine the communication costs from the link condi-
+tions at offloading admission and retain them for the task, even
+if its remote workload is subsequently migrated. The reference
+downlink rate supports this cost evaluation; downlink resource
+scheduling is outside the decision space.
+C. Task and Computation Model
+Each user generates computation tasks stochastically. We
+characterize thenth task of useriby
+Ji,n = (Di,n, Ci,n, τi,n, ai,n),(6)
+whereD i,n andC i,n specify the input size in bits and
+computation demand in CPU cycles, respectively. The task
+is generated ata i,n and must meet a relative deadline of
+τi,n seconds. Before dispatch, it waits in the user’s FIFO
+task queue. If dispatch occurs in slott d
+i,n at timeu i,n, its
+waiting time isW u
+i,n =u i,n −a i,n, where both timestamps
+are measured in seconds.
+At dispatch, the user assigns a fractionρ i,n ∈[0,1]of the
+task to remote execution, leaving(1−ρ i,n)Ci,n cycles for
+its local processor andρ i,nCi,n cycles for the MEC. Here,
+ρi,n refers to the fraction actually offloaded: a request rejected
+before upload, or dispatched without a service connection, falls
+back to local execution withρ i,n = 0and no upload energy.
+For an admitted request, the serving satellites up
+i,n =b +
+i (td
+i,n)
+receives the remote workload, whose execution server may
+later change through handover.
+1) Local execution:Since each terminal serves its sched-
+uled local workloads serially, dispatch does not necessarily
+coincide with the start of local computation. LetA i denote the
+processor’s next available time at dispatch andfi its processing
+rate in CPU cycles per second. A nonempty local branch waits
+forW loc
+i,n = max{Ai −ui,n,0}before receiving service, giving
+T loc
+i,n =W u
+i,n +W loc
+i,n + (1−ρ i,n)Ci,n
+fi
+.(7)
+For the same workload, the local computing energy follows
+Eloc
+i,n =κ i(1−ρ i,n)Ci,nf2
+i ,(8)
+whereκ i captures the effective switched capacitance of the
+processor. In the full-offloading case,ρ i,n = 1, no local branch
+is scheduled and we setT loc
+i,n = 0.
+
+===== PAGE 4 =====
+4
+2) Satellite execution:At satellites, remote workloads
+share a finite MEC queue and a limited number of process-
+ing slots. To distinguish resident tasks from those receiving
+service, we denote them byQ s(t)andP s(t)⊆ Q s(t),
+respectively. With total task capacityQ max
+s and concurrency
+limitK s, the server satisfies
+|Qs(t)| ≤Q max
+s ,|P s(t)| ≤K s.(9)
+Here, the task capacity includes both waiting and processing
+tasks. At each slot boundary, available processing slots are
+filled in FCFS order according to task entry into the current
+server’s queue. Within each time slot, the total processing rate
+Fs is divided equally among active tasks:
+fMEC
+s,q (t) = Fs
+|Ps(t)| , q∈ P s(t).(10)
+Holding these shares fixed within the slot, we update the
+remaining cyclesC res
+q (t)of an active taskqaccording to
+Cres
+q (t+ 1) = max
+{︁
+Cres
+q (t)−f MEC
+s,q (t)∆t,0
+}︁
+,(11)
+whereas waiting tasks retain their remaining workloads. Both
+Fs andf MEC
+s,q (t)are measured in CPU cycles per second.
+In addition to MEC service, a remote branch incurs com-
+munication costs for uploading its input and returning its
+output. Forρ i,n >0, the transmitted volumes areρ i,nDi,n
+andζρ i,nDi,n, respectively, whereζis the output-to-input size
+ratio. Evaluating the initial link ats=s up
+i,n andt=t d
+i,n gives
+T up
+i,n = ρi,nDi,n
+Rup
+i,s(t) + di,s(t)
+c ,(12)
+T dl
+i,n = ζρ i,nDi,n
+Rdl
+s,i(t) + di,s(t)
+c .(13)
+For a remote branch that completes, we distinguish MEC
+waiting from processor service across all visited servers. Let
+W MEC
+i,n accumulate the intervals from queue entry to service
+start, or to reassignment if a task leaves before receiving
+service. LetS MEC
+i,n accumulate the intervals from service start
+to completion or reassignment. Both are measured on the
+slotted MEC service timeline and exclude user-queue waiting,
+communication costs, and fixed handover overhead. The MEC
+component is
+T MEC
+i,n =W MEC
+i,n +S MEC
+i,n .(14)
+WithH i,n denoting the accumulated fixed association-
+change overhead, the remote-branch delay becomes
+T rem
+i,n =W u
+i,n +T up
+i,n +W MEC
+i,n
++S MEC
+i,n +T dl
+i,n +H i,n.
+(15)
+The terminal and MEC process their assigned portions in
+parallel. For a task whose required branches complete, the
+overall delay therefore follows
+Ti,n = max
+{︁
+T loc
+i,n , Trem
+i,n
+}︁
+.(16)
+For local-only execution, the remote branch is absent and we
+setT rem
+i,n = 0.
+For energy evaluation, we focus on the terminal’s local com-
+puting and uplink transmission costs. With power-amplifier
+efficiencyη i and circuit powerP cir
+i , an admitted remote branch
+consumes
+Eup
+i,n =
+(︃Pi
+ηi
++P cir
+i
+)︃ρi,nDi,n
+Rup
+i,s(t) ,(17)
+wheresandtagain refer to the initial admission snapshot.
+No upload energy is incurred for a local-only task. Together
+with local computing, the terminal-energy cost is
+Ei,n =E loc
+i,n +E up
+i,n,(18)
+withE up
+i,n = 0whenρ i,n = 0. Satellite computing and
+downlink energy do not enter this terminal-energy objective.
+We count a task as successful only when its required
+workload completes without branch termination and its eval-
+uated delay satisfiesT i,n ≤τ i,n. Tasks exceeding this limit,
+including those expiring in user or MEC queues, contribute
+to deadline violations. We record disconnection-induced ter-
+minations separately, while tasks unresolved at the evaluation
+horizon remain pending. For an expired or terminated task,
+we record its outcome rather than assign a normal completion
+delay.
+In evaluating performance, we normalize success and
+deadline-violation counts by the number of generated tasks
+and average successful-task delay over successful tasks only.
+Energy per successful task divides the total terminal energy
+of all dispatched workloads by the successful-task count;
+its numerator includes energy charged to unsuccessful and
+unresolved tasks.
+D. Handover and Service Model
+To maintain service as the constellation moves, a user
+may retain its association or request a handover to another
+visible satellite. Such a request is enabled when the user is
+disconnected, its current link becomes invalid, the remaining
+visibility falls belowv trig, or the serving MEC reaches its
+utilization threshold. The target must meet the minimum
+elevation requirement, remaining visibility thresholdv min, and
+reference uplink SNR thresholdΓ min, with the reference SNR
+evaluated over total uplink bandwidthB s.
+Besides link feasibility, the target must accommodate the
+user’s unfinished remote workloads. Specifically, ifmi(t)tasks
+require migration from the current MEC, a target satellites
+must satisfy
+|Qs(t)|+m i(t)≤Q max
+s .(19)
+The action mask filters candidate targets using these condi-
+tions and always retains the stay action. Since other users’
+association decisions may change the target queue, we recheck
+capacity before committing the handover.
+Once committed, the handover updatesb +
+i (t)and reassigns
+the user’s pending MEC tasks together. Each task preserves
+its remaining cycles, generation time, and deadline, but joins
+the tail of the target queue and waits for a processing slot
+under the same FCFS rule. If a request fails, the user keeps its
+old association as long as that link remains valid. Otherwise,
+it becomes disconnected and its stranded remote tasks are
+terminated. Local execution remains available for new tasks,
+and a feasible association can restore remote service through
+
+===== PAGE 5 =====
+5
+reconnection. We count reconnections separately from han-
+dovers.
+Each committed handover or reconnection contributes a
+fixed service-interruption costδ ho. For a remote taskJ i,n,
+leth i,n count the applicable association changes at dispatch
+and during subsequent migrations. Its accumulated overhead
+isH i,n =h i,nδho. Each event contributes once to (15); the
+fixed overhead does not advance the MEC service timeline or
+enter (14). The local branch retains its own processor timeline.
+III. PROBLEMFORMULATION
+Our objective is to jointly determine satellite associations
+and partial offloading decisions that improve long-term task
+service under time-varying connectivity and shared MEC
+resources. Letk i(t)denote the satellite action of useri, where
+ki(t) = 0represents staying andk i(t) =srequests associa-
+tion with satellites. The corresponding requested offloading
+fraction isˆ︁ρi(t). The candidate setC i(t)⊆ V i(t)\{b−
+i (t)}con-
+tains visible alternatives to the current satellite. The resulting
+associationb +
+i (t)and executed task fractionρ i,n follow the
+migration, admission, and local-execution rules in Section II.
+To account for both task completion and execution quality,
+letZ s
+i (t)andZ f
+i (t)collect the tasks of useriwhose outcomes
+are resolved as successful and failed, respectively, in slott. For
+each successful task, define the normalized cost
+ci,n =ω D
+Ti,n
+τi,n
++ω E
+Ei,n
+Ei,n +E ref
+,(20)
+whereE ref >0is an energy reference,ω D, ωE ≥0, and
+ωD +ω E = 1. The slot utility is then
+U(t) = 1
+N
+∑︂
+i∈U
+[︄∑︂
+n∈Z s
+i (t)
+(1−c i,n)− |Z f
+i (t)|
+−ω IIi(t)−ω FFi(t)
+]︄
++ω LJ(t),
+(21)
+whereI i(t)∈[0,1]is the service-interruption duration nor-
+malized by∆t, andF i(t)indicates a failed association request.
+The shared termJ(t)is Jain’s fairness index of the reachable
+MEC loads, with each load averaging normalized queue oc-
+cupancy and CPU utilization;J(t) = 0when all reachable
+servers are idle. The nonnegative weightsω I,ω F, andω L
+specify the service-continuity and load-balancing preferences.
+Letπbe a causal policy for the joint requests
+{ki(t),ˆ︁ρi(t)}i∈U. Furthermore, letχ i(t)indicate whether the
+association-change conditions in Section II-D hold, and let
+Q+
+s (t)denote the MEC queue after migration and new-task
+admission. The joint optimization problem is
+(P1) : max
+π
+Eπ
+[︄∞∑︂
+t=0
+γtU(t)
+]︄
+s.t.C 1 :k i(t)∈ {0} ∪ C i(t),
+C2 : 0≤ˆ︁ρi(t)≤1,
+C3 :k i(t) = 0,ifχ i(t) = 0,
+C4 :v i,s(t)≥v min,Γ ref
+i,s(t)≥Γ min,
+C5 :|Q s(t)|+m i(t)≤Q max
+s ,
+C6 :|Q +
+s (t)| ≤Q max
+s ,|P s(t)| ≤K s,
+(22)
+whereγ∈(0,1)is the discount factor andΓ ref
+i,s(t) =
+Pigi,s(t)/(N0Bs). Constraints apply at every slot, withC 4
+andC 5 evaluated for each requested targets=k i(t)̸= 0.
+Specifically,C 1 permits staying or selecting one visible
+candidate, whileC 2 bounds the requested workload fraction.
+ConstraintC 3 enforces the association-change trigger, andC 4
+imposes the target-link requirements. ConstraintC 5 screens
+migration requests using the current queue state; capacity is
+rechecked at commitment. Finally,C 6 enforces the queue
+and processing limits for executed decisions. Task deadlines
+determine the success and failure sets in (21).
+Problem (22) couples discrete satellite selection with contin-
+uous workload allocation. A selected satellite determines the
+link and computing conditions, while the offloading fraction
+changes the contention experienced by other users. Moreover,
+residual workloads and handover-induced reassignment carry
+these effects across slots. Consequently, effective decisions
+require both a representation of multi-user contention and an
+evaluation of the long-term value of each satellite–fraction
+pair. These requirements motivate the HAN–PDQN framework
+developed next.
+IV. PROPOSEDHAN–PDQN FRAMEWORK
+A. Framework Overview
+To address (22), we develop HAN–PDQN, which connects
+a representation of multi-user contention to parameterized
+satellite and offloading decisions. As illustrated in Fig. 2, the
+controller constructs a heterogeneous graph from user demand,
+satellite resources, and their serving and visibility relations.
+HAN aggregates these measurements into a user representation
+that distinguishes established resource sharing from potential
+competition through overlapping satellite alternatives.
+The representation is combined with the user’s local task
+and candidate-satellite observations. Conditioned on this input,
+PDQN generates an offloading fraction for each satellite action
+and evaluates the resulting satellite–fraction pairs. All users
+share the decision-network parameters, while their observa-
+tions and feasible candidates produce different actions. The
+joint requests are then executed under the service rules in
+Section II, yielding task outcomes and the next network
+snapshot. Sections IV-B and IV-C develop the representation
+and decision mechanisms, respectively; Section IV-D describes
+training and online execution.
+B. Heterogeneous Graph-Based Contention Representation
+At slott, we constructG t = (V,E t,X t,E t), whereV
+contains user and satellite nodes,E t contains typed edges,
+andX t andE t collect node and edge features. User features
+describe location, connection status, task demand, urgency, and
+backlog. Satellite features describe location, MEC utilization,
+queue occupancy, associated users, and available computing
+resources. Visibility edges carry distance, elevation, SNR,
+reference rate, and remaining visibility; serving edges iden-
+tify existing associations and their service duration. Nearby-
+user and ISL edges provide geographical and constellation-
+neighborhood information. User–satellite relations are repre-
+sented in both directions.
+
+===== PAGE 6 =====
+6
+$$G_t$$
+$$Z_t^U$$
+Action Execution
+LEO-MEC Environment
+Handover Offloading
+×
+$$d_{i,t}$$
+$$d_{i,t}=0:stay$$$$d_{i,t}>0:handover$$Local CPU
+$$1-\lambda_{i,t}$$
+$$\lambda_{i,t}$$
+Satellite MEC
+$$X_t^U$$
+$$Proj_U$$
+$$\hat{X_t^U}$$
+$$X_t^S$$
+$$Proj_S$$
+$$\hat{X_t^S}$$
+$$User\; Meta-path$$
+$$\text{Semantic\\ Attention }\\\beta_U^{(1)}$$
+$$H_U^{(1)}$$
+$$a_t=\left(a_{1,t},...,a_{N,t}\right)$$Joint action
+Heterogeous Graph Encoder
+$$Satellite\; Meta-path$$
+$$\phi^1_U:$$
+$$\phi^2_U:$$
+$$\phi^3_U:$$
+$$\phi^1_S:$$
+$$\phi^2_S:$$
+vis vis
+conn conn
+nbr nbr
+vis vis
+ISL ISL
+$${H_U,H_S}$$$$GAT\;\;\;$$$$\phi^1_U$$
+$$GAT\;\;\;$$$$\phi^2_U$$
+$$GAT\;\;\;$$$$\phi^3_U$$
+HAN Layer 1
+$$\text{Semantic\\ Attention }\\\beta_S^{(1)}$$$$GAT\;\;\;$$$$\phi^1_S$$
+$$GAT\;\;\;$$$$\phi^2_S$$
+$$H_S^{(1)}$$
+$$features$$
+$$GAT\;\;\;$$$$\phi^1_U$$
+$$GAT\;\;\;$$$$\phi^2_U$$
+HAN Layer 2
+$$Proj_U$$
+$$Proj_S$$$$GAT\;\;\;$$$$\phi^3_U$$
+$$\text{Semantic\\ Attention }\\\beta_U^{(1)}$$$$Proj_U$$
+Serving Link
+LEO SatelliteGround User Device
+Inter-satellite Link Satellite Coverage
+Onboard MEC Server
+Heterogeous
+Graph Snapshot
+user node
+satellite node
+$$o_{1,t}$$$$z_{1,t}$$
+Concat
+Agent 1
+$$\tilde{o}_{1,t}$$
+PDQN
+$$a_{1,t}$$
+$$o_{i,t}$$$$z_{i,t}$$
+Concat
+Agent i
+$$\tilde{o}_{i,t}$$
+PDQN
+$$a_{i,t}$$
+$$a_t$$
+$$o_{N,t}$$$$z_{N,t}$$
+Concat
+Agent N
+$$\tilde{o}_{N,t}$$
+PDQN
+$$a_{N,t}$$
+$$r_t$$
+HGE$$G_t$$$$O_t$$
+$$\tilde{o}_{N,t}$$
+$$\lambda_{N,0}$$$$\lambda_{N,1}$$
+$$\lambda_{N,K}$$
+Parameter Network
+$$\tilde{o}_{N,t}$$
+$$\lambda_{N,t}$$
+Q-Network
+$$Q_{N,0}$$$$Q_{N,1}$$
+$$Q_{N,K}$$
+$$\mathbf{\lambda}_{N,t}$$
+Action Select
+$$d_{N,t} = \arg\max_{k\in\mathcal K_N(t)}Q_{N,k}$$
+$$a_{N,t} = \left(d_{N,t},\lambda_{N,d_{N,t}}\right)$$
+$$\mathbf{Q}_{N,t}$$
+Fig. 2. HAN–PDQN framework for joint handover and partial task offloading.
+The five meta-paths in Table I organize these relations
+into complementary service contexts. The serving-based U–
+S–U path aggregates users attached to the same MEC, expos-
+ing established contention. The visibility-based U–S–U path
+connects users with common satellite alternatives, exposing
+demand that may converge on the same server after subsequent
+decisions. This distinction retains both the current sharing
+structure and the opportunities through which that structure
+can change. The remaining paths incorporate neighboring de-
+mand, overlapping satellite coverage, and ISL neighborhoods.
+TABLE I
+META-PATHSUSED FORCONTENTIONREPRESENTATION
+Meta-path and relation Service context
+U–S–U (serving) Users sharing a serving MEC
+U–S–U (visibility) Users with common satellite alternatives
+U–U (proximity) Demand from neighboring users
+S–U–S (visibility) Satellites visible to common users
+S–S–S (ISL) Satellite context across two ISL hops
+Following the hierarchical attention principle in [12], we
+first aggregate neighbors along each meta-path and then com-
+bine the resulting semantic representations. At each HAN
+layer, type-specific projections map node features into a com-
+mon hidden space. Each meta-path starts from these projected
+features and propagates messages successively along its con-
+stituent relations.
+For one relationrat a given meta-path hop, letN r(v)
+denote the incoming neighbors of nodev. For attention head
+h, we form the relation input
+cr,h
+uv =
+[︂
+Wr,h
+s hu∥Wr,h
+d hv∥Wr,h
+e er
+uv
+]︂
+,(23)
+where∥denotes concatenation ande r
+uv is the edge feature.
+The attention score and normalized weight are
+er,h
+uv = LeakyReLU
+(︁
+(ar,h)Tcr,h
+uv
+)︁
+,
+αr,h
+uv = exp(er,h
+uv )∑︁
+w∈Nr(v) exp(er,h
+wv)
+. (24)
+The matrices and attention vectors are specific to the layer,
+meta-path, and hop; these indices are suppressed for clarity.
+TheHheads produce the message and residual update
+mr
+v =
+H
+∥
+h=1
+∑︂
+u∈Nr(v)
+αr,h
+uv Wr,h
+s hu,
+h+
+v = LN (hv + ELU(mr
+v)).
+(25)
+Applying (25) along a meta-pathϕyields its outputh ϕ
+v . Thus,
+on a U–S–U path, user demand is first aggregated at the
+intermediate satellite and then propagated to the destination
+users.
+LetΦ ν contain the meta-paths ending at node typeν∈
+{U,S}, and letV ν be the corresponding node set. Semantic
+attention assigns each applicable path the score
+wϕ,ν = 1
+|Vν|
+∑︂
+v∈Vν
+qT
+ν tanh
+(︁
+Wνhϕ
+v +b ν
+)︁
+.(26)
+The path weights and fused node representation are
+βϕ,ν = exp(wϕ,ν)∑︁
+ϕ′∈Φν exp(wϕ′,ν) ,
+zv =W out
+ν
+∑︂
+ϕ∈Φν
+βϕ,νhϕ
+v +b out
+ν .
+(27)
+
+===== PAGE 7 =====
+7
+These semantic weights are shared by nodes of the same type
+within a graph snapshot, while node-level weights depend on
+the contributing neighbors.
+Stacking HAN layers allows satellite representations formed
+through S–U–S and S–S–S paths to enter user-directed prop-
+agation in the next layer. Consequently, the final user em-
+beddingz i(t)incorporates the user’s own demand, competing
+users, and the surrounding satellite resource context. This
+embedding supplies the common relational input to both
+PDQN components.
+C. PDQN-Based Joint Handover and Offloading
+The underlying network state includes orbital conditions, as-
+sociations, ordered queues, residual workloads, and local pro-
+cessor availability. Decisions use the available measurements
+summarized in a raw observationo i(t): user and serving-
+link information, head-of-line task attributes and urgency,
+queue backlog, and the ordered candidate-satellite features.
+We combine this observation with the HAN output as
+˜︁oi(t) = [oi(t)∥zi(t)].(28)
+The raw features preserve the task and candidate details, while
+zi(t)supplies their multi-user context.
+The user-level feedback corresponding to (21) is
+ri(t) =
+∑︂
+n∈Z s
+i (t)
+(1−c i,n)− |Z f
+i (t)|
+−ω IIi(t)−ω FFi(t) +ω LJ(t).
+(29)
+Its arithmetic mean isU(t). Each user’s task and association
+outcomes therefore provide local credit, while the load-balance
+term supplies common feedback on shared resources.
+For a fixed maximum ofKcandidate slots, lets i,j(t)be
+the satellite occupying slotj. The discrete network index is
+di(t)∈ {0, . . . , K}, with index0reserved for staying. It maps
+to the satellite action in (22) throughk i(t) = 0ford i(t) = 0
+andk i(t) =s i,di(t)(t)otherwise. Unused candidate slots are
+masked. The ordered candidate features, parameter branches,
+and mask use this same mapping throughout a decision slot.
+Following the parameterized action formulation in [10], a
+branchµ ψ,j generates the requested fraction for each discrete
+index:
+ˆ︁ρi,j(t) =µ ψ,j (˜︁oi(t)) =σ(f ψ,j (˜︁oi(t))),(30)
+whereσis the sigmoid function andψcollects the branch
+parameters. Branch0controls offloading through the current
+association. Requests below the minimum effective fraction
+ρmin invoke local execution.
+The shared Q-network evaluates each complete index–
+fraction pair:
+qi,j(t) =Q θ (˜︁oi(t), j,ˆ︁ρi,j(t)).(31)
+Its inputs are the fused observation, a one-hot encoding of
+j, and that branch’s scalar fraction. The output estimates the
+discounted user return associated with the requested pair and
+subsequent decisions. Bothψandθare shared across users.
+Letm i,j(t)indicate whether candidate indexjsatisfies the
+current action conditions, and defineK i(t) ={j:m i,j(t) =
+1}. The stay index always belongs toK i(t). Online action
+selection is
+d⋆
+i (t) = arg max
+j∈Ki(t)
+qi,j(t),
+ˆ︁ρi(t) =ˆ︁ρi,d⋆
+i (t)(t).
+(32)
+The sigmoid output satisfiesC 2, and the mask implements the
+candidate, trigger, link, and migration checks inC 1 andC 3–
+C5. The execution-stage admission rules enforceC 6 as users
+share the remaining capacity.
+Equations (30) and (31) expose the coupling between
+representation and control: the same contention information
+conditions both the workload proposed for a candidate and
+the estimated value of assigning that workload to it. The final
+selection therefore compares satellite actions together with
+their associated continuous fractions.
+D. Training and Online Execution
+Training uses an experience replay bufferDof joint transi-
+tions, each containing the user tuples( ˜︁o, d,ˆ︁ρ, r,˜︁o′, δ,m,m ′).
+Here,ˆ︁ρis the requested fraction, the primed quantities describe
+the next observation, andδindicates a true terminal transition.
+The buffer stores the encoded observations used for the
+decisions. A minibatch ofBjoint transitions providesBN
+user samples for the shared PDQN networks.
+Task feedback is assigned when an outcome is resolved. For
+local-only execution, the reserved completion time determines
+the outcome at dispatch; remote outcomes are evaluated upon
+MEC completion, expiration, or termination. Interruption,
+association-failure, and load-balance feedback are assigned in
+the corresponding slot. Thus, the replay reward follows (29),
+including outcomes from previously dispatched workloads.
+LetQ ¯θ andµ ¯ψ,j denote the target networks. For a sampled
+next observation, the online networks select
+d′ = arg max
+j:m′
+j=1
+Qθ (˜︁o′, j, µψ,j(˜︁o′)).(33)
+The target networks then evaluate this choice:
+y=r+γ(1−δ)Q ¯θ
+(︁˜︁o′, d′, µ ¯ψ,d′(˜︁o′)
+)︁
+.(34)
+The Q-network minimizes
+LQ(θ) =E D
+[︂
+(Qθ(˜︁o, d,ˆ︁ρ)−y)2
+]︂
+.(35)
+Time-limit truncation retains bootstrapping, since unfinished
+workloads continue to have future value.
+The parameter branches are updated through the Q-network
+using the objective
+Lµ(ψ) =−η µED
+[︃
+max
+j:mj=1
+Qθ (˜︁o, j, µψ,j(˜︁o))
+]︃
+,(36)
+whereη µ >0scales the parameter objective. During this
+update,θis held constant and gradients propagate through the
+continuous parameter of the maximizing feasible branch. Both
+optimizers use gradient clipping. EveryC tar learning updates,
+the target parameters are copied from the online networks:
+¯θ←θand ¯ψ←ψ.
+Exploration samples a feasible discrete index and a contin-
+uous fraction uniformly from[0,1]. After the initial replay
+
+===== PAGE 8 =====
+8
+Algorithm 1HAN–PDQN Training
+Require:HAN encoder, candidate limitK, replay capacity,
+batch sizeB, target periodC tar
+1:Initializeθ, ψand replay bufferD
+2:Set ¯θ←θ, ¯ψ←ψ
+3:foreach training episodedo
+4:Reset the environment and constructG 0
+5:Form ˜︁oi(0)andm i(0)for all users
+6:foreach decision slottdo
+7:foreach useri∈ Udo
+8:Select a feasible pair by exploration or (32)
+9:end for
+10:Execute the joint requests under the service model
+11:Obtainr i(t), ˜︁oi(t+ 1), andm i(t+ 1)
+12:Store the joint transition inD
+13:ifreplay warm-up is completethen
+14:Sample a minibatch fromD
+15:Compute targets using (33)–(34)
+16:Updateθusing (35)
+17:Updateψusing (36)
+18:Copy online parameters to targets everyC tar
+updates
+19:end if
+20:ifepisode terminates or reaches its time limitthen
+21:break
+22:end if
+23:end for
+24:end for
+warm-up, this random pair is selected with probabilityϵ;
+otherwise, the controller uses (32). The exploration probability
+decreases during training. Algorithm 1 summarizes the proce-
+dure.
+For online operation, the controller constructs the graph,
+computes the fused user observations, and selects the masked
+maximizing pairs withϵ= 0. Association changes are re-
+solved before new upload requests are admitted and allocated
+bandwidth, following Section II. This sequence preserves
+the candidate mapping used at decision time while applying
+capacity checks to the committed actions.
+For computational cost, letLbe the number of HAN layers
+andD h the hidden width. LetV mp andE mp count node and
+edge visits across the meta-path hops in one layer. For a fixed
+number of heads, graph encoding requiresO(L(V mpD2
+h +
+EmpDh))operations. IfP µ is the total parameter-branch
+weight count andP Q is the Q-network weight count, evaluat-
+ing all users addsO(N[P µ+(K+1)P Q]). A replay update over
+Bjoint transitions has network costO(BN[P µ+(K+1)P Q]).
+Graph construction contributes a separate cost determined by
+visibility and neighborhood generation. Online execution uses
+graph construction, encoding, and forward action evaluation;
+replay updates contribute to training cost.
+V. PERFORMANCEEVALUATION
+A. Experimental Setup and Evaluation Protocol
+We evaluate HAN–PDQN in a multi-user LEO satellite
+edge computing network comprising 66 satellites distributed
+across six orbital planes. The orbital altitude and inclination
+are 550 km and53 ◦, respectively. Ground users are distributed
+around(39.9 ◦N,116.4 ◦E), and the population varies from
+20 to 40 users. User locations and orbital starting times are
+resampled at episode initialization. Each episode contains 512
+slots, with a slot duration of 1 s. Tables II and III summarize
+the system and training parameters, respectively.
+Each user generates a task independently with probabil-
+ity 0.35 per slot. Tasks are classified as light, medium,
+and heavy with probabilities 0.3, 0.5, and 0.2. For light
+tasks, the input size, computation demand, and deadline
+are uniformly sampled from[1,3]Mbit,[0.3,0.8]Gcycle,
+and[1.5,3]s, respectively. The corresponding ranges are
+[5,10]Mbit,[1.2,2.5]Gcycle, and[2.5,5.5]s for medium
+tasks, and[12,25]Mbit,[3,7]Gcycle, and[4,8]s for
+heavy tasks. Each MEC provides a total processing rate of
+10 Gcycle/s through two 5-GHz cores. The utility weights
+are(ω D, ωE, ωI, ωF, ωL) = (0.60,0.40,0.30,0.20,0.05), with
+Eref = 1J.
+We compare HAN–PDQN with six benchmarks:
+•HAN+MAPPO: A graph-assisted multi-agent proximal
+policy optimization controller for joint satellite selection
+and offloading.
+•MAPPO: A multi-agent proximal policy optimization
+controller using raw user, task, and candidate-satellite
+observations.
+•MADDPG: A multi-agent deep deterministic policy gra-
+dient controller using raw observations to generate satel-
+lite and offloading decisions.
+•PDQN: A parameterized Q-learning controller using raw
+observations without HAN representations.
+•Min-Distance: A distance-based policy that requests the
+nearest admissible satellite under the handover conditions
+and requests full offloading. It retains the current associ-
+ation when no shorter admissible alternative is available.
+•Full-Local: A policy that processes all tasks locally and
+issues no handover requests.
+All methods operate under the same task, communication,
+MEC service, and admission models.
+For each user population, the learning methods are trained
+with seeds 42–46 and an interaction budget of1.5×10 5
+environment steps per run. Table III reports the principal
+training settings. HAN–PDQN and PDQN use replay batch
+sizes of 512 and 128, respectively. Periodic model evaluation
+is performed every 25,000 environment steps for the PDQN
+and MAPPO variants, and every ten episodes for MADDPG.
+Checkpoints are selected according to their mean evaluation
+return.
+Each selected policy is evaluated over five episodes per
+training seed, using matched scenario seeds across methods.
+Performance metrics are first averaged over these episodes and
+then summarized across the five training seeds. Shaded regions
+and error bars represent 95% bootstrap confidence intervals at
+the training-seed level.
+The reported metrics follow Section II-C. Successful-task
+delay is averaged over successful tasks, whereas the deadline
+violation rate is normalized by the number of generated
+
+===== PAGE 9 =====
+9
+TABLE II
+SYSTEMPARAMETERS
+Parameter Value
+Orbital planes / satellites per plane6/11
+Orbital altitude / inclination550km /53 ◦
+Number of users,N20,25,30,35,40
+User deployment radius5 ◦
+Slot duration,∆t1s
+Episode length512slots
+Carrier frequency,f c 20GHz
+Uplink bandwidth per satellite,B s 10MHz
+User / satellite transmit power24/40dBm
+User / satellite antenna gain38.5/34dBi
+Noise temperature / noise figure354.81K /2dB
+Local processing rate,f i 1Gcycle/s
+Total MEC processing rate,F s 10Gcycle/s
+MEC capacity / concurrency limit6/2tasks
+Task arrival probability0.35per user-slot
+Minimum elevation,θ min 10◦
+Visibility thresholds,v min, vtrig 60s
+Target SNR threshold,Γ min −5dB
+Association-change overhead,δ ho 0.6s
+Output-to-input size ratio,ζ0.1
+Amplifier efficiency / circuit power0.38/0.05W
+Local energy coefficient,κ i 10−27
+Minimum effective offloading fraction0.05
+TABLE III
+ALGORITHM ANDTRAININGPARAMETERS
+Parameter Value
+Interaction budget per run150,000steps
+Training seeds42–46
+Evaluation episodes per seed5
+Discount factor,γ0.99
+HAN layers / attention heads2/4
+HAN hidden / output dimension64/64
+PDQN Q-network hidden widths256,128
+PDQN parameter-branch hidden widths128,64
+PDQN learning rate10 −3
+HAN–PDQN / PDQN replay batch size512/128
+PDQN replay capacity50,000
+PDQN replay warm-up1,000steps
+PDQN target-copy interval500updates
+PDQN exploration probability1.0→0.02
+MAPPO learning rate10 −4
+MAPPO rollout length / update epochs1024/4
+MAPPO minibatch size512
+MADDPG actor / critic learning rate10 −4/(3×10 −4)
+MADDPG replay batch size128
+MADDPG target soft-update coefficient0.005
+0 50 100 150 200 250 300
+Training episodes
+−100
+−50
+0
+50
+100
+Mean episode reward
+HAN+PDQN
+HAN+MAPPO
+MAPPO
+MADDPG
+PDQN
+Fig. 3. Training returns with 30 users and 512 steps per episode. Curves
+show five-seed means with 95% bootstrap confidence intervals. No smoothing
+is applied; MAPPO variants retain their two-episode logging intervals.
+tasks. Energy per successful task divides the total accounted
+terminal energy by the successful-task count. We additionally
+report cumulative blocked user-time, total terminal energy per
+episode, and handovers per user-minute to characterize service
+continuity and operating costs.
+B. Training Convergence and Hyperparameter Sensitivity
+Fig. 3 compares the training returns of the five learning
+methods with 30 users. The episode return accumulates the
+user-averaged slot reward over an episode, and each curve
+averages the corresponding returns across training seeds. The
+0 50 100 150 200 250 300
+Training episodes
+0
+25
+50
+75Mean episode reward α = 1e − 04
+α = 3e − 04
+α = 1e − 03
+α = 3e − 03
+0 50 100 150 200 250 300
+Training episodes
+0
+25
+50
+75Mean episode reward B = 128
+B = 256
+B = 512
+B = 1024
+(a) Learning rate (batch size = 512)
+(b) Batch size (α = 10−3)
+Fig. 4. Hyperparameter sensitivity with 30 users: (a) learning rate with batch
+size 512; (b) replay batch size with learning rate10 −3. Curves show five-seed
+means and 95% bootstrap confidence intervals after a three-episode trailing
+mean.
+
+===== PAGE 10 =====
+10
+20 25 30 35 40
+Number of users
+1600
+1800
+2000
+2200Average delay (ms)
+20 25 30 35 40
+Number of users
+15
+30
+45Deadline violation rate (%)
+20 25 30 35 40
+Number of users
+0.8
+1.6
+2.4
+3.2
+4.0Energy per successful task (J)
+(a) Successful-task delay (b) Deadline violation rate (c) Energy per successful task
+HAN+PDQN
+HAN+MAPPO
+MAPPO
+MADDPG
+PDQN
+Min-Distance
+Full-Local
+Fig. 5. Task performance versus the number of users: (a) average successful-task delay; (b) deadline violation rate; (c) terminal energy per successful task.
+Curves show five-training-seed means, and shaded regions indicate 95% bootstrap confidence intervals.
+figure includes complete episodes within the interaction bud-
+get.
+HAN+MAPPO and MAPPO improve rapidly during the
+initial training stage and subsequently approach lower return
+levels. HAN–PDQN and PDQN exhibit a more pronounced
+increase during the intermediate stage, after which HAN–
+PDQN maintains the highest mean return. Averaged over the
+final 20 complete episodes, HAN–PDQN achieves a return of
+87.78, compared with 76.85 for PDQN. The corresponding
+returns of HAN+MAPPO and MAPPO are approximately
+59.30 and 57.86. MADDPG exhibits lower late-stage returns
+and greater variation across seeds. The comparison therefore
+favors HAN–PDQN in the quality of the learned policy under
+the allocated interaction budget.
+We next examine the sensitivity of HAN–PDQN to its
+learning rate and replay batch size in Fig. 4. For the learning-
+rate experiment, the batch size is fixed at 512 and the rate
+is selected from{10 −4,3×10 −4,10 −3,3×10 −3}. For the
+batch-size experiment, the learning rate is fixed at10 −3 and
+the batch size is selected from{128,256,512,1024}. Each
+setting uses five training seeds.
+In Fig. 4(a), learning rates between10 −4 and10 −3 attain
+similar late-stage returns. Increasing the rate to3×10 −3
+produces a substantially lower mean return and a wider con-
+fidence interval. This behavior indicates sensitivity to aggres-
+sive updates when the value estimates and continuous action
+parameters evolve together.
+Fig. 4(b) shows that batch sizes 128, 512, and 1024 reach
+comparable return levels, whereas batch size 256 yields a
+lower mean and greater variation across seeds. The dependence
+on batch size is therefore nonmonotonic over the examined
+settings. The default combination of learning rate10 −3 and
+batch size 512 attains a high return with a consistent five-seed
+training profile and is used for the subsequent HAN–PDQN
+comparisons.
+C. Task Performance under User Scaling
+Fig. 5 evaluates task service as the user population increases
+from 20 to 40. The per-user arrival process remains unchanged,
+so a larger population increases the aggregate demand for the
+shared uplink and MEC resources. HAN–PDQN achieves the
+lowest mean successful-task delay, deadline violation rate, and
+energy per successful task at every evaluated population.
+In Fig. 5(a), the mean successful-task delay of HAN–PDQN
+increases from 1554.9 ms at 20 users to 1906.7 ms at 40 users.
+The corresponding PDQN values are 1608.2 and 1939.9 ms.
+At 30 users, HAN–PDQN achieves 1779.7 ms, compared with
+1820.7 ms for PDQN and 2053.8 ms for HAN+MAPPO. The
+increase with population is consistent with greater contention
+for upload bandwidth and MEC service. Throughout this
+range, the proposed controller maintains a lower delay despite
+the growing demand.
+The reliability difference is more pronounced in Fig. 5(b).
+At 30 users, the deadline violation rate is 6.89% for HAN–
+PDQN and 9.47% for PDQN, a reduction of 2.58 percent-
+age points. HAN+MAPPO and MAPPO yield 18.38% and
+18.83%, respectively, under the same population. At 40 users,
+HAN–PDQN maintains a violation rate of 10.99%, compared
+with 13.08% for PDQN, 24.24% for HAN+MAPPO, and
+37.47% for Min-Distance. These results show that the delay
+advantage is accompanied by improved deadline compliance.
+Fig. 5(c) further shows that HAN–PDQN uses less terminal
+energy per successful task across all evaluated populations. Its
+value increases from 0.948 J at 20 users to 1.491 J at 40 users,
+while PDQN increases from 1.040 to 1.537 J. At 30 users,
+HAN–PDQN requires 1.242 J per successful task, compared
+with 1.318 J for PDQN and 2.376 J for Min-Distance. The
+combination of lower delay, fewer deadline violations, and
+lower energy per successful task indicates an improvement
+across the three task-service dimensions.
+Full-Local exhibits nearly constant delay and energy per
+successful task as the population changes, consistent with
+
+===== PAGE 11 =====
+11
+20 25 30 35 40
+Number of users
+0
+100
+200
+300
+400Blocked user-time (user-s/episode)
+20 25 30 35 40
+Number of users
+0
+4
+8
+12Total terminal energy (kJ/episode)
+20 25 30 35 40
+Number of users
+0.0
+0.2
+0.4
+0.6
+0.8Handovers per user-minute
+(a) Blocked user-time (b) Total terminal energy (c) Handover frequency
+HAN+PDQN
+HAN+MAPPO
+MAPPO
+MADDPG
+PDQN
+Min-Distance
+Full-Local
+Fig. 6. Service continuity and operating costs: (a) blocked user-time per episode; (b) total terminal energy per episode; (c) handovers per user-minute. Bars
+show five-training-seed means with 95% bootstrap confidence intervals. Full-Local is omitted from (a) and performs no handovers in (c).
+users operating independent local processors. Its deadline
+violation rate nevertheless remains approximately 49%, and its
+energy per successful task is approximately 4.1 J. The joint
+consideration of delay and task outcomes therefore reveals the
+service limitations of relying entirely on local computation.
+For an aggregate comparison, we first take the arithmetic
+mean of each metric over the five user populations and
+then compute its relative reduction against PDQN. Under
+this convention, HAN–PDQN reduces successful-task delay,
+deadline violation rate, and energy per successful task by
+2.16%, 21.26%, and 5.72%, respectively. The largest relative
+improvement occurs in deadline compliance, while the delay
+and energy improvements remain consistent across the evalu-
+ated populations.
+D. Service Continuity and Operating Costs
+Fig. 6 complements the task-level results by examining
+service interruption, aggregate terminal energy, and handover
+activity. These metrics reveal how different association and
+offloading policies balance connection availability against the
+conditions under which tasks are executed.
+In Fig. 6(a), HAN–PDQN has lower mean blocked user-time
+than PDQN at every population. At 30 users, the values are
+284.08 and 298.12 user-s per episode, respectively. The cumu-
+lative quantity increases with population, partly because more
+users contribute to the total observation time. Min-Distance
+yields a slightly lower value of 276.32 user-s at 30 users, but its
+deadline violation rate in Fig. 5(b) is much higher. Connection
+availability therefore needs to be considered together with the
+processing conditions and workload assigned to the selected
+satellite.
+Fig. 6(b) shows that HAN–PDQN also maintains the lowest
+mean total terminal energy over the evaluated populations.
+At 30 users, it consumes 6.18 kJ per episode, compared
+with 6.37 kJ for PDQN, 8.41 kJ for Min-Distance, and
+11.26 kJ for Full-Local. Total energy measures the system’s
+accumulated terminal expenditure, whereas Fig. 5(c) measures
+the expenditure per successful task. The improvement in both
+quantities shows that the energy-efficiency gain accompanies
+a reduction in aggregate terminal consumption.
+The handover results in Fig. 6(c) show a different ordering
+among the methods. At 30 users, HAN–PDQN performs
+0.606 handovers per user-minute, compared with 0.659 for
+PDQN, 0.192 for HAN+MAPPO, and 0.198 for Min-Distance.
+Thus, HAN–PDQN obtains its task-performance advantage
+with fewer handovers than PDQN, while remaining more
+active in satellite reassociation than HAN+MAPPO and Min-
+Distance. The lower switching activity of the latter policies
+is accompanied by higher task delay, deadline violations, and
+energy per successful task. This comparison reflects the role
+of the long-term objective in balancing immediate switching
+costs against subsequent task-service conditions.
+Using the same across-population averaging convention as
+in Section V-C, HAN–PDQN reduces mean blocked user-
+time, total terminal energy, and handover frequency relative
+to PDQN by 7.85%, 3.19%, and 14.82%, respectively. These
+operating-cost reductions accompany the task-level improve-
+ments, linking the quality of completed service to the associ-
+ation and workload decisions that sustain it.
+VI. CONCLUSION
+In this paper, we investigated joint handover and partial
+task offloading in multi-user LEO satellite edge networks.
+We formulated satellite selection and continuous workload
+allocation as a sequential decision problem and developed
+HAN–PDQN to account for dynamic connectivity and shared
+resources. HAN distinguishes established contention through
+serving relations from potential contention through common
+satellite alternatives. The resulting representation conditions
+both the offloading fraction generated for each candidate and
+the long-term value of the corresponding satellite–fraction pair.
+
+===== PAGE 12 =====
+12
+This design connects the destination and amount of offloaded
+work through the same multi-user contention context.
+Simulations over five training seeds and user populations
+of 20–40 showed that, compared with PDQN, HAN–PDQN
+reduced average successful-task delay, deadline violation rate,
+and energy per successful task by 2.16%, 21.26%, and 5.72%,
+respectively. These task-level improvements were accompa-
+nied by reductions in blocked user-time, total terminal energy,
+and handover frequency. The results demonstrate the effective-
+ness of the proposed framework in balancing task reliability,
+processing delay, and terminal energy across the evaluated
+user populations. Future work will extend the framework
+to jointly allocate communication and computing resources
+and investigate policy transfer across constellation and traffic
+configurations.
+REFERENCES
+[1] S. Wang and Q. Li, “Satellite computing: Vision and challenges,”IEEE
+Internet of Things Journal, vol. 10, no. 24, pp. 22 514–22 529, 2023.
+[2] F. Wang, D. Jiang, Z. Wang, J. Chen, and T. Q. S. Quek, “Seamless
+handover in LEO-based non-terrestrial networks: Service continuity and
+optimization,”IEEE Transactions on Communications, vol. 71, no. 2,
+pp. 1008–1023, 2023.
+[3] Y . Shen, Y . Shi, J. Zhang, and K. B. Letaief, “Graph neural networks for
+scalable radio resource management: Architecture design and theoretical
+analysis,”IEEE Journal on Selected Areas in Communications, vol. 39,
+no. 1, pp. 101–115, 2021.
+[4] Y . Fu, B. Hu, R. Liu, and S. Chen, “A multi-agent heterogeneous graph
+representation-based handover method in satellite-terrestrial integrated
+network,”Chinese Journal of Computers, vol. 49, no. 2, pp. 347–364,
+2026, in Chinese.
+[5] J. Yang, Y . Zhang, Z. Xiao, and Z. Han, “Joint access selection and
+computation offloading in LEO ubiquitous edge computing networks:
+An alternating DRL-based approach,”IEEE Transactions on Cognitive
+Communications and Networking, vol. 11, no. 3, pp. 1870–1886, 2025.
+[6] J. Yang, Y . Ma, Z. Xiao, and Z. Han, “Joint access selection, computation
+offloading, and resource allocation in LEO ubiquitous edge computing
+networks,”IEEE Internet of Things Journal, vol. 12, no. 23, pp. 51 746–
+51 760, 2025.
+[7] H. Li, J. Yu, L. Cao, Q. Zhang, Z. Song, and S. Hou, “Multi-
+agent reinforcement learning based computation offloading and resource
+allocation for LEO satellite edge computing networks,”Computer Com-
+munications, vol. 222, pp. 268–276, 2024.
+[8] S. S. Hassan, Y . M. Park, Y . K. Tun, W. Saad, Z. Han, and C. S.
+Hong, “Satellite-based ITS data offloading and computation in 6G
+networks: A cooperative multi-agent proximal policy optimization DRL
+with attention approach,”IEEE Transactions on Mobile Computing,
+vol. 23, no. 5, pp. 4956–4974, 2024.
+[9] J.-Y . Lai, H. Liu, G. Xu, W. Jiang, X. Wang, and D. Jiang, “Joint
+computation offloading and resource allocation for LEO satellite net-
+works using hierarchical multi-agent reinforcement learning,”IEEE
+Transactions on Cognitive Communications and Networking, vol. 11,
+no. 4, pp. 2554–2567, 2025.
+[10] J. Xiong, Q. Wang, Z. Yang, P. Sun, L. Han, Y . Zheng, H. Fu,
+T. Zhang, J. Liu, and H. Liu, “Parametrized deep Q-networks learning:
+Reinforcement learning with discrete-continuous hybrid action space,”
+arXiv preprint arXiv:1810.06394, 2018.
+[11] X. Yang, H. Fang, Y . Gao, X. Wang, K. Wang, and Z. Liu, “Computation
+offloading and resource allocation based on P-DQN in LEO satellite
+edge networks,”Sensors, vol. 23, no. 24, p. 9885, 2023.
+[12] X. Wang, H. Ji, C. Shi, B. Wang, P. Cui, P. S. Yu, and Y . Ye,
+“Heterogeneous graph attention network,” inProceedings of the 2019
+World Wide Web Conference, 2019, pp. 2022–2032.

@@ -1,0 +1,101 @@
+1
+Joint Handover and Partial Task Offloading in LEO
+Satellite Edge Networks via Heterogeneous
+Graph-Based Parameterized Reinforcement Learning
+Author Name
+Abstract—Integrating low Earth orbit (LEO) satellites with
+edge computing extends computation services to areas with
+limited terrestrial coverage and to terminals with constrained
+local resources. However, satellite motion continually changes
+link quality, satellite visibility, and remaining service time, while
+multiple users compete for limited onboard communication and
+computing resources. For divisible tasks, a user must select a
+serving satellite and determine a continuous offloading ratio
+matched to that satellite’s link, resource, and contention con-
+ditions. We therefore formulate joint serving-satellite selection
+and partial task offloading as a sequential decision problem with
+a parameterized hybrid action space. To solve this problem, we
+propose HAN–PDQN, which combines a heterogeneous graph
+attention network (HAN) with a parameterized deep Q-network
+(PDQN). A heterogeneous graph distinguishes user and satel-
+lite nodes as well as serving and visibility relations. Relation-
+specific meta-path aggregation and hierarchical attention capture
+established resource sharing and potential contention among
+users with overlapping satellite alternatives. Conditioned on this
+relational representation, local task information, and candidate-
+satellite features, PDQN generates a continuous offloading ratio
+for each feasible satellite action and estimates the long-term value
+of the resulting satellite–ratio pair. The same contention context
+therefore affects both how much workload is assigned to each
+candidate and whether that candidate is selected. HAN–PDQN
+consequently supports coordinated serving-satellite selection and
+partial task offloading in dynamic multi-user LEO satellite edge
+networks.Simulations across five training seeds and network sizes
+of 20–40 users show that, compared with PDQN, HAN–PDQN
+reduces average successful-task delay, energy per successful task,
+and the deadline violation rate by 2.16%, 5.72%, and 21.26%,
+respectively, while increasing the task success rate by 2.12%.
+Index Terms—Heterogeneous graph attention, joint handover
+and offloading, LEO satellite edge computing, parameterized
+deep reinforcement learning, partial task offloading.
+I. INTRODUCTION
+Ubiquitous connectivity and computing are important objec-
+tives of sixth-generation (6G) networks. However, terrestrial
+infrastructure cannot consistently provide edge services in
+remote regions, maritime environments, and other areas with
+limited network coverage. Satellite edge computing can com-
+plement terrestrial systems by extending communication and
+computation services to these areas [1]. In particular, low Earth
+orbit (LEO) satellites offer shorter propagation distances than
+satellites in higher orbits and can host onboard edge servers to
+process tasks from ground terminals. These capabilities make
+LEO satellite edge computing a promising option for users
+with limited local computing resources.
+Providing sustained computing services in LEO networks
+requires coordinated decisions on satellite association and
+workload allocation. Satellite motion continuously changes
+the visible satellite set, link quality, and remaining service
+time, making handovers necessary to maintain service [2].
+Meanwhile, multiple users share the limited uplink bandwidth
+and computing resources of each satellite. For divisible tasks,
+a user must decide both which satellite to select and what frac-
+tion of its workload to offload, while processing the remaining
+fraction locally in parallel. A suitable offloading ratio depends
+on the selected satellite’s link conditions, computing capacity,
+queued workload, and remaining visibility. Conversely, users’
+offloading ratios change resource occupancy and the execu-
+tion conditions experienced by other users. Under stochastic
+task arrivals, unfinished workloads carry these effects across
+time slots, while handovers may interrupt service and require
+workload migration. Serving-satellite selection and partial task
+offloading must therefore be considered jointly: the former
+determines remote execution conditions, whereas the latter
+determines the workload assigned to those conditions.
+Existing studies provide two complementary foundations
+for addressing this coupled decision problem. Graph-based
+resource management and satellite handover methods use
+relational representations to organize network interactions and
+support access decisions [3], [4]. Such representations are use-
+ful for identifying service opportunities and resource-sharing
+relationships, but satellite selection alone does not specify the
+continuous task fraction to assign to the selected server. Mean-
+while, satellite edge computing studies have investigated joint
+access selection, offloading, and resource allocation [5], [6],
+including multi-agent and hierarchical reinforcement learning
+approaches to dynamic multi-user control [7]–[9]. Parameter-
+ized reinforcement learning further supports discrete decisions
+with associated continuous controls [10]. For example, an
+existing satellite formulation selects among local, satellite, and
+cloud execution modes while allocating computing resources
+and transmission power [11]. These advances motivate a more
+specific design question for partial offloading: how should
+the relationships among competing users inform both the
+workload proposed for each candidate satellite and the value
+of selecting that satellite? Addressing this question requires in-
+tegrating relational contention modeling with satellite-specific
+discrete–continuous control.
+Achieving this integration gives rise to two technical chal-
+lenges. The first is how to represent dynamic multi-user
+contention. Users currently connected to the same satellite ex-
+perience established contention for shared communication and
+computing resources. Users connected to different satellites

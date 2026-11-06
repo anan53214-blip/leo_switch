@@ -1,0 +1,21 @@
+% Add these lines after the other packages, before \begin{document}.
+% Remove the previous \usepackage{stfloats} (or dblfloatfix).
+% Keep the existing placeins package; the algorithm packages are unchanged.
+\usepackage{cuted}
+\usepackage{capt-of}
+\usepackage{needspace}
+\setlength{\stripsep}{8pt}
+
+\makeatletter
+\newcommand{\LEOFigureSetup}{%
+  \setlength{\parskip}{0pt}%
+  \setlength{\abovecaptionskip}{4pt}%
+  \setlength{\belowcaptionskip}{0pt}%
+  \def\@IEEEfigurecaptionsepspace{\vskip4pt\relax}%
+}
+\newcommand{\LEOTableSetup}{%
+  \setlength{\parskip}{0pt}%
+  \setlength{\belowcaptionskip}{5pt}%
+  \def\@IEEEtablecaptionsepspace{\vskip5pt\relax}%
+}
+\makeatother

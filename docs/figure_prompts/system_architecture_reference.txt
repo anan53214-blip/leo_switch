@@ -1,0 +1,32 @@
+Create ONE high-resolution, clean scientific system-architecture reference drawing for an IEEE journal paper about joint satellite handover and partial task offloading in multi-user LEO satellite edge computing. This is a reference for a researcher to redraw manually. Landscape composition, two clearly separated panels, white background, generous spacing, fine crisp outlines, restrained pastel fills, black Times-like serif typography. Flat vector-style technical illustration, not photorealistic, no decorative textures, no globe, no skyline, no dramatic gradients. Small satellite icons with blue solar panels and gray bodies, ground user icons as upright blue mobile terminals, simple chip and server icons. Pale blue represents communication/handover and pale amber represents computation/offloading; muted purple indicates pending-task migration. Do not include HAN, PDQN, neural networks, a training loop, policy blocks, a central controller, or a replay buffer.
+
+Panel (a), approximately the left 55% of the figure, caption below exactly "(a) Multi-user LEO satellite edge network":
+- Draw three LEO satellites spaced clearly at the upper level, with short black curved directional arrows above them showing satellite motion and a single label "Satellite motion".
+- Place a small integrated server/processor badge and miniature waiting queue next to each satellite. Label collectively "Onboard MEC". The MEC badges are attached to the satellites, not separate space stations.
+- Below satellites draw their overlapping coverage footprints as three thin gray dashed ellipses on an abstract ground plane. Use a couple of light dashed boundary rays from satellites to corresponding footprints, keeping the scene uncluttered.
+- Place six ground user phone icons inside the footprints; include two or three users sharing one serving satellite. Add one unobtrusive collective label "Ground users".
+- SOLID BLUE, NON-ARROW connection lines represent existing serving links. Each user has exactly ONE solid serving link. GRAY DASHED connection lines represent an alternative visible satellite for selected users in overlapping footprints. Carefully avoid suggesting simultaneous connection to two serving satellites.
+- Highlight one central user "User i" with a faint pale-blue circle and its alternative satellite with a faint pale-blue halo.
+- Under one satellite show small side-by-side waiting-task blocks and a CPU chip to visually communicate shared computing resources. Add just one short label "Shared uplink and MEC resources".
+- Include a neat small legend in the bottom free space: blue solid line "Serving link", gray dashed line "Visible candidate", thin gray dashed ellipse "Coverage footprint". Keep boundary rays separate from legend examples. No link labels or complex equations cluttering panel (a).
+
+Panel (b), approximately right 45%, caption below exactly "(b) Handover and partial task offloading":
+The panel has two distinct stacked diagram modules, upper 40% and lower 60%, with no connecting arrows between the modules.
+
+Upper module, titled exactly "Handover":
+- Left an old satellite+MEC badge labeled "Previous satellite", right a new satellite+MEC badge labeled "Selected satellite".
+- Below them, one phone labeled "User i". A faint old link toward the previous satellite and a strong blue link toward the selected satellite depict an association change, not two active associations. Use a blue curved direction arrow from the previous link toward the new link with label "Handover".
+- A muted purple DASHED arrow between the two server queue badges is labeled "Pending-task migration". This is a logical migration schematic, not a modeled multi-hop transmission route.
+- One small pale blue callout underneath reads "Service interruption".
+
+Lower module, titled exactly "Partial task offloading":
+- A phone labeled "User i" produces a task represented as a rectangular data block labeled "Task".
+- The task branches into TWO parallel paths with a visible fork.
+- Path 1, blue, labeled "λ_i(t)" and "Upload", leads to a satellite server icon labeled "Selected-satellite MEC". A short waiting queue is drawn just before its processor. Label queue "Queue".
+- Path 2, amber, labeled "1 − λ_i(t)", leads to a CPU chip labeled "Local CPU".
+- Keep the two paths parallel, not one feeding into the other. Each computation result proceeds to a shared merge point labeled "Task completion". The selected satellite also has a thin blue return arrow labeled "Result return" to the completion point near the user; arrows must point toward the result/completion and not toward the satellite.
+- Beneath the merge point, put one concise equation "T_i = max(T_local, T_remote)" and the small label "Parallel execution".
+- Offloaded proportion and local proportion must be complementary, λ and 1−λ, with λ multiplying the offloaded task only.
+- Keep formulas and labels large and legible, no extra numeric parameter values, no tables.
+
+Accuracy and layout constraints: No UAVs, HAPS, cloud servers, ground base stations, inter-satellite routing chain, task dependencies, or extra algorithms. No giant title banner. Show the physical architecture and task/service mechanisms only. English labels only. Minimize line crossings, never draw an arrow through text, and make all connection endpoints intentional. The two captions align on one bottom baseline. Output as a polished reference illustration suitable for manually tracing/redrawing into a publication-quality vector figure.

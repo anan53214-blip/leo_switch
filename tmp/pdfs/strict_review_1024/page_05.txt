@@ -1,0 +1,138 @@
+5
+reconnection. We count reconnections separately from han-
+dovers.
+Each committed handover or reconnection contributes a
+fixed service-interruption costδ ho. For a remote taskJ i,n,
+leth i,n count the applicable association changes at dispatch
+and during subsequent migrations. Its accumulated overhead
+isH i,n =h i,nδho. Each event contributes once to (15); the
+fixed overhead does not advance the MEC service timeline or
+enter (14). The local branch retains its own processor timeline.
+III. PROBLEMFORMULATION
+Our objective is to jointly determine satellite associations
+and partial offloading decisions that improve long-term task
+service under time-varying connectivity and shared MEC
+resources. Letk i(t)denote the satellite action of useri, where
+ki(t) = 0represents staying andk i(t) =srequests associa-
+tion with satellites. The corresponding requested offloading
+fraction isˆ︁ρi(t). The candidate setC i(t)⊆ V i(t)\{b−
+i (t)}con-
+tains visible alternatives to the current satellite. The resulting
+associationb +
+i (t)and executed task fractionρ i,n follow the
+migration, admission, and local-execution rules in Section II.
+To account for both task completion and execution quality,
+letZ s
+i (t)andZ f
+i (t)collect the tasks of useriwhose outcomes
+are resolved as successful and failed, respectively, in slott. For
+each successful task, define the normalized cost
+ci,n =ω D
+Ti,n
+τi,n
++ω E
+Ei,n
+Ei,n +E ref
+,(20)
+whereE ref >0is an energy reference,ω D, ωE ≥0, and
+ωD +ω E = 1. The slot utility is then
+U(t) = 1
+N
+∑︂
+i∈U
+[︄∑︂
+n∈Z s
+i (t)
+(1−c i,n)− |Z f
+i (t)|
+−ω IIi(t)−ω FFi(t)
+]︄
++ω LJ(t),
+(21)
+whereI i(t)∈[0,1]is the service-interruption duration nor-
+malized by∆t, andF i(t)indicates a failed association request.
+The shared termJ(t)is Jain’s fairness index of the reachable
+MEC loads, with each load averaging normalized queue oc-
+cupancy and CPU utilization;J(t) = 0when all reachable
+servers are idle. The nonnegative weightsω I,ω F, andω L
+specify the service-continuity and load-balancing preferences.
+Letπbe a causal policy for the joint requests
+{ki(t),ˆ︁ρi(t)}i∈U. Furthermore, letχ i(t)indicate whether the
+association-change conditions in Section II-D hold, and let
+Q+
+s (t)denote the MEC queue after migration and new-task
+admission. The joint optimization problem is
+(P1) : max
+π
+Eπ
+[︄∞∑︂
+t=0
+γtU(t)
+]︄
+s.t.C 1 :k i(t)∈ {0} ∪ C i(t),
+C2 : 0≤ˆ︁ρi(t)≤1,
+C3 :k i(t) = 0,ifχ i(t) = 0,
+C4 :v i,s(t)≥v min,Γ ref
+i,s(t)≥Γ min,
+C5 :|Q s(t)|+m i(t)≤Q max
+s ,
+C6 :|Q +
+s (t)| ≤Q max
+s ,|P s(t)| ≤K s,
+(22)
+whereγ∈(0,1)is the discount factor andΓ ref
+i,s(t) =
+Pigi,s(t)/(N0Bs). Constraints apply at every slot, withC 4
+andC 5 evaluated for each requested targets=k i(t)̸= 0.
+Specifically,C 1 permits staying or selecting one visible
+candidate, whileC 2 bounds the requested workload fraction.
+ConstraintC 3 enforces the association-change trigger, andC 4
+imposes the target-link requirements. ConstraintC 5 screens
+migration requests using the current queue state; capacity is
+rechecked at commitment. Finally,C 6 enforces the queue
+and processing limits for executed decisions. Task deadlines
+determine the success and failure sets in (21).
+Problem (22) couples discrete satellite selection with contin-
+uous workload allocation. A selected satellite determines the
+link and computing conditions, while the offloading fraction
+changes the contention experienced by other users. Moreover,
+residual workloads and handover-induced reassignment carry
+these effects across slots. Consequently, effective decisions
+require both a representation of multi-user contention and an
+evaluation of the long-term value of each satellite–fraction
+pair. These requirements motivate the HAN–PDQN framework
+developed next.
+IV. PROPOSEDHAN–PDQN FRAMEWORK
+A. Framework Overview
+To address (22), we develop HAN–PDQN, which connects
+a representation of multi-user contention to parameterized
+satellite and offloading decisions. As illustrated in Fig. 2, the
+controller constructs a heterogeneous graph from user demand,
+satellite resources, and their serving and visibility relations.
+HAN aggregates these measurements into a user representation
+that distinguishes established resource sharing from potential
+competition through overlapping satellite alternatives.
+The representation is combined with the user’s local task
+and candidate-satellite observations. Conditioned on this input,
+PDQN generates an offloading fraction for each satellite action
+and evaluates the resulting satellite–fraction pairs. All users
+share the decision-network parameters, while their observa-
+tions and feasible candidates produce different actions. The
+joint requests are then executed under the service rules in
+Section II, yielding task outcomes and the next network
+snapshot. Sections IV-B and IV-C develop the representation
+and decision mechanisms, respectively; Section IV-D describes
+training and online execution.
+B. Heterogeneous Graph-Based Contention Representation
+At slott, we constructG t = (V,E t,X t,E t), whereV
+contains user and satellite nodes,E t contains typed edges,
+andX t andE t collect node and edge features. User features
+describe location, connection status, task demand, urgency, and
+backlog. Satellite features describe location, MEC utilization,
+queue occupancy, associated users, and available computing
+resources. Visibility edges carry distance, elevation, SNR,
+reference rate, and remaining visibility; serving edges iden-
+tify existing associations and their service duration. Nearby-
+user and ISL edges provide geographical and constellation-
+neighborhood information. User–satellite relations are repre-
+sented in both directions.

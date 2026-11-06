@@ -1,0 +1,1917 @@
+
+===== PAGE 1 =====
+arXiv:2401.01140v1  [cs.IT]  2 Jan 2024
+Joint Ofﬂoading and Resource Allocation for Hybrid Cloud
+and Edge Computing in SAGINs: A Decision Assisted Hybrid
+Action Space Deep Reinforcement Learning Approach
+Chong Huang, Member , IEEE, Gaojie Chen, Senior Member , IEEE, Pei Xiao, Senior Member , IEEE,
+Y ue Xiao, Member , IEEE, Zhu Han, Fellow, IEEE, and Jonathon A. Chambers, Fellow, IEEE
+Abstract—In recent years, the amalgamation of satellite com-
+munications and aerial platforms into space-air-ground in tegrated
+network (SAGINs) has emerged as an indispensable area of
+research for future communications due to the global covera ge
+capacity of low Earth orbit (LEO) satellites and the ﬂexible
+Deployment of aerial platforms. This paper presents a deep
+reinforcement learning (DRL)-based approach for the joint opti-
+mization of ofﬂoading and resource allocation in hybrid clo ud and
+multi-access edge computing (MEC) scenarios within SAGINs .
+The proposed system considers the presence of multiple sate llites,
+clouds and unmanned aerial vehicles (UA Vs). The multiple ta sks
+from ground users are modeled as directed acyclic graphs (DA Gs).
+With the goal of reducing energy consumption and latency in
+MEC, we propose a novel multi-agent algorithm based on DRL
+that optimizes both the ofﬂoading strategy and the allocati on
+of resources in the MEC infrastructure within SAGIN. A hybri d
+action algorithm is utilized to address the challenge of hyb rid con-
+tinuous and discrete action space in the proposed problems, and
+a decision-assisted DRL method is adopted to reduce the impa ct
+of unavailable actions in the training process of DRL. Throu gh
+extensive simulations, the results demonstrate the efﬁcac y of
+the proposed learning-based scheme, the proposed approach
+consistently outperforms benchmark schemes, highlightin g its
+superior performance and potential for practical applicat ions.
+Index Terms—Space-air-ground integrated networks, edge com-
+puting, resource allocation, unmanned aerial vehicle, dee p rein-
+This work was supported in part by the U.K. Engineering and Ph ysical
+Sciences Research Council under Grant EP/P03456X/1 and EP/ X013162/1,
+partially supported by NSF CNS-2107216, CNS-2128368, CMMI -2222810,
+ECCS-2302469, US Department of Transportation, Toyota and Amazon.
+C. Huang is with School of Flexible Electronics (SoFE) & Stat e Key Lab-
+oratory of Optoelectronic Materials and Technologies, Sun Y at-sen University,
+Guangdong, China, and also with 5GIC & 6GIC, Institute for Co mmunication
+Systems (ICS), Home for 5GIC & 6GIC, University of Surrey, Gu ildford, GU2
+7XH, United Kingdom. Email: chong.huang@surrey.ac.uk.
+G. Chen is with School of Flexible Electronics (SoFE) & State Key Lab-
+oratory of Optoelectronic Materials and Technologies, Sun Y at-sen University,
+Guangdong, China. Email: gaojie.chen@surrey.ac.uk. (Cor responding author:
+G. Chen)
+P . Xiao is with 5GIC & 6GIC, Institute for Communication Syst ems
+(ICS), Home for 5GIC & 6GIC, University of Surrey, Guildford , GU2 7XH,
+United Kingdom. Email: p.xiao@surrey.ac.uk.
+Y . Xiao is with the National Key Laboratory of Science and Tec hnology
+on Communications, University of Electronic Science and Te chnology of
+China, Chengdu, 611731, China. Email: xiaoyue@uestc.edu. cn.
+Z. Han is with the Department of Electrical and Computer Engi neering
+at the University of Houston, Houston, TX 77004 USA, and also with the
+Department of Computer Science and Engineering, Kyung Hee U niversity,
+Seoul, South Korea, 446-701. Email: hanzhu22@gmail.com.
+Jonathon A. Chambers is with the School of Engineering, Uni-
+versity of Leicester, Leicester, LE1 7RU, United Kingdom. E mail:
+jonathon.chambers@leicester.ac.uk.
+forcement learning.
+I. I NTRODUCTION
+A. Background
+With the development of wireless communications, satellit e
+networks have drawn signiﬁcant attention in wireless commu -
+nications due to their global coverage and services for grou nd
+users [1]. Due to the various advantages of satellite commun i-
+cation, including scalability, high bandwidth capabiliti es, and
+the ability to reach remote and underserved areas, it plays a
+crucial role in various applications such as telecommunica tion
+services, broadcasting, navigation systems, and weather m oni-
+toring. In recent years, a number of ambitious satellite pro jects
+are underway, reshaping the future landscape of communica-
+tion. SpaceX is one of the most notable participants in this
+arena [2], the company’s Starlink project aims to establish a
+satellite network to provide communication services globa lly,
+especially in remote areas. Another key player is OneWeb
+[3], which seeks to construct a satellite constellation to p ro-
+vide enhanced broadband connectivity worldwide. In additi on,
+satellite initiatives like those from SES Networks (former ly
+known as O3b) and Telesat [4] are also advancing, with their
+objective being to offer high-speed and low-latency intern et
+access services with global coverage. Hence, it is evident t hat
+satellite communication has become an integral part of futu re
+communication systems. To explore the beneﬁts of integrati ng
+satellite communication, many recent studies have investi gated
+its implementation across various domains such as the Inter net
+of Things (IoT) [5], cognitive communications [6] and edge
+computing [7].
+Moreover, considering the stringent requirements of the ﬁf th-
+generation (5G) and sixth-generation (6G) in terms of commu -
+nication latency and spectral efﬁciency, integrating terr estrial
+wireless networks with low Earth orbit (LEO) satellites has
+emerged as a highly promising solution in wireless communi-
+cations [8], [9]. To analyze the performance in LEO satellit e
+communications, a user grouping method was designed to
+enhance the communication rate in massive multiple-input-
+multiple-output (MIMO) systems [10]. In [11], a deep learni ng-
+based algorithm was proposed to improve the drain efﬁciency
+in LEO satellite communications. To reduce the error in
+channel estimation of LEO satellite communications, a deep
+===== PAGE 2 =====
+2
+learning-based approach was designed to extract the channe l
+features and output predictions in massive MIMO satellite
+communications [12]. In [13], collaborative LEO satellite s
+were introduced to realize secure and green transmissions i n
+IoT.
+Recently, the space-air-ground integrated network (SAGIN )
+has gained signiﬁcant attention as an advanced communi-
+cation framework that seamlessly integrates satellites, h igh-
+altitude platforms (HAPs), unmanned aerial vehicles (UA Vs )
+and ground-based networks, providing improved connectivi ty
+and enhanced communication capabilities [14]. Satellites play
+a vital role in SAGINs by providing ubiquitous global cover-
+age, ensuring communication accessibility even in remote a nd
+underserved regions. HAPs and UA Vs offer unparalleled ﬂex-
+ibility, mobility, and rapid deployment capabilities. Gro und-
+based networks serve as a robust backbone, providing local-
+ized connectivity and essential infrastructure support. T hrough
+the integration of these components, SAGIN enables efﬁcien t
+and reliable communication across diverse domains, includ ing
+target localization [15], the Internet of V ehicles (IoV) [1 6],
+cognitive communications [17] and IoT networks [18]. The
+authors in [15] investigated ocean target localization in S AGIN
+with multi-UA V cooperative assistance. To enhance the average
+data to overhead ratio, UA Vs were utilized in SAGIN to
+improve the transmission quality for the IoV [16]. A learnin g-
+based UA V trajectory and reconﬁgurable intelligent surfac e
+(RIS) phase shift design was proposed to enhance the secrecy
+performance in UA V -RIS enabled cognitive SAGIN networks
+[17]. In [18], UA Vs were adopted to enhance the wireless
+power transmission in the SAGIN-IoT. This integration of
+space-air-ground resources unlocks unprecedented potent ial for
+advanced communication systems in a wide range of environ-
+ments.
+On the other hand, multi-access edge computing (MEC) is
+a revolutionary concept in mobile communications that aims
+to meet the increasing demand for low-latency and high-
+bandwidth applications and services [19]. It achieves this by
+shifting computational tasks from the cloud to the network
+edge, thereby bringing computing resources closer to mobil e
+devices. V arious MEC frameworks have been studied in current
+works [20]–[22]. In [20], a convex optimization-based meth od
+was proposed to reduce the energy consumption in MEC
+frameworks. To reduce the latency in MEC, the authors of [21]
+applied non-convex optimization algorithms to MEC network s.
+In [22], an alternative optimization (AO)-based algorithm was
+proposed to minimize the latency of MEC in millimeter-wave
+communications.
+B. Related W ork
+HAPs and UA Vs can offer dynamically allocated computing
+resources to meet the evolving needs of users and computing
+tasks in MEC [23]–[26]. Therefore, many current works have
+exploited the beneﬁts of the integration of UA V -assisted co m-
+munications and MEC. In [23], deep reinforcement learning
+(DRL) algorithms were utilized to optimize the virtual mach ine
+conﬁguration and UA V’s trajectory to reduce the latency in
+MEC. The resource allocation and UA V’s trajectory were
+adjusted to reduce the energy consumption in MEC via a multi-
+agent DRL algorithm [24]. The authors of [25] proposed a
+DRL-based optimization of UA V’s trajectory, directed acyc lic
+graph (DAG) scheduling and service function deployment to
+enhance the success rate in path ﬁnding. To improve the
+users’ satisfaction, the genetic algorithm and the K-means
+algorithm were adopted to optimize the UA V’s trajectory and
+task ofﬂoading in MEC [26]. Although these studies recogniz e
+the importance of UA Vs in MEC, they do not consider cloud
+servers and satellite communications which could provide
+global coverage.
+Furthermore, due to the ability of satellites to provide
+global coverage and access services in remote areas, many
+recent studies have investigated the advantages of incorpo rating
+satellite communication within the MEC framework [27]–[31 ].
+In [27], the Lagrange multiplier method and DRL algorithm
+were utilized to optimize the resource allocation in satell ite-
+aided vehicle-to-vehicle networks to reduce the overall la tency
+in MEC. To reduce the computational cost in MEC, the
+authors of [28] used sequential fractional programming and
+the Lagrangian dual decomposition method to optimize the
+computation ofﬂoading and resource allocation in the satel lite-
+terrestrial communications. In [29], the authors utilized an
+alternating direction method of multipliers to minimize th e en-
+ergy cost in a hybrid cloud and MEC framework. To obtain the
+tradeoff between the latency and computational cost in MEC,
+convex optimization algorithms were adopted to optimize th e
+resource allocation in SAGIN [30]. In [31], a greedy strateg y
+was proposed to optimize the resource allocation in MEC to
+reduce the energy consumption and latency in LEO satellite
+networks. However, the dynamic access capability of HAPs
+and UA Vs in SAGIN, cloud server selection and multi-task
+ofﬂoading were not considered in the above works.
+In addition, by combining the strengths of satellites and
+UA Vs, SAGIN offers a unique advantage in MEC [32]. Con-
+sequently, to capitalize on the advantages of SAGINs, some
+recent researches have studied the performance of MEC under
+the SAGIN architecture [33]–[35]. In [33], the joint ofﬂoad ing
+and resource allocation optimization was adopted to reduce
+the energy consumption in a satellite-HAP-ground framewor k.
+The authors of [34] utilized DRL and convex optimization
+algorithms to optimize the computation resources in MEC to
+enhance the energy backup and average communication rate
+in SAGIN. In [35], the energy consumption was reduced by
+using a DRL algorithm to jointly optimize the ofﬂoading and
+resource allocation for MEC in SAGIN. However, these works
+fail to consider the dynamic grouping and access capabiliti es
+of UA Vs within the aerial layer, as well as the substantial
+computational power provided by cloud servers. To reduce th e
+energy cost for MEC in IoT networks, the joint UA V place-
+ment, MEC resource allocation and ofﬂoading were optimized
+via an approximation algorithm in [36]. In [37], approxima-
+===== PAGE 3 =====
+3
+TABLE I: COMPARISON BETWEEN OUR WORK AND EXISTING WORKS
+Novelty Our Work [34]
+2023
+[30]
+2023
+[35]
+2023
+[26]
+2023
+[25]
+2023
+[31]
+2022
+[33]
+2022
+[24]
+2022
+[23]
+2022
+[29]
+2021
+[28]
+2021
+[27]
+2021
+Satellite ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓
+Multiple satellites ✓ ✓ ✓ ✓ ✓ ✓ ✓
+Satellite coverage ✓ ✓ ✓ ✓
+UA V/HAP ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓
+UA V trajectory ✓ ✓ ✓ ✓
+Cloud service ✓ ✓ ✓
+Cloud service selection ✓
+User pairing ✓ ✓ ✓
+Partial ofﬂoading ✓ ✓ ✓ ✓ ✓ ✓
+Multiple tasks ✓ ✓ ✓
+Task dependency ✓ ✓ ✓
+Cost minimization ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓
+Latency minimization ✓ ✓ ✓ ✓ ✓
+DRL algorithm ✓ ✓ ✓ ✓ ✓
+Hybrid action space ✓
+Decision assistant ✓
+tion algorithms were utilized to adjust the UA V placement
+and resource allocation for UA V -assisted communications t o
+enhance the quality of experience (QoE) for the virtual real ity
+applications in MEC. Although these works considered the
+dynamic access capabilities of UA Vs in MEC, the dynamic
+grouping, LEO satellites and clouds are not included in thei r
+contributions.
+C. Motivation and Contributions
+In this study, we explore the integration of hybrid multi-
+cloud service and MEC in SAGINs. To the best of the authors’
+knowledge, we address a research gap as the current literatu re
+does not address the dynamic access capability of UA Vs, multi-
+satellite access in hybrid cloud environments, cloud servi ce
+selection and MEC resource allocation simultaneously. The
+contributions of our work and a comparative analysis with
+existing literature are summarized in Table I. Our investig ation
+also encompasses multi-task scheduling based on DAG and
+dynamic pairing of UA V -ground users. Furthermore, we extend
+our scope to cover partial ofﬂoading, task dependency and
+cloud selection in MEC. To effectively reduce energy con-
+sumption and latency in MEC, a joint optimization of MEC re-
+sources, UA V trajectories, and cloud server selection beco mes
+crucial. In addition, traditional deep reinforcement lear ning
+struggles to explore vast action spaces within such complex
+environments without any form of human assistance. To tackl e
+this challenge, we propose a decision-assisted hybrid mult i-
+agent soft actor-critic (SAC) algorithm capable of address ing
+this complicated optimization problem. The main contribut ions
+of this work are summarized as follows.
+• We propose the integration of hybrid multi-cloud and
+MEC in SAGINs. Our framework considers the dynamic
+access capability of multiple UA Vs in MEC to meet the
+needs of ground users. Besides, we consider the existence
+of multiple satellites, inter-satellite communications, cloud
+server selection and also account for varying coverage
+times for each LEO satellite in SAGINs.
+• In the framework of MEC, we model multiple tasks using
+DAG and consider challenges such as user pairing, partial
+ofﬂoading, task dependency, satellite coverage, and cloud
+selection. We formulate two optimization problems: 1.)
+minimizing energy consumption with a latency constraint;
+2.) minimizing average latency with an energy consump-
+tion constraint.
+• To tackle the joint optimization problem of ofﬂoading
+and resource allocation for MEC, we utilize the multi-
+agent DRL algorithm in this work. This DRL-based
+algorithm enables agents to explore the environment and
+learn diverse and robust policies. To handle the hybrid
+discrete and continuous action space problem, we intro-
+duce a hybrid reinforcement learning framework which
+separates discrete and continuous actions among different
+agents to facilitate collaborative training. This framewo rk
+utilizes use off-policy data and optimizes discrete and
+continuous actions simultaneously for the hybrid policy.
+Moreover, a decision-assisted DRL framework is adopted
+to reduce the negative impact of unavailable actions in
+the training process for deep neural networks to enhance
+the convergence performance of the proposed hybrid
+action space DRL. Therefore, we have developed a pre-
+trained algorithm capable of adapting to complex dynamic
+environments within the proposed heterogeneous space-
+air-ground network, with rapid decision-making ability.
+• Simulation results demonstrate that the proposed DRL-
+based algorithm effectively leverages multi-agent collab -
+oration to approximate optimal solutions. By building a
+global model based on rewards, the agents generate a joint
+optimization strategy, outperforming benchmark methods
+and achieving superior performance in the considered
+===== PAGE 4 =====
+4
+Fig. 1. System model of a hybrid cloud and MEC SAGIN.
+tasks.
+The remainder of this paper is structured as follows: Sectio n
+II introduces the system model and the optimization problem s.
+Section III presents the proposed hybrid DRL algorithm for
+optimizations in two cases. The simulation results are pres ented
+in Section IV. Finally, Section V concludes the work.
+II. S YSTEM MODEL AND PROBLEM FORMULATION
+As shown in Fig. 1, we consider the adoption of hetero-
+geneous MEC ofﬂoading in SAGIN to provide global com-
+munication and computing services to ground users in remote
+areas. The SAGIN consists of M ground users Gm, where
+m ∈ M = {1, 2,...,M }. In the aerial layer, there are N UA Vs
+Un, where n ∈ N = {1, 2,...,N }. In the satellite layer, we
+assume L LEO satellites Sl, where l ∈ L = {1, 2,...,L }.
+LEO satellites can access to K cloud servers CS k, where
+k ∈ K = {1, 2,...,K }. We assume that each LEO satellite and
+UA V is equipped with a server, enabling them to provide MEC
+services to ground users. Furthermore, considering the hig h-
+speed movement of LEO satellites, the communication time
+between UA Vs and LEO satellites is limited by the coverage
+time of the LEO satellites. Moreover, since UA Vs require dy-
+namic trajectory planning to optimize the communication ra te
+with ground users, we assume the UA V Un’s 3D coordinate 1
+is qn(t) = {xn(t),y n(t),z n(t)} at time slot t.
+A. Communication Model
+In this work, we assume that each ground user can only
+access to one UA V to upload its tasks for edge computing at a
+give time slot. The channels between UA Vs and ground users
+1In this work, the UA V ﬂight is constrained by its ﬂying speed a nd ﬂying
+zone. Given the limited satellite access time, the energy li mitations of UA Vs
+are not within the scope of this study.
+follow Rician fading, the channel coefﬁcient hmn between the
+ground user Gm and UA VUn can be expressed as
+hmn =
+√
+ξ
+ξ + 1
+¯Hmn +
+√
+1
+ξ + 1
+ˆHmn, (1)
+where ξ denotes the Rician factor, ˆHmn = ˆgmnd− α N / 2
+mn and
+¯Hmn = ¯gmnd− α L/ 2
+mn are the non-line-of-sight (NLoS) compo-
+nent and the line-of-sight (LoS) component in Rician fading ,
+respectively.dmn is the distance between ground user Gm and
+UA VUn, α L andα N are the path loss exponents for LoS and
+NLoS in Rician fading, respectively. ˆgmm is the NLoS channel
+coefﬁcient represented by a zero-mean unit-variance Gauss ian
+fading channel, |¯gmn| = 1 is the LoS channel coefﬁcient. Thus,
+the uplink transmission rate for the ofﬂoading between Gm and
+Un is given by
+Rmn = Bmnlog2
+(
+1 + PG|hmn|2
+∑M
+a=1,a ̸=m PG|han|2 + σ2n
+)
+, (2)
+where Bmn denotes the channel bandwidth between Gm and
+Un,PG is the transmit power for all Gm, ∑M
+a=1,a ̸=mPG|han|2
+denotes the interference from other ground users, σ 2
+n is the
+variance of the additive-white-Gaussian-noise (AWGN) at Un.
+Moreover, we assume that one UA V can only access to one
+LEO satellite at a given time slot. The channel coefﬁcient
+between a UA VUn and a LEO satellite Sl is given by [38]
+¯hnl =
+√
+δlλ
+4πdnl
+ejǫ , (3)
+where δl denotes the beam gain, λ denotes the wavelength,
+dnl is the distance between Un andSl, ǫ is the antenna phase.
+Moreover, we consider the outdated channel state informati on
+(CSI) for the channel coefﬁcients hnl due to the transmission
+delay in satellite communications [39], [40]. Therefore, w e can
+obtain
+hnl = ε¯hnl +
+√
+1− ε2gnl, (4)
+whereε = ¯J0(2π ˆfnlTnl), ¯J0 is the zeroth order Bessel function
+of the ﬁrst kind, ˆfnl and Tnl are the maximum Doppler
+frequency and the delay of the transmissions between Un and
+Sl, respectively. gnl is a complex Gaussian random variable
+which having the same variance as ¯hnl. Consequently, the
+uplink transmission rate for the ofﬂoading between Un and
+Sl is given by
+Rnl = Bnllog2
+(
+1 + PU|hnl|2
+∑N
+a=1,a ̸=n PU|hal|2 + σ2
+l
+)
+, (5)
+whereBnl denotes the channel bandwidth between Un andSl,
+PU is the transmit power for all Un, ∑N
+a=1,a ̸=nPU |hal|2 is the
+interference from other UA Vs, σ 2
+l is AWGN at Sl.
+In addition, each LEO satellite can share information from
+ground users with other LEO satellites via inter-satellite link
+(ISL). The channel rate for an ISL between LEO satellites Si
+===== PAGE 5 =====
+5
+Fig. 2. The coverage provided by LEO satellites for UA Vs.
+and Sj is given by [41]
+Rij = Bijlog2
+(
+1 + PS|Gmax|2
+κζB ij(
+4πd ij fS
+c )2
+)
+, (6)
+where Bij denotes the channel bandwidth for ISL, PS is the
+transmit power for all Sl. Gmax = max f (i,j )Gd
+ij denotes the
+peak gain of antennas of satellite in the direction of their m ain
+lobe, where f (i,j ) is relative direction between LEO satellites
+i andj,dij denotes the distance between satellite i and satellite
+j.Gd
+ij denotes the normalized gain for the ISL between Si and
+Sj. κ is the Boltzmann constant, ζ denotes the thermal noise,
+fS is the carrier frequency and c is the speed of light. It is
+noticed that the interference can be ignored in the intra-pl ane
+ISLs [41].
+On the other hand, the LEO satellites can access to the cloud
+servers to ofﬂoad tasks. The cloud servers are deployed on th e
+ground and each LEO can only access to one cloud server.
+The transmission rate between a LEO satellite Sl and a cloud
+server CS k is given by
+Rlk = Blklog2
+(
+1 + PS|hlk|2
+σ2
+l
+)
+, (7)
+whereBlk denotes the channel bandwidth for the transmission
+between Sl and CS k, hlk denotes the channel coefﬁcients
+between satellite Sl and cloud server CS k.
+B. LEO Coverage Model
+Due to the continuous high-speed movement of LEO satel-
+lites, the window of time during which LEO satellites can
+provide MEC service to UA Vs is limited [29]. As shown in
+Fig. 2, the angle between the UA Vs and the LEO satellite can
+be expressed as
+ωG = arccos
+( dE + dO
+dGS
+sin ωC
+)
+, (8)
+where dE is the radius of the earth, dO is the height of the
+LEO satellite orbit, dGS denotes the distance between the
+UA Vs and the LEO satellite, ω C presents the angle for the
+coverage of the LEO satellite. Notice that ω G is a predeﬁned
+minimum elevation angle for the satellite coverage area, wh en
+the elevation angle between the satellite and UA V falls belo w
+this predetermined threshold, the satellite can no longer p rovide
+service to the relevant UA V . Thus, ω C can be expressed as
+ωC = arccos
+( dE
+dE + dO
+cos ωG
+)
+− ωG. (9)
+Then we can obtain that the arc length of the LEO satellite
+during the coverage time as
+LS = 2(dE + dO)ωC. (10)
+Thus, the communication time TUnSl between Un and Sl is
+TUnSl = LS
+vS
+, (11)
+wherevS is the orbital velocity of LEO satellites. Considering
+the signiﬁcantly smaller values of UA V height and distance
+between UA Vs compared to dE and dO, it can be safely
+neglected when calculating the LEO satellite coverage time .
+Furthermore, considering the distance between LEO satelli tes,
+the remaining service time for each satellite varies in this work.
+Moreover, the ground cloud servers are located at different
+positions, which may be very far away from each other.
+Therefore, each LEO satellite provides different service t ime
+for different cloud servers. Considering that ISL is utiliz ed in
+the communications between LEO satellites, if a cloud serve r
+ﬁnishes computing and there is a LEO satellite that can still
+access it within its service time of the UA Vs, it is assumed th at
+the cloud server can send the computation results back to the
+ground users.
+C. Computation Model
+This work considers a scenario where all ground users
+are responsible for handling multiple computing tasks. The se
+tasks can exhibit dependencies, meaning that the completio n
+of certain tasks is required before others can proceed, such
+dependencies often introduce an order or sequence in which
+tasks must be executed. Therefore, understanding and man-
+aging these task dependencies are essential for optimizing
+system performance and ensuring efﬁcient task execution. I n
+this paper, we model the multiple tasks from a ground user as
+a DAG [25], [35], which provide a structured representation
+of the dependencies and relationships among tasks, enablin g
+efﬁcient scheduling and resource allocation. In a DAG, each
+node represents a speciﬁc task, and the edges depict the de-
+pendencies between tasks. By utilizing DAGs, IoT systems ca n
+optimize task execution, ensure proper sequencing, and all ocate
+resources effectively, leading to improved system perform ance
+and overall efﬁciency. For example, as shown in Fig. 3, ψ 1 is
+the parent task of ψ 2 and ψ 3, while ψ 2 and ψ 3 represent the
+child tasks of ψ 1, respectively. The execution of a child task
+is contingent upon the completion of its parent tasks.
+Furthermore, the MEC architecture in this paper is divided
+into four layers: ground users, UA Vs, LEO satellites, and
+cloud servers. Each UA V can serve multiple ground users, but
+===== PAGE 6 =====
+6
+Fig. 3. DAG task dependency.
+each ground user can only access to one UA V . Each satellite
+can serve multiple UA Vs, but can only access to one cloud
+server. We consider partial ofﬂoading protocols in this wor k2,
+where each task is bit-wise independent and can be arbitrari ly
+allocated to other MEC units [33].
+1) Ground User Computing: For a given task ψ m
+i from
+ground user Gm, we assume ψ m
+i ≜ {Wi,F i} where Wi
+denotes the size of the input data, Fi denotes the required
+central processing unit (CPU) cycles. Ground user Gm has
+the ﬂexibility to perform computations either locally or up load
+certain parts of the task to a UA V . The computation execution
+time of task ψ m
+i at Gm is
+T C
+m,i = µi
+mFi
+fm
+, (12)
+where µ i
+m ∈ [0, 1] denotes the partial ofﬂoading factor for
+Gm,fm denotes the computation resource of Gm. The energy
+consumption of local computing at Gm is expressed as
+EC
+m,i = ιµi
+mFif 2
+m, (13)
+where ι is the energy factor depending on the Gm’s architec-
+ture.
+2) UA V Computing: When µ i
+m < 1, Gm ofﬂoad parts of
+computing task ψ m
+i to UA VUn, we assume the pairing binary
+variablezm,n = 1 3, the transmission time is given as
+T T
+m,n = b(1− µi
+m)Wi
+Rmn
+, (14)
+where b > 1 is the transmission overhead factor [33]. The
+energy consumption of the transmission between Gm and Un
+is expressed as
+ET
+m,n,i = PGT T
+m,n . (15)
+2In this work, each task can be partially ofﬂoaded to other MEC units,
+while still adhering to the task dependency in the DAG. Tasks ofﬂoaded to
+other MEC units need to wait for the completion of their paren t tasks before
+they can start computation.
+3A binary variable can only be 0 or 1. In this work, we assume tha t all
+binary variables are 0 unless we assign them the value of 1 in t he pairing.
+Furthermore, the computation execution time of task ψ m
+i atUn
+is
+T C
+n,i = µi
+n(1− µi
+m)Fi
+fn,i
+, (16)
+where µ i
+n ∈ [0, 1] denotes the partial ofﬂoading factor for Un,
+fn,i denotes computation resource allocated to task ψ m
+i from
+Un. The energy consumption of computing at Un is expressed
+as
+EC
+n,i = ιµi
+n(1− µi
+m)Fif 2
+n,i . (17)
+3) LEO Satellite Computing: When µ i
+n < 1, Un also
+ofﬂoads parts of computing task ψ m
+i to LEO satellite Sl, we
+assume the pairing binary variable zn,l = 1 . Nevertheless,
+the considerable distance between UA Vs and LEO satellites
+introduces propagation delays that impact the communicati on
+between them. Consequently, the transmission time of compu -
+tation task ψ m
+i on LEO satellite Sl includes the propagation
+delay, which can be expressed as
+T T
+n,l = dnl
+c + b(1− µi
+n)(1− µi
+m)Wi
+Rnl
+, (18)
+where µ i
+n ∈ [0, 1] denotes the partial ofﬂoading factor for Un.
+The energy consumption of the transmission between Un and
+Sl is expressed as
+ET
+n,l,i = PU
+b(1− µi
+n)(1− µi
+m)Wi
+Rnl
+. (19)
+Furthermore, the computation execution time of task ψ m
+i atSl
+is
+T C
+l,i = µi
+l(1− µi
+n)(1− µi
+m)Fi
+fl,i
+, (20)
+where µ i
+l ∈ [0, 1] denotes the partial ofﬂoading factor for Sl,
+fl,i denotesSl computation resource allocated to task ψ m
+i . The
+energy consumption of computing at Sl is expressed as
+EC
+l,i = ιµi
+l(1− µi
+n)(1− µi
+m)Fif 2
+l,i . (21)
+When µ i
+l < 1, Sl can ofﬂoads the rest of computing task ψ m
+i
+to other LEO satellites and a cloud server. We assume Sl can
+only ofﬂoad a given task once. Therefore, if Sl ofﬂoads the rest
+of computing task ψ m
+i to another LEO satellite sj, we assume
+the pairing binary variable zl,j = 1, the transmission time is
+T T
+j,i = dlj
+c + b(1− µi
+l)(1− µi
+n)(1− µi
+m)Wi
+Rlj
+, (22)
+where dlj is the distance between Sl and Sj. The energy con-
+sumption of the transmission between Sl and Sj is expressed
+as
+ET
+l,j,i = PS
+b(1− µi
+l)(1− µi
+n)(1− µi
+m)Wi
+Rlj
+. (23)
+Furthermore, the computation execution time of task ψ m
+i atSj
+is
+T C
+j,i = (1− µi
+l)(1− µi
+n)(1− µi
+m)Fi
+fj,i
+, (24)
+where fj,i denotes Sj computation resource allocated to task
+ψ m
+i . The energy consumption of computing at Sj is expressed
+===== PAGE 7 =====
+7
+as
+EC
+j,i = ι(1− µi
+l)(1− µi
+n)(1− µi
+m)Fif 2
+j,i . (25)
+4) Cloud Server Computing: When µ i
+l < 1 and Sl ofﬂoads
+the rest of computing task ψ m
+i to a cloud server CS k, we
+assume the pairing binary variable zl,k = 1 , the transmission
+time is
+T T
+k,i = dlk
+c + b(1− µi
+l)(1− µi
+n)(1− µi
+m)Wi
+Rlk
+. (26)
+The energy consumption of the transmission between Sl and
+CS k is expressed as
+ET
+l,k,i = PS
+b(1− µi
+l)(1− µi
+n)(1− µi
+m)Wi
+Rlk
+. (27)
+Furthermore, the computation execution time of task ψ m
+i at
+CS k is
+T C
+k,i = (1− µi
+l)(1− µi
+n)(1− µi
+m)Fi
+fk,i
+, (28)
+where fk,i denotes CS k computation resource allocated to
+task ψ m
+i . The energy consumption of computing at CS k is
+expressed as
+EC
+k,i = ι(1− µi
+l)(1− µi
+n)(1− µi
+m)Fif 2
+k,i . (29)
+In addition, considering that the size of computation resul ts is
+signiﬁcantly smaller than that of task data, and the downlin k
+rate is much higher than the uplink rate in SAGIN, the delay
+associated with the transmission of computation results ca n be
+neglected in this work [29], [42]. Consequently, the latenc y of
+task ψ m
+i is
+T m
+i = max( T C
+m,i , T T
+m,n + T C
+n,i , T T
+m,n + T T
+n,l + T C
+l,i , T T
+m,n + T T
+n,l
++ T T
+j,i + T C
+j,i , T T
+m,n + T T
+n,l + T T
+k,i + T C
+k,i ).
+(30)
+Moreover, the total energy cost of task ψ m
+i can be expressed
+as
+Em
+i = EC
+m,i + ET
+m,n,i + EC
+n,i + ET
+n,l,i + EC
+l,i + ET
+l,j,i + EC
+j,i
++ ET
+l,k,i + EC
+k,i .
+(31)
+D. Problem F ormulation
+In this paper, our objectives are twofold: 1) To minimize
+the overall energy consumption in the proposed SAGIN while
+satisfying the latency constraint. 2) To minimize the avera ge
+delay for all tasks in the proposed SAGIN with the energy
+consumption constraint. Thus, we have two cases:
+Case 1 - We aim to minimize the overall energy con-
+sumption in the proposed SAGIN while satisfying the latency
+constraint, the index of tasks from all ground users are deno ted
+as i ∈ I = {1, 2,...,I }, the optimization problem can be
+formulated as
+(P1) : min
+Q, Z, µ, FU , FS, FCS
+M∑
+m=1
+I∑
+i=1
+Em
+i , (32)
+s. t. Tn ≤TUnSl, ∀n ∈ N, (32a)
+N∑
+n=1
+zm,n = 1, ∀m ∈ M, (32b)
+L∑
+l=1
+zn,l = 1, ∀n ∈ N, (32c)
+L∑
+j=1,j ̸=l
+K∑
+k=1
+zl,j +zl,k = 1, ∀l ∈ L, (32d)
+I∑
+i=1
+fn,i ≤fmax,U , ∀n ∈ N, (32e)
+I∑
+i=1
+fl,i ≤fmax,S , ∀l ∈ L, (32f)
+I∑
+i=1
+fk,i ≤fmax,CS , ∀k ∈ K, (32g)
+I∑
+i=1
+T m
+i ≤Tmax, ∀m ∈ M, (32h)
+xmin ≤xn(t) ≤xmax,y min ≤yn(t) ≤ymax,
+zmin ≤zn(t) ≤zmax, ∀n ∈ N and ∀t ∈ T , (32i)
+where Q = {Q1,Q 2,...,Q N }, Qn = {qn(t)}n∈N denotes the
+UA VUn’s trajectory for dynamic access capability in MEC,
+Z = {zm,n,z n,l,z l,j,z l,k }m∈M ,n ∈N ,l ∈L ,j ∈L ,k ∈K denotes the
+user/UA V/LEO pairing, µ = {µ i
+n,µ i
+m,µ i
+l}i∈I ,m ∈M ,n ∈N ,l ∈L
+denotes the partial ofﬂoading decision, FU = {fn,i }n∈N ,i ∈I
+denotes the computation resource allocation in UA Vs, FS =
+{fl,i }l∈L ,i ∈I denotes the computation resource allocation in
+LEO satellites, FCS = {fk,i }k∈K ,i ∈I denotes the computation
+resource allocation in cloud servers, Tn represents the ﬂight
+time of the UA V Un while participating in MEC, I denotes
+the number of tasks from each ground user, Tmax denotes
+the latency threshold for tasks from each ground user in the
+MEC. (32a) presents that the ﬂight duration of UA V Un needs
+to be within the corresponding LEO coverage time, (32b)
+indicates that each user can only access to one UA V for
+ofﬂoading, (32c) shows that each UA V can only access to
+one LEO for ofﬂoading, (32d) denotes each LEO satellite only
+ofﬂoads the rest of a given task once. (32e), (32f) and (32g)
+presents the computation resource allocation for UA Vs, LEO
+satellites and cloud servers, respectively. (32h) present s the
+latency constraint. (32i) is the ﬂying constraints for UA Vs .
+Case 2 - We aim to minimizes the average latency for MEC
+in the proposed SAGIN while satisfying the energy consump-
+tion constraint, the optimization problem can be formulate d
+as
+(P2) : min
+Q, Z, µ, FU , FS, FCS
+1
+I
+M∑
+m=1
+I∑
+i=1
+T m
+i , (33)
+s. t.
+I∑
+i=1
+Em
+i ≤Emax, (33a)
+(32a) − (32g), (32i)
+===== PAGE 8 =====
+8
+where Emax denotes the energy consumption threshold. Con-
+sidering the coupled variables, non-linearity, and discre te con-
+straints in (32) and (33), these two problems are extremely
+complicated non-convex optimization problems that are in-
+tractable by traditional optimization algorithms. Moreov er, the
+high computational complexity of traditional optimizatio n is
+a signiﬁcant issue for the real-time computational demands in
+dynamic scenarios. To address those problems, and consider ing
+that (32) and (33) involve long-term optimization, we intro duce
+a multi-agent DRL algorithm in the following section. DRL is
+particularly suitable for tackling long-term optimizatio n and
+non-convex problems, it is a pre-trained machine learning
+method which can adapt to different dynamic environment
+variables for the proposed network and requires very small
+computational cost during real-time prediction. Moreover , to
+tackle the challenge posed by the hybrid discrete and con-
+tinuous action space in DRL from the proposed SAGIN, we
+employ an action decoupling method which involves training
+multiple agents and making optimization decisions based on
+the collective outcomes of all agents. By decoupling the
+actions, we enable each agent to focus on a speciﬁc aspect of
+the optimization problem, allowing more effective trainin g and
+decision-making processes. In addition, the decision-ass istant
+is employed to mitigate the inﬂuence of the unavailable acti on
+space by using the priori information to enhance the conver-
+gence performance.
+III. D ECISION -A SSISTED HYBRID ACTION SPACE
+DRL-B ASED OPTIMIZATION
+Considering the long-term optimization objectives associ ated
+with these two problems, DRL is particularly well-suited to
+design solutions for them. However, these problems encompa ss
+intricate hybrid discrete-continuous action space challe nges
+that pose a signiﬁcant hurdle for DRL. Typically, the ap-
+proaches to this issue involves either the discretization o f
+continuous actions or the transformation of discrete actio ns
+into continuous ones. However, these strategies often lead to
+problems of huge action spaces or large exploration ranges. To
+counteract this, we propose a hybrid action space framework
+that effectively decouples hybrid actions and delegates th em
+to different agents for cooperative learning. Subsequentl y, we
+implement an efﬁcient and robust hybrid action method to
+amalgamate discrete and continuous policies from differen t
+agents, thereby addressing the hybrid action space problem s in
+the proposed issues. In addition, considering the detrimen tal
+effect of unavailable actions during the training process f or
+deep neural networks, we introduce the decision assistant
+method which assists the agents in differentiating the effe cts
+of various actions at the training process level, and enhanc ing
+convergence performance.
+A. SAC Algorithm for MEC in SAGIN
+Before using DRL algorithms, we need to form each pro-
+posed problem as a Markov decision process (MDP). A MDP
+consists of three key elements, named state, action and rewa rd.
+State is utilized to describe the features of the environmen t. The
+state s(t) at time slot t can be expressed as
+s(t) ={{hm,n (t)}m∈M ,n ∈N ,{T R
+U Sl (t)}l∈L ,
+{T R
+CSk Sl(t)}k∈K ,l ∈L ,{F ̟
+i (t)}̟ in { M,N,L,K } ,i ∈I},
+(34)
+where {hm,n (t)}m∈M ,n ∈N describes the dynamic commu-
+nication environment for ground user-UA Vs, {T R
+U Sl(t)}l∈L
+and {T R
+CS kSl(t)}k∈K ,l ∈L represents the remain service time
+of LEO satellites for UA Vs and cloud servers, respectively.
+{F ̟ } i(t)
+̟ ∈{ M,N,L,K },i ∈I } denotes the remain part of the com-
+putational task ψ m
+i at MEC computational unit ̟ , where
+̟ ∈ {M,N,L,K }. Moreover, we deﬁne the action a(t) at
+time slot t as
+a(t) ={Q(t), Z(t), µ(t), FU (t), FS(t), FCS (t)}, (35)
+which considers all the optimization variables in (32) and ( 33).
+Furthermore, we also need to design the reward in MDP for
+the DRL algorithm. For the two cases considered in this work,
+we need to design two types of reward for each case. For Case
+1 in (32), the reward function can be designed as
+r
+(
+s(t), a(t)
+)
+= 1
+∑I
+i=1 Ei(t)
+. (36)
+As the objective of DRL is to maximize cumulative rewards,
+which contradicts our goal of minimizing overall energy con -
+sumption, we adopt the reciprocal of overall energy con-
+sumption as the reward to guide the agents in DRL towards
+convergence while focusing on energy minimization. On the
+other hand, for Case 2 in (33), the reward function can be
+designed as
+r
+(
+s(t), a(t)
+)
+= 1
+∑I
+i=1 Ti
+. (37)
+Similar to Case 1, considering the uneven distribution of en ergy
+values, negative functions may easily lead to a high varianc e
+in reward distribution, we utilize the reciprocal of the tar get,
+which is the reciprocal of latency, as the reward to encourag e
+the agent to minimize overall latency. To optimize the varia bles
+in accordance with the aforementioned MDP for (32) and (33),
+we employ the SAC algorithm to explore potential solutions.
+The SAC algorithm is an actor-critic algorithm that combine s
+both policy-based and value-based approaches, it consists of
+four neural networks: a network ϕ representing the value
+function, a soft Q-network θ representing the action-value
+function, a policy network ϑ representing the policy, and a
+target network ¯ϕ for the value function. Therefore, in practice
+we need to train three networks to form the SAC algorithm.
+The update function for the value function is expressed as
+JQϕ = Es(t)∼ D
+[ 1
+2
+(
+Qϕ
+(
+s(t)
+)
+− Ea(t)∼ Qϑ
+[
+Qθ
+(
+s(t), a(t)
+)
+− logQϑ
+(
+a(t)|s(t)
+)] ) 2]
+,
+(38)
+where Q· presents the Q-value from network ·, E[·] denotes
+the expectation, D is the distribution of the samples. In SAC,
+===== PAGE 9 =====
+9
+the loss is minimized by using the squared residual error in
+the value function. We can obtain the gradient of (38) as
+¯∇ ϕ JQϕ =∇ ϕ Qϕ
+(
+s(t)
+) (
+Qϕ
+(
+s(t)
+)
+− Qθ
+(
+s(t), a(t)
+)
++ logQϑ
+(
+a(t)|s(t)
+) )
+.
+(39)
+Moreover, the update function of the soft Q-network Qθ can
+be expressed as
+JQθ = E(
+s(t),a (t)
+)
+∼ D
+[ 1
+2
+(
+Qθ
+(
+s(t), a(t)
+)
+− ¯Q
+(
+s(t), a(t)
+) ) 2
+]
+,
+(40)
+where ¯Q
+(
+s(t),a (t)
+)
+is given by
+¯Q
+(
+s(t), a(t)
+)
+= r
+(
+s(t), a(t)
+)
++ τ Es(t+1)∼ ̺
+[
+Q ¯ϕ
+(
+s(t + 1)
+) ]
+, (41)
+where τ is the discount factor in the SAC, ̺ denotes the
+transition probability. The gradients could be calculated as
+¯∇ ϕ JQθ =∇ ϕ Qθ
+(
+s(t), a(t)
+) (
+Qθ
+(
+s(t), a(t)
+)
+− r
+(
+s(t), a(t)
+)
+− τ Q¯ϕ
+(
+s(t + 1)
+) )
+.
+(42)
+In addition, we reconﬁgure the policy network via a neural
+network transformation
+a(t) = fϑ (ς(t); s(t)), (43)
+where ς is a noise term that follows Gaussian distribution.
+Thus, the update function of the policy network Qϑ can be
+expressed as
+JQϑ = Es(t)∼ D,ς (t)∼ φ
+[
+logQϑ (fϑ
+(
+ς(t); s(t))|s(t)
+)
+− Qθ
+(
+s(t), fϑ (ς(t); s(t))
+) ]
+,
+(44)
+where φ denotes the normal distribution. The gradient can be
+calculated as
+¯∇ ϕ JQϑ =∇ ϑ logQϑ
+(
+a(t)|s(t)
+)
++
+(
+∇ a(t)logQϑ
+(
+a(t)|s(t)
+)
+−∇ a(t)Q
+(
+s(t), a(t)
+) )
+∇ ϑ fϑ (ς(t); s(t)),
+(45)
+where
+Q
+(
+s(t), a(t)
+)
+← rϑ
+(
+s(t), a(t)
+)
++ τ Es(t+1)∼ ̺,a (t+1)∼ ϑ
+[
+¯Qϕ
+(
+s(t + 1)
+) ]
+. (46)
+B. Hybrid Action Space SAC Algorithm
+In the proposed problems (32) and (33), the decisions are
+hybrid discrete and continuous which poses a challenge to
+existing DRL algorithms [43], [44]. Many existing methods
+directly approximate the continuous action space to discre te
+space, resulting in a signiﬁcantly larger discrete action s pace.
+Another approach is to transform discrete actions into cont in-
+uous ones, which introduces greater complexity and difﬁcul ty
+in achieving convergence during training. Therefore, we in tro-
+duce an action decoupling algorithm in SAC to address this
+challenge. The action and policy are redeﬁned as
+A = {∅,∂ }, (47)
+Qϑ (a|s) = Q∅
+ϑ (a∅ |s)Q∂
+ϑ (a∂ |s) (48)
+=
+∏
+ai ina∅
+Q∅
+ϑ (ai|s)
+∏
+aj ina∂
+Q∂
+ϑ (aj|s), (49)
+where ∅ denotes the discrete actions, ∂ denotes the continuous
+actions. Therefore, we design two agents, each equipped wit h
+an independent SAC framework, responsible for adjusting th e
+discrete or continuous optimization variables from (32) an d
+(33). Thus, we have the cost functions of value networks for
+discrete and continuous agents as
+JQ∅
+ϕ
+= Es(t)∼ D
+[ 1
+2
+(
+Q∅
+ϕ
+(
+s(t)
+)
+− Ea(t)∼ Q∅
+ϑ
+[
+Q∅
+θ
+(
+s(t), a(t)
+)
+− logQ∅
+ϑ
+(
+a(t)|s(t)
+)] ) 2
+]
+,
+(50)
+JQ∂
+ϕ
+= Es(t)∼ D
+[ 1
+2
+(
+Q∂
+ϕ
+(
+s(t)
+)
+− Ea(t)∼ Q∂
+ϑ
+[
+Q∂
+θ
+(
+s(t), a(t)
+)
+− logQ∂
+ϑ
+(
+a(t)|s(t)
+)] ) 2]
+.
+(51)
+Furthermore, we also have the cost functions of soft-Q-
+networks for discrete and continuous agents as
+JQ∅
+θ
+= E(
+s(t),a (t)
+)
+∼ D
+[ 1
+2
+(
+Q∅
+θ
+(
+s(t), a(t)
+)
+− ¯Q∅ (
+s(t), a(t)
+) ) 2
+]
+,
+(52)
+JQ∂
+θ
+= E(
+s(t),a (t)
+)
+∼ D
+[ 1
+2
+(
+Q∂
+θ
+(
+s(t), a(t)
+)
+− ¯Q∂ (
+s(t), a(t)
+) ) 2
+]
+.
+(53)
+Moreover, we can obtain the cost functions of policy network s
+for discrete and continuous agents as
+JQ∅
+ϑ
+= Es(t)∼ D,ς (t)∼ φ
+[
+logQ∅
+ϑ (fϑ
+(
+ς(t); s(t))|s(t)
+)
+− Q∅
+θ
+(
+s(t), fϑ (ς(t); s(t))
+) ]
+,
+(54)
+JQ∂
+ϑ
+= Es(t)∼ D,ς (t)∼ φ
+[
+logQ∂
+ϑ (fϑ
+(
+ς(t); s(t))|s(t)
+)
+− Q∂
+θ
+(
+s(t), fϑ (ς(t); s(t))
+) ]
+.
+(55)
+Subsequently, we employed the maximum aposteriori policy
+optimisation [45] algorithm to jointly optimize the decoup led
+policies. We assume a new policy ℓ for the hybrid action space
+SAC, the update function of ℓ is given as
+JQℓ = Eℓ(a|s)[ ˆQ(s, a)], (56)
+where ˆQ is the Q-function learned from the replay D [43].
+It is crucial to ensure that the new policy does not deviate
+signiﬁcantly from the current one. Thus, we have
+Es∼ D[ρ(Qℓ(a|s)||Q¯ℓ(a|s))] < χ, (57)
+whereρ(·) denotes the Kullback-Leibler divergence, ¯ℓ denotes
+the current hybrid policy, χ denotes the stability threshold.
+===== PAGE 10 =====
+10
+Fig. 4. The framework of the hybrid action space SAC algorith m.
+Then we update the new policy as
+ˆℓ = arg max
+ℓ
+Es∼ D[ρ(Qℓ(a|s)||Q∅
+ℓ (a∅ |s)Q∂
+ℓ (a∂ |s))], (58)
+s. t. Es∼ D[ρ(Q∅
+¯ℓ (a∅ |s)||Q∅
+ℓ (a∅ |s))]<χ ∅,, (58a)
+Es∼ D[ 1
+¯o
+¯o∑
+o=1
+ρ(Q∂¯ℓ (a∂ |s)||Q∂
+ℓ (a∂ |s))]<χ ∂, (58b)
+where χ ∅ and χ ∂ are the stability thresholds for discrete
+and continuous agents, respectively, ¯o denotes the number of
+discrete choices. The framework of the hybrid action space
+SAC algorithm is shown in Fig. 4.
+Remark 1 : The proposed algorithm decouples the hybrid
+action space into discrete and continuous actions, assigni ng
+them to different agents, each trained with its independent SAC
+framework. Subsequently, the maximum aposteriori policy
+optimization algorithm is employed to merge the decoupled
+policies from all agents. The proposed algorithm addresses the
+challenges of the hybrid action space in the proposed proble ms
+and provides a ﬂexible framework for hybrid action selectio n.
+C. Decision-Assisted DRL
+In Section III-A, when designing the reward function for
+the SAC algorithm, each action is indiscriminately given a
+corresponding reward, without considering whether the act ion
+itself is available. For example, a certain MEC unit, such as
+the UA VUn, has already completed its allocated portion of
+computing task ψ m
+i . In this case, the action of continuing to
+allocate CPU cycles to this task should be deemed as unavail-
+able. Similarly, if a cloud server falls outside the coverag e
+range of a LEO satellite Sl and consequently can no longer
+connect to it, the action of Sl still choosing this cloud server
+as an ofﬂoading target should also be deemed unavailable. In
+these situations, DRL needs a long time to learn the mutual
+impact between different state-action pairs, leading to a l ow
+convergence efﬁciency (even inability to converge). To sol ve
+this problem, a common solution in DRL-related studies is to
+introduce negative rewards, using them to penalize ineffec tive
+Fig. 5. The impact of unavailable actions on the training of d eep
+neural networks for function approximation.
+actions or those that deviate from the target, thereby speed ing
+up convergence.
+However, when employing a negative reward mechanism,
+the punitive aspect might be overly harsh, making it difﬁcul t
+for the agent to properly differentiate actions that receiv e no
+reward or very small positive reward from those that receive
+other positive rewards. Under randomly initialized weight s, the
+neural network might not provide sufﬁcient rewards for the
+optimal action after several iterations. As a result, the ne gative
+reward could lead the agent to converge more easily to local
+optima [46]. An alternative solution is to directly prohibi t the
+agent from choosing unavailable actions. However, whether
+the actions are available or not, they all originate from the
+same policy. This policy can only indicate the advantages an d
+disadvantages of state-action pairs, but it cannot differe ntiate
+available and unavailable actions. Therefore, even ineffe ctive
+actions can inﬂuence the neural network that generates the
+policy. As shown in Fig. 5, when disregarding unavailable
+actions, the outcomes can be represented by the dashed lines in
+the graph, akin to drawing direct connections between avail able
+actions. However, when accounting for unavailable actions , the
+penalization mechanism for such actions pushes the ﬁtted li ne
+as far away from them as possible, causing it to deviate from
+its original position and resulting in the effect depicted b y
+the solid lines in the graph. Therefore, ignoring unavailab le
+actions directly can also have a negative impact on the learn ing
+outcome in the DRL. In the SAGIN system proposed, if the
+LEO satellites that have already exceeded their coverage ra nge
+are simply disregarded, the function approximator capabil ity
+of the neural network may still lead to an inﬂuence on the
+resource allocation choices of other LEO satellites.
+To address this issue, we introduce a decision-assisted DRL
+algorithm to mitigate the negative impact of unavailable ac tions
+on the training process of DRL. Unlike most previous works
+that utilize negative rewards or simply disregard unavaila ble
+actions, we directly set the weights of state-unavailable a ction
+pairs to zero. We generate decision-assisted DRL training p airs
+===== PAGE 11 =====
+11
+Fig. 6. The framework of the decision assisted DRL method.
+Algorithm 1 DM-SAC-H :
+1: Initialize all the networks, ϕ ∅ , θ∅ , ϑ ∅ , ¯ϕ ∅ ,ϕ ∂ , θ∂ , ϑ ∂ , ¯ϕ ∂
+and ℓ.
+2: repeat:
+3: for each time slot do
+4: Obtain a(t), s(t + 1), r
+(
+s(t),a (t)
+)
+based on the
+policy ℓ and current state s(t).
+5: Save the sample {s(t),a (t),s (t + 1),r
+(
+s(t),a (t)
+)
+}
+to replay D.
+6: Generate samples for unavailable actions and save
+them to replay D.
+7: end for
+8: for each training epoch do
+9: Update Qϕ ∅ based on (50), Qθ ∅ based on (52),
+Qϑ ∅ based on (54) and samples from (59).
+10: Update Qϕ ∂ based on (51), Qθ ∂ based on (53),
+Qϑ ∂ based on (55) and samples from (59).
+11: Soft update Q ¯ϕ ∅ and Q ¯ϕ ∂ .
+12: Update ℓ based on (56), (57) and (58).
+13: end for
+14: until convergence.
+as
+{s(t), a(t), 0}. (59)
+This is an auxiliary method that uses prior knowledge in deep
+learning to train deep neural networks. As shown in Fig. 6,
+each time the policy network is updated, not only are the
+weights of the valid actions updated, but invalid actions ar e
+also selected and continuously trained. During training, t he
+neural network will continually match the minimal weight
+to the invalid actions, greatly diminishing their impact. I n
+addition, the generation of invalid actions does not requir e an
+exploration process, this signiﬁcantly reduces the explor ation
+dimensions during training and improves convergence efﬁ-
+ciency. The pseudo-code of the decision-assisted multi-ag ent
+SAC with hybrid action space (DM-SAC-H) is in Algorithm
+1.
+IV. S IMULATION RESULTS
+In the simulation, we utilized TensorFlow-2 to train the
+proposed algorithm. Unless otherwise stated, parameters a re set
+as follows: the transmit power of ground users PG = 0. 1 W ,
+the transmit power of UA Vs PU = 1 W , the transmit power of
+LEO satellite PS = 1 W , the noise level is -100 dBm [24], the
+transmission overhead factor b = 1. 2, the path loss exponents
+α L = 2 and α N = 2 . 5, respectively. The altitude of LEO
+satellite is 800 km, the frequency for UA V is 1 GHz, the beam
+gain δl = 25 dB, the carrier frequency of LEO satellites is
+30 GHz, the maximum Doppler frequency is referred to the
+Ka-band in [47], the normalized gain Gd is 1 for all ISL [41],
+the thermal noise ζ = 354. 81 K [41], the bandwidth for ISL
+and satellite-Cloud is 1 GHz [47], other bandwidths are 10
+MHz, the minimum elevation angle ω G = 40 ◦ , the data size
+of each task is randomly generated from 0.6 MB to 1.2 MB, the
+required computational CPU cycles of each task is 3 Gcycles,
+the energy factor ι = 10 − 25, the computing capacities of each
+ground user, UA V , LEO satellite and cloud server are 0.1 GHz,
+0.5 GHz, 1 GHz, and 3 GHz, respectively. The discount factor
+in DRL is 0.99, Adam optimizer is utilized in the proposed
+algorithm. The tasks are randomly generated by DAGs, each
+ground user has 10 tasks. We set the number of ground users
+M = 12 , the number of UA Vs N = 3 , the number of LEO
+satellites L = 5 , the number of cloud server K = 3 , the
+thresholds Tmax = 50 s, Emax = 400 J. The ground users are
+randomly distributed in a square of 200 m × 200 m, UA Vs are
+randomly distributed in a square of 200 m × 200 m with the
+height of 60 m at the beginning, the distance of LEO satellite s
+are randomly generated from 100 km to 500 km, the cloud
+servers are randomly distributed at intervals of 50 km to 100
+km centered around the midpoint of the ground users. UA Vs
+can only ﬂy in a square of 200 m × 200 m with the minimum
+height of 50 m and the maximum height of 60 m. All agents
+interacted with the environment for approximately 100,000
+episodes (each episode representing a complete multi-task
+computation process within the MEC framework) to achieve
+convergence. Moreover, we compare the proposed algorithm
+DM-SAC-H with the following benchmarks: Multi-agent PPO
+(M-PPO) [48] (widely used DRL algorithm), Parametrized
+DQN [49] (a DQN & DDPG hybrid framework), and A3C
+[50] (a asynchronous multi-agent DRL approach).
+Fig. 7 presents the energy consumption versus the number
+of ground users for the proposed algorithm and benchmarks
+in Case 1 . ‘DM-SAC-H NoCloud’ represents the proposed
+method within the SAGIN framework but without the inclusion
+of cloud servers, ‘DM-SAC-H NoISL NoCloud’ denotes the
+scenario where each LEO satellite is unable to ofﬂoad tasks t o
+other LEO satellites or cloud servers. As depicted in the res ults,
+it is clear that energy consumption rises with an increase in the
+number of ground users. This is primarily due to the fact that
+with more ground users, there is a higher demand for ofﬂoadin g
+tasks to the UA Vs, LEO satellites, and cloud servers, all of
+which possess greater computational capacities but consum e
+===== PAGE 12 =====
+12
+4 5 6 7 8 9 10 11 12 13 14
+The number of ground users
+0
+5
+10
+15
+20
+25Energy Consumption (KJ)
+Fig. 7. Energy consumption versus the number of ground users in
+case 1.
+0.5 0.6 0.7 0.8 0.9 1 1.1 1.2
+The average task data size (MB)
+17
+17.5
+18
+18.5
+19
+19.5
+20
+20.5
+21
+21.5
+22
+Energy Consumption (KJ)
+Fig. 8. Energy consumption versus the average task data size in case
+1.
+signiﬁcantly more energy. Furthermore, the energy consump -
+tion escalates rapidly when M ≥ 11; this is a consequence
+of the LEO satellites’ inability to complete the computing
+task within the latency constraint, leading to the necessit y of
+ofﬂoading the remaining tasks to the high energy-intensive
+cloud servers in MEC. It is also worth noting that the propose d
+DM-SAC-H algorithm achieves approximately 18.13 KJ when
+M = 12 , in contrast to the benchmarks which obtain 19.4,
+19.3 and 21 KJ, respectively. These results demonstrate tha t
+the proposed algorithm leverages the hybrid action method a nd
+decision assistant to enhance the performance of convergen ce.
+Besides, the absence of cloud servers in MEC results in the
+inability to meet the latency requirements when the number o f
+ground users exceeds 10. Concurrently, in scenarios withou t
+both ISL and cloud servers, MEC fails to complete all tasks
+when M ≥ 8. These ﬁndings underscore the signiﬁcance of
+incorporating both ISL and cloud in MEC.
+Fig. 8 indicates a comparison of energy consumption be-
+tween the proposed method and the benchmarks in case 1. First ,
+it is evident that energy consumption escalates as the avera ge
+1 1.5 2 2.5 3 3.5 4
+The required CPU cycles of each task (Gcycle)
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50Energy Consumption (KJ)
+Fig. 9. Energy consumption versus the required CPU cycles of each
+task in case 1.
+task data size increases. This is attributable to the larger task
+data size necessitating a more extended ofﬂoading time, as i n
+(14), (18), (28) and (26). However, it is noteworthy that the
+inﬂuence of the average task data size is not substantial. Th is is
+predicated on the assumption that the required computation al
+CPU cycles do not correlate with the data size of the task
+due to the diversity of tasks such as image processing and
+natural language processing. Although a larger task size ma y
+provide more information for computation, the computation
+process itself may remain unchanged. Thus, when the volume
+of information (task data size) increases while the require d
+computational cycles remain constant, there is a moderate
+increase in energy consumption.
+As illustrated in Fig. 9, energy consumption in each instanc e
+rises as the requirement for CPU cycles per task increases.
+This is attributable to the necessity of ofﬂoading a larger
+portion of the computational tasks to the UA Vs, LEO satellit es,
+and cloud servers as the capacity of the computational task
+increases. Furthermore, the proposed algorithm outperfor ms
+the benchmarks; DM-SAC-H reduce the energy consumption to
+2.16 KJ with 2 Gcycles, while benchmarks consume between
+3 KJ to 3.5 KJ. This improved performance is due to the DM-
+SAC-H algorithm’s combination of the hybrid action space
+and its usage of a priori information to mitigate the impact
+of unavailable actions, thereby enhancing the convergence
+performance. It is important to note that for computational
+tasks requiring over 4Gcycles, the proposed framework is
+unable to complete the tasks within the latency constraint d ue
+to the substantial computational requirements.
+Fig. 10 illustrates the examination of energy consumption
+as the computing capacity of ground users increases for both
+the proposed scheme and the benchmarks. It is evident that
+the proposed DM-SAC-H algorithm converges efﬁciently and
+surpasses all three benchmarks. When the computing capacit y
+of ground users is 1.25 GHz, the proposed algorithm reduces
+energy expenditure to approximately 4.11 KJ while the other
+benchmarks consume over 5.2 KJ. Furthermore, when the
+===== PAGE 13 =====
+13
+0.05 0.1 0.15 0.2
+The computing capacity of ground users (GHz)
+0
+5
+10
+15
+20
+25
+30
+35Energy Consumption (KJ)
+Fig. 10. Energy consumption versus the computing capacity o f ground
+users in case 1.
+4 5 6 7 8 9 10 11 12 13 14
+The number of ground users
+17
+18
+19
+20
+21
+22
+23
+24
+25Average Latency (s)
+Fig. 11. Average latency versus the number of ground users in case
+2.
+computing capacity of ground users exceeds 1.25 GHz, there
+is a rapid decrease in energy consumption. This is due to
+the increased computing capacity enabling the ground users
+to complete a larger portion of the tasks, thereby only neces si-
+tating the ofﬂoading of the remainder to the UA Vs and LEOs.
+In Fig. 11, we assess the average latency of both the
+proposed scheme and the benchmarks in relation to different
+numbers of ground users. As shown in all the results, the
+average latency increases as the number of ground users rise s.
+This is attributable to an increase in the number of tasks as
+the number of ground users expands, prompting each MEC
+unit to allocate computational resources to the additional tasks.
+Moreover, the proposed DM-SAC-H algorithm manages to
+reduce the average latency to 19 s with 12 ground users,
+whereas the other benchmarks register results exceeding 20
+s. Notice that the A3C exhibits the highest latency and insta -
+bility in convergence due to the low sample efﬁciency and
+the asynchronous framework. Moreover, as the number of
+ground users escalates, the total task count rises, resulti ng in a
+signiﬁcant increase in time cost in scenarios absent of ISL o r
+0.5 0.6 0.7 0.8 0.9 1 1.1 1.2
+The average task data size (MB)
+17
+18
+19
+20
+21
+22
+23Average Latency (s)
+Fig. 12. Average latency versus the average task data size in case 2.
+cloud servers. This outcome effectively validates the bene ﬁts
+of incorporating cloud servers and ISL into MEC within the
+SAGIN framework.
+Fig. 12 shows a comparison of the average latency between
+the proposed algorithm and the benchmarks in relation to the
+average task data size in case 2. We can see that larger task
+sizes result in extended transmission times during ofﬂoadi ng
+in MEC. The proposed algorithm achieves an average latency
+of 19.3 s when the average task size is 1 MB, while the other
+benchmarks yield higher latencies of 20.34 s, 20.40, and 22. 31
+s, respectively. These results underscore the efﬁcacy of ou r
+proposed algorithm in utilizing the advantages of the hybri d
+action space and the decision assistant to achieve superior
+convergence.
+V. C ONCLUSION
+In this paper, we proposed the integration of a hybrid cloud
+and MEC within SAGINs. This framework comprises multiple
+UA Vs, LEO satellites and cloud servers. We considered user
+pairing, partial ofﬂoading, UA V trajectories and LEO satel lite
+coverage time in this work. Moreover, we have modelled the
+multi-task dependency as DAGs. Aiming to minimize energy
+consumption under latency constraints and minimize latenc y
+under energy consumption constraints within the proposed
+SAGIN, we proposed a multi-agent DRL based algorithm. This
+learning algorithm optimizes UA V trajectories, user/UA V/LEO
+pairing, ofﬂoading strategy, and computational resource a l-
+location. To tackle the challenge of the hybrid discrete and
+continuous action space, we introduced an action decouplin g
+method within the multi-agent SAC algorithm to improve con-
+vergence performance. Furthermore, we employed a decision
+assistant to mitigate the negative impact of unavailable ac tions
+in the DRL, thereby reducing the exploration range for agent s.
+Simulation results underscore that the proposed DM-SAC-H
+algorithm offers adaptable optimization solutions for the hybrid
+cloud and MEC within the SAGIN. When operating under
+latency constraints, this algorithm surpasses benchmarks by
+achieving a substantial reduction in total energy consumpt ion.
+===== PAGE 14 =====
+14
+Conversely, under energy consumption constraints, it surp asses
+the benchmarks by further reducing the average latency. Fur -
+thermore, these simulation outcomes emphatically highlig ht the
+important role of cloud servers and ISLs in attaining overal l
+optimization improvements. In our future work, we will furt her
+consider next generation multiple access (NGMA) technique s
+to mitigate interference between users and to enhance the
+resource utilization of MEC in SAGINs. In addition, we
+will consider more realistic scenarios such as the impact of
+the elevation angle in satellite-to-ground communication s, and
+further our research on incorporating techniques such as la rge
+AI models to further strengthen the adaptive capacity of the
+proposed algorithm to realistic environments.
+REFERENCES
+[1] M. Hosseinian, J. P . Choi, S.-H. Chang, and J. Lee, “Revie w of 5G NTN
+standards development and technical challenges for satell ite integration
+with the 5G network,” IEEE Aerospace and Electronic Systems Maga-
+zine, vol. 36, no. 8, pp. 22–31, Aug. 2021.
+[2] J. C. McDowell, “The low earth orbit satellite populatio n and impacts
+of the Spacex Starlink constellation,” The Astrophysical Journal Letters ,
+vol. 892, no. 2, p. L36, Apr. 2020.
+[3] V . L. Foreman, A. Siddiqi, and O. De Weck, “Large satellit e constellation
+orbital debris impacts: Case studies of oneweb and spacex pr oposals,”
+AIAA SPACE and Astronautics F orum and Exposition, Orlando, FL, Sep.
+2017.
+[4] G. Giambene, S. Kota, and P . Pillai, “Satellite-5G integ ration: A network
+perspective,” IEEE Network , vol. 32, no. 5, pp. 25–31, Sep. 2018.
+[5] O. Kodheli, N. Maturo, S. Chatzinotas, S. Andrenacci, an d F. Zimmer,
+“NB-IoT via LEO satellites: An efﬁcient resource allocatio n strategy for
+uplink data transmission,” IEEE Internet of Things Journal , vol. 9, no. 7,
+pp. 5094–5107, Apr. 2022.
+[6] B. Li, Z. Fei, Z. Chu, F. Zhou, K.-K. Wong, and P . Xiao, “Rob ust
+chance-constrained secure transmission for cognitive sat ellite–terrestrial
+networks,” IEEE Transactions on V ehicular Technology , vol. 67, no. 5,
+pp. 4208–4219, May. 2018.
+[7] R. Xie, Q. Tang, Q. Wang, X. Liu, F. R. Y u, and T. Huang, “Sat ellite-
+terrestrial integrated edge computing networks: Architec ture, challenges,
+and open issues,” IEEE Network, vol. 34, no. 3, pp. 224–231, May. 2020.
+[8] S. Liu, Z. Gao, Y . Wu, D. W. Kwan Ng, X. Gao, K.-K. Wong,
+S. Chatzinotas, and B. Ottersten, “LEO satellite constella tions for 5G
+and beyond: How will they reshape vertical domains?,” IEEE Commu-
+nications Magazine , vol. 59, no. 7, pp. 30–36, Jul. 2021.
+[9] Z. Xiao, J. Y ang, T. Mao, C. Xu, R. Zhang, Z. Han, and X.-G. X ia,
+“LEO satellite access network (LEO-SAN) towards 6G: Challe nges and
+approaches,” IEEE Wireless Communications , Dec. 2022.
+[10] L. Y ou, K.-X. Li, J. Wang, X. Gao, X.-G. Xia, and B. Otters ten, “Massive
+MIMO transmission for LEO satellite communications,” IEEE Journal
+on Selected Areas in Communications , vol. 38, no. 8, pp. 1851–1865,
+Aug. 2020.
+[11] Y . Zhang, Z. Wang, Y . Huang, W. Wei, G. F. Pedersen, and M. Shen,
+“A digital signal recovery technique using DNNs for LEO sate llite
+communication systems,” IEEE Transactions on Industrial Electronics ,
+vol. 68, no. 7, pp. 6141–6151, Jul. 2021.
+[12] Y . Zhang, Y . Wu, A. Liu, X. Xia, T. Pan, and X. Liu, “Deep le arning-
+based channel prediction for LEO satellite massive MIMO com muni-
+cation system,” IEEE Wireless Communications Letters , vol. 10, no. 8,
+pp. 1835–1839, Aug. 2021.
+[13] P . Y ue, J. Du, R. Zhang, H. Ding, S. Wang, and J. An, “Colla borative
+LEO satellites for secure and green Internet of Remote Thing s,” IEEE
+Internet of Things Journal , vol. 10, no. 11, pp. 9283–9294, Jun. 2023.
+[14] J. Liu, Y . Shi, Z. M. Fadlullah, and N. Kato, “Space-Air- Ground inte-
+grated network: A survey,” IEEE Communications Surveys & Tutorials ,
+vol. 20, no. 4, pp. 2714–2741, Fourth quarter, 2018.
+[15] X. Wang, L. T. Y ang, D. Meng, M. Dong, K. Ota, and H. Wang, “ Multi-
+UA V cooperative localization for marine targets based on we ighted sub-
+space ﬁtting in SAGIN environment,” IEEE Internet of Things Journal ,
+vol. 9, no. 8, pp. 5708–5718, Apr. 2022.
+[16] L. Bai, J. Liu, J. Wang, R. Han, and J. Choi, “Data aggrega tion in UA V-
+aided random access for Internet of Vehicles,” IEEE Internet of Things
+Journal, vol. 9, no. 8, pp. 5755–5764, Apr. 2022.
+[17] Y . Liu, C. Huang, G. Chen, R. Song, S. Song, and P . Xiao, “D eep
+learning empowered trajectory and passive beamforming des ign in UA V-
+RIS enabled secure cognitive non-terrestrial networks,” IEEE Wireless
+Communications Letters , Oct. 2023.
+[18] J. Liu, X. Zhao, P . Qin, S. Geng, and S. Meng, “Joint dynam ic task
+ofﬂoading and resource scheduling for WPT enabled Space-Ai r-Ground
+power Internet of Things,” IEEE Transactions on Network Science and
+Engineering, vol. 9, no. 2, pp. 660–677, Mar. 2022.
+[19] T. X. Tran, A. Hajisami, P . Pandey, and D. Pompili, “Coll aborative
+mobile edge computing in 5G networks: New paradigms, scenar ios, and
+challenges,” IEEE Communications Magazine , vol. 55, no. 4, pp. 54–61,
+Apr. 2017.
+[20] X. Cao, F. Wang, J. Xu, R. Zhang, and S. Cui, “Joint comput ation and
+communication cooperation for energy-efﬁcient mobile edg e computing,”
+IEEE Internet of Things Journal , vol. 6, no. 3, pp. 4188–4200, Jun. 2019.
+[21] T. Bai, C. Pan, Y . Deng, M. Elkashlan, A. Nallanathan, an d L. Hanzo,
+“Latency minimization for intelligent reﬂecting surface a ided mobile
+edge computing,” IEEE Journal on Selected Areas in Communications ,
+vol. 38, no. 11, pp. 2666–2682, Nov. 2020.
+[22] J. Shi, Y . Zhou, Z. Li, Z. Zhao, Z. Chu, and P . Xiao, “Delay minimization
+for NOMA-mmW scheme-based MEC ofﬂoading,” IEEE Internet of
+Things Journal, vol. 10, no. 3, pp. 2285–2296, Feb. 2023.
+[23] Y . Liu, J. Y an, and X. Zhao, “Deep reinforcement learnin g based
+latency minimization for mobile edge computing with virtua lization in
+maritime UA V communication network,”IEEE Transactions on V ehicular
+Technology, vol. 71, no. 4, pp. 4225–4236, Apr. 2022.
+[24] N. Zhao, Z. Y e, Y . Pei, Y .-C. Liang, and D. Niyato, “Multi -agent deep
+reinforcement learning for task ofﬂoading in UA V-assisted mobile edge
+computing,” IEEE Transactions on Wireless Communications , vol. 21,
+no. 9, pp. 6949–6960, Sep. 2022.
+[25] X. Wei, L. Cai, N. Wei, P . Zou, J. Zhang, and S. Subramania m, “Joint
+UA V trajectory planning, DAG task scheduling, and service f unction
+deployment based on DRL in UA V-empowered edge computing,” IEEE
+Internet of Things Journal , vol. 10, no. 14, pp. 12826–12838, Jul. 2023.
+[26] J. Tian, D. Wang, H. Zhang, and D. Wu, “Service satisfact ion-oriented
+task ofﬂoading and UA V scheduling in UA V-enabled MEC networ ks,”
+IEEE Transactions on Wireless Communications , vol. 22, no. 12,
+pp. 8949–8964, Dec. 2023.
+[27] G. Cui, Y . Long, L. Xu, and W. Wang, “Joint ofﬂoading and r esource
+allocation for satellite assisted vehicle-to-vehicle com munication,” IEEE
+Systems Journal, vol. 15, no. 3, pp. 3958–3969, Sep. 2021.
+[28] Z. Song, Y . Hao, Y . Liu, and X. Sun, “Energy-efﬁcient mul tiaccess edge
+computing for terrestrial-satellite Internet of Things,” IEEE Internet of
+Things Journal, vol. 8, no. 18, pp. 14202–14218, Sep. 2021.
+[29] Q. Tang, Z. Fei, B. Li, and Z. Han, “Computation ofﬂoadin g in LEO
+satellite networks with hybrid cloud and edge computing,” IEEE Internet
+of Things Journal , vol. 8, no. 11, pp. 9164–9176, Jun. 2021.
+[30] Q. Chen, W. Meng, T. Q. S. Quek, and S. Chen, “Multi-tier h ybrid
+ofﬂoading for computation-aware IoT applications in civil aircraft-
+augmented SAGIN,” IEEE Journal on Selected Areas in Communica-
+tions, vol. 41, no. 2, pp. 399–417, Feb. 2023.
+[31] Y . Zhang, C. Chen, L. Liu, D. Lan, H. Jiang, and S. Wan, “Ae rial
+edge computing on orbit: A task ofﬂoading and allocation sch eme,”
+IEEE Transactions on Network Science and Engineering , vol. 10, no. 1,
+pp. 275–285, Jan. 2023.
+[32] Z. Zhou, J. Feng, L. Tan, Y . He, and J. Gong, “An air-groun d integration
+approach for mobile edge computing in IoT,” IEEE Communications
+Magazine, vol. 56, no. 8, pp. 40–47, Aug. 2018.
+[33] C. Ding, J.-B. Wang, H. Zhang, M. Lin, and G. Y . Li, “Joint optimization
+of transmission and computation resources for satellite an d high altitude
+platform assisted edge computing,” IEEE Transactions on Wireless
+Communications, vol. 21, no. 2, pp. 1362–1377, Feb. 2022.
+[34] Y . Gong, H. Y ao, D. Wu, W. Y uan, T. Dong, and F. R. Y u, “Computation
+ofﬂoading for rechargeable users in Space-Air-Ground netw orks,” IEEE
+Transactions on V ehicular Technology , vol. 72, no. 3, pp. 3805–3818,
+Mar. 2023.
+[35] F. Chai, Q. Zhang, H. Y ao, X. Xin, R. Gao, and M. Guizani, “ Joint
+multi-task ofﬂoading and resource allocation for mobile ed ge computing
+systems in satellite IoT,” IEEE Transactions on V ehicular Technology ,
+vol. 72, no. 6, pp. 7783–7795, Jun. 2023.
+===== PAGE 15 =====
+15
+[36] L. Zhang and N. Ansari, “Optimizing the operation cost f or UA V-aided
+mobile edge computing,” IEEE Transactions on V ehicular Technology ,
+vol. 70, no. 6, pp. 6085–6093, Jun. 2021.
+[37] L. Zhang and J. Chakareski, “UA V-assisted edge computi ng and stream-
+ing for wireless virtual reality: Analysis, algorithm desi gn, and perfor-
+mance guarantees,” IEEE Transactions on V ehicular Technology, vol. 71,
+no. 3, pp. 3267–3275, Mar. 2022.
+[38] Z. Lin, H. Niu, K. An, Y . Wang, G. Zheng, S. Chatzinotas, a nd Y . Hu,
+“Refracting RIS-aided hybrid satellite-terrestrial rela y networks: Joint
+beamforming design and optimization,” IEEE Transactions on Aerospace
+and Electronic Systems , vol. 58, no. 4, pp. 3717–3724, Aug. 2022.
+[39] X. Y an, K. An, T. Liang, G. Zheng, and Z. Feng, “Effect of i mperfect
+channel estimation on the performance of cognitive satelli te terrestrial
+networks,” IEEE Access , vol. 7, pp. 126293–126304, Sep. 2019.
+[40] P . K. Singya and M.-S. Alouini, “Performance of UA V-ass isted multiuser
+terrestrial-satellite communication system over mixed FS O/RF channels,”
+IEEE Transactions on Aerospace and Electronic Systems , vol. 58, no. 2,
+pp. 781–796, Apr. 2022.
+[41] I. Leyva-Mayorga, B. Soret, and P . Popovski, “Inter-pl ane inter-satellite
+connectivity in dense LEO constellations,” IEEE Transactions on Wire-
+less Communications , vol. 20, no. 6, pp. 3430–3443, Jun. 2021.
+[42] Q. Luo, C. Li, T. H. Luan, and W. Shi, “Minimizing the dela y and
+cost of computation ofﬂoading for vehicular edge computing ,” IEEE
+Transactions on Services Computing , vol. 15, no. 5, pp. 2897–2909, Sep.
+2022.
+[43] M. Neunert, A. Abdolmaleki, M. Wulfmeier, T. Lampe, T. S prin-
+genberg, R. Hafner, F. Romano, J. Buchli, N. Heess, and M. Rie d-
+miller, “Continuous-discrete reinforcement learning for hybrid control
+in robotics,” Virtual Conference, Nov. 2020, pp. 735-751.
+[44] Y . Xu, Y . Wei, K. Jiang, L. Chen, D. Wang, and H. Deng, “Act ion
+decoupled SAC reinforcement learning with discrete-conti nuous hybrid
+action spaces,” Neurocomputing, vol. 537, pp. 141–151, Jun. 2023.
+[45] A. Abdolmaleki, J. T. Springenberg, Y . Tassa, R. Munos, N. Heess,
+and M. Riedmiller, “Maximum a posteriori policy optimisati on,” arXiv
+preprint arXiv:1806.06920, Jun. 2018.
+[46] C. Huang, G. Chen, and Y . Gong, “Delay-constrained buff er-aided relay
+selection in the Internet of Things with decision-assisted reinforcement
+learning,” IEEE Internet of Things Journal , vol. 8, no. 12, pp. 10198–
+10208, Jun. 2021.
+[47] J. Shi, Z. Li, J. Hu, Z. Tie, S. Li, W. Liang, and Z. Ding, “O TFS enabled
+LEO satellite communications: A promising solution to seve re doppler
+effects,” IEEE Network , Feb. 2023.
+[48] C. Y u, A. V elu, E. Vinitsky, J. Gao, Y . Wang, A. Bayen, and Y . WU,
+“The surprising effectiveness of PPO in cooperative multi- agent games,”
+Conference on Neural Information Processing Systems (Neur IPS), New
+Orleans, LA, Nov. 2022, pp. 24611-24624.
+[49] J. Xiong, Q. Wang, Z. Y ang, P . Sun, L. Han, Y . Zheng, H. Fu,
+T. Zhang, J. Liu, and H. Liu, “Parametrized deep Q-networks l earning:
+Reinforcement learning with discrete-continuous hybrid a ction space,”
+arXiv preprint arXiv:1810.06394 , Oct. 2018.
+[50] V . Mnih, A. P . Badia, M. Mirza, A. Graves, T. Lillicrap, T . Harley,
+D. Silver, and K. Kavukcuoglu, “Asynchronous methods for de ep re-
+inforcement learning,” International conference on machine learning
+(ICML), New Y ork, NY , Jan. 2016, pp. 1928-1937.

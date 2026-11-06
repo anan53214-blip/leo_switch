@@ -1,0 +1,100 @@
+11
+20 25 30 35 40
+Number of users
+0
+100
+200
+300
+400Blocked user-time (user-s/episode)
+20 25 30 35 40
+Number of users
+0
+4
+8
+12Total terminal energy (kJ/episode)
+20 25 30 35 40
+Number of users
+0.0
+0.2
+0.4
+0.6
+0.8Handovers per user-minute
+(a) Blocked user-time (b) Total terminal energy (c) Handover frequency
+HAN+PDQN
+HAN+MAPPO
+MAPPO
+MADDPG
+PDQN
+Min-Distance
+Full-Local
+Fig. 6. Service continuity and operating costs: (a) blocked user-time per episode; (b) total terminal energy per episode; (c) handovers per user-minute. Bars
+show five-training-seed means with 95% bootstrap confidence intervals. Full-Local is omitted from (a) and performs no handovers in (c).
+users operating independent local processors. Its deadline
+violation rate nevertheless remains approximately 49%, and its
+energy per successful task is approximately 4.1 J. The joint
+consideration of delay and task outcomes therefore reveals the
+service limitations of relying entirely on local computation.
+For an aggregate comparison, we first take the arithmetic
+mean of each metric over the five user populations and
+then compute its relative reduction against PDQN. Under
+this convention, HAN–PDQN reduces successful-task delay,
+deadline violation rate, and energy per successful task by
+2.16%, 21.26%, and 5.72%, respectively. The largest relative
+improvement occurs in deadline compliance, while the delay
+and energy improvements remain consistent across the evalu-
+ated populations.
+D. Service Continuity and Operating Costs
+Fig. 6 complements the task-level results by examining
+service interruption, aggregate terminal energy, and handover
+activity. These metrics reveal how different association and
+offloading policies balance connection availability against the
+conditions under which tasks are executed.
+In Fig. 6(a), HAN–PDQN has lower mean blocked user-time
+than PDQN at every population. At 30 users, the values are
+284.08 and 298.12 user-s per episode, respectively. The cumu-
+lative quantity increases with population, partly because more
+users contribute to the total observation time. Min-Distance
+yields a slightly lower value of 276.32 user-s at 30 users, but its
+deadline violation rate in Fig. 5(b) is much higher. Connection
+availability therefore needs to be considered together with the
+processing conditions and workload assigned to the selected
+satellite.
+Fig. 6(b) shows that HAN–PDQN also maintains the lowest
+mean total terminal energy over the evaluated populations.
+At 30 users, it consumes 6.18 kJ per episode, compared
+with 6.37 kJ for PDQN, 8.41 kJ for Min-Distance, and
+11.26 kJ for Full-Local. Total energy measures the system’s
+accumulated terminal expenditure, whereas Fig. 5(c) measures
+the expenditure per successful task. The improvement in both
+quantities shows that the energy-efficiency gain accompanies
+a reduction in aggregate terminal consumption.
+The handover results in Fig. 6(c) show a different ordering
+among the methods. At 30 users, HAN–PDQN performs
+0.606 handovers per user-minute, compared with 0.659 for
+PDQN, 0.192 for HAN+MAPPO, and 0.198 for Min-Distance.
+Thus, HAN–PDQN obtains its task-performance advantage
+with fewer handovers than PDQN, while remaining more
+active in satellite reassociation than HAN+MAPPO and Min-
+Distance. The lower switching activity of the latter policies
+is accompanied by higher task delay, deadline violations, and
+energy per successful task. This comparison reflects the role
+of the long-term objective in balancing immediate switching
+costs against subsequent task-service conditions.
+Using the same across-population averaging convention as
+in Section V-C, HAN–PDQN reduces mean blocked user-
+time, total terminal energy, and handover frequency relative
+to PDQN by 7.85%, 3.19%, and 14.82%, respectively. These
+operating-cost reductions accompany the task-level improve-
+ments, linking the quality of completed service to the associ-
+ation and workload decisions that sustain it.
+VI. CONCLUSION
+In this paper, we investigated joint handover and partial
+task offloading in multi-user LEO satellite edge networks.
+We formulated satellite selection and continuous workload
+allocation as a sequential decision problem and developed
+HAN–PDQN to account for dynamic connectivity and shared
+resources. HAN distinguishes established contention through
+serving relations from potential contention through common
+satellite alternatives. The resulting representation conditions
+both the offloading fraction generated for each candidate and
+the long-term value of the corresponding satellite–fraction pair.

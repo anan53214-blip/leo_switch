@@ -1,0 +1,86 @@
+{
+  "config": {
+    "method": "maddpg",
+    "objective": "multi_objective",
+    "total_timesteps": 4,
+    "seed": 17,
+    "max_steps": 2,
+    "actor_lr": 0.0001,
+    "critic_lr": 0.0003,
+    "gamma": 0.99,
+    "tau": 0.005,
+    "noise_start": 0.35,
+    "noise_final": 0.05,
+    "noise_decay_steps": 2,
+    "warmup_steps": 64,
+    "batch_size": 128,
+    "normalize_actor_observations": false,
+    "normalize_critic_observations": true,
+    "critic_huber_beta": 1.0,
+    "reward_scale": 1.0,
+    "raise_on_nonfinite_loss": true,
+    "log_interval_steps": 2,
+    "train_eval_interval_episodes": 10,
+    "train_eval_episodes": 1,
+    "best_training_eval_reward": 2.0,
+    "parameter_sharing": true,
+    "discrete_actor_update": "straight_through_one_hot"
+  },
+  "training": [
+    {
+      "update": 1,
+      "total_steps": 2,
+      "episodes": 1,
+      "mean_reward": 2.0,
+      "recent_mean_reward": 2.0,
+      "mean_length": 2.0,
+      "exploration_noise": 0.35,
+      "actor_loss": 0.0,
+      "critic_loss": 0.0,
+      "q_mean": 0.0,
+      "target_q_mean": 0.0,
+      "td_abs_mean": 0.0,
+      "actor_grad_norm": 0.0,
+      "critic_grad_norm": 0.0
+    },
+    {
+      "update": 2,
+      "total_steps": 4,
+      "episodes": 2,
+      "mean_reward": 2.0,
+      "recent_mean_reward": 2.0,
+      "mean_length": 2.0,
+      "exploration_noise": 0.35,
+      "actor_loss": 0.0,
+      "critic_loss": 0.0,
+      "q_mean": 0.0,
+      "target_q_mean": 0.0,
+      "td_abs_mean": 0.0,
+      "actor_grad_norm": 0.0,
+      "critic_grad_norm": 0.0,
+      "eval_mean_reward": 2.0,
+      "eval_std_reward": 0.0
+    }
+  ],
+  "training_evaluation": [
+    {
+      "update": 2,
+      "total_steps": 4,
+      "eval_mean_reward": 2.0,
+      "eval_std_reward": 0.0,
+      "eval_episodes": 1,
+      "final_training_eval": true
+    }
+  ],
+  "evaluation": [
+    {
+      "episode": 0,
+      "reward": 2.0
+    }
+  ],
+  "summary": {
+    "mean_reward": 2.0,
+    "std_reward": 0.0,
+    "best_training_eval_reward": 2.0
+  }
+}

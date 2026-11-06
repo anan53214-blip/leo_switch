@@ -1,0 +1,100 @@
+9
+TABLE II
+SYSTEMPARAMETERS
+Parameter Value
+Orbital planes / satellites per plane6/11
+Orbital altitude / inclination550km /53 ◦
+Number of users,N20,25,30,35,40
+User deployment radius5 ◦
+Slot duration,∆t1s
+Episode length512slots
+Carrier frequency,f c 20GHz
+Uplink bandwidth per satellite,B s 10MHz
+User / satellite transmit power24/40dBm
+User / satellite antenna gain38.5/34dBi
+Noise temperature / noise figure354.81K /2dB
+Local processing rate,f i 1Gcycle/s
+Total MEC processing rate,F s 10Gcycle/s
+MEC capacity / concurrency limit6/2tasks
+Task arrival probability0.35per user-slot
+Minimum elevation,θ min 10◦
+Visibility thresholds,v min, vtrig 60s
+Target SNR threshold,Γ min −5dB
+Association-change overhead,δ ho 0.6s
+Output-to-input size ratio,ζ0.1
+Amplifier efficiency / circuit power0.38/0.05W
+Local energy coefficient,κ i 10−27
+Minimum effective offloading fraction0.05
+TABLE III
+ALGORITHM ANDTRAININGPARAMETERS
+Parameter Value
+Interaction budget per run150,000steps
+Training seeds42–46
+Evaluation episodes per seed5
+Discount factor,γ0.99
+HAN layers / attention heads2/4
+HAN hidden / output dimension64/64
+PDQN Q-network hidden widths256,128
+PDQN parameter-branch hidden widths128,64
+PDQN learning rate10 −3
+HAN–PDQN / PDQN replay batch size512/128
+PDQN replay capacity50,000
+PDQN replay warm-up1,000steps
+PDQN target-copy interval500updates
+PDQN exploration probability1.0→0.02
+MAPPO learning rate10 −4
+MAPPO rollout length / update epochs1024/4
+MAPPO minibatch size512
+MADDPG actor / critic learning rate10 −4/(3×10 −4)
+MADDPG replay batch size128
+MADDPG target soft-update coefficient0.005
+0 50 100 150 200 250 300
+Training episodes
+−100
+−50
+0
+50
+100
+Mean episode reward
+HAN+PDQN
+HAN+MAPPO
+MAPPO
+MADDPG
+PDQN
+Fig. 3. Training returns with 30 users and 512 steps per episode. Curves
+show five-seed means with 95% bootstrap confidence intervals. No smoothing
+is applied; MAPPO variants retain their two-episode logging intervals.
+tasks. Energy per successful task divides the total accounted
+terminal energy by the successful-task count. We additionally
+report cumulative blocked user-time, total terminal energy per
+episode, and handovers per user-minute to characterize service
+continuity and operating costs.
+B. Training Convergence and Hyperparameter Sensitivity
+Fig. 3 compares the training returns of the five learning
+methods with 30 users. The episode return accumulates the
+user-averaged slot reward over an episode, and each curve
+averages the corresponding returns across training seeds. The
+0 50 100 150 200 250 300
+Training episodes
+0
+25
+50
+75Mean episode reward α = 1e − 04
+α = 3e − 04
+α = 1e − 03
+α = 3e − 03
+0 50 100 150 200 250 300
+Training episodes
+0
+25
+50
+75Mean episode reward B = 128
+B = 256
+B = 512
+B = 1024
+(a) Learning rate (batch size = 512)
+(b) Batch size (α = 10−3)
+Fig. 4. Hyperparameter sensitivity with 30 users: (a) learning rate with batch
+size 512; (b) replay batch size with learning rate10 −3. Curves show five-seed
+means and 95% bootstrap confidence intervals after a three-episode trailing
+mean.

@@ -1,0 +1,128 @@
+7
+These semantic weights are shared by nodes of the same type
+within a graph snapshot, while node-level weights depend on
+the contributing neighbors.
+Stacking HAN layers allows satellite representations formed
+through S–U–S and S–S–S paths to enter user-directed prop-
+agation in the next layer. Consequently, the final user em-
+beddingz i(t)incorporates the user’s own demand, competing
+users, and the surrounding satellite resource context. This
+embedding supplies the common relational input to both
+PDQN components.
+C. PDQN-Based Joint Handover and Offloading
+The underlying network state includes orbital conditions, as-
+sociations, ordered queues, residual workloads, and local pro-
+cessor availability. Decisions use the available measurements
+summarized in a raw observationo i(t): user and serving-
+link information, head-of-line task attributes and urgency,
+queue backlog, and the ordered candidate-satellite features.
+We combine this observation with the HAN output as
+˜︁oi(t) = [oi(t)∥zi(t)].(28)
+The raw features preserve the task and candidate details, while
+zi(t)supplies their multi-user context.
+The user-level feedback corresponding to (21) is
+ri(t) =
+∑︂
+n∈Z s
+i (t)
+(1−c i,n)− |Z f
+i (t)|
+−ω IIi(t)−ω FFi(t) +ω LJ(t).
+(29)
+Its arithmetic mean isU(t). Each user’s task and association
+outcomes therefore provide local credit, while the load-balance
+term supplies common feedback on shared resources.
+For a fixed maximum ofKcandidate slots, lets i,j(t)be
+the satellite occupying slotj. The discrete network index is
+di(t)∈ {0, . . . , K}, with index0reserved for staying. It maps
+to the satellite action in (22) throughk i(t) = 0ford i(t) = 0
+andk i(t) =s i,di(t)(t)otherwise. Unused candidate slots are
+masked. The ordered candidate features, parameter branches,
+and mask use this same mapping throughout a decision slot.
+Following the parameterized action formulation in [10], a
+branchµ ψ,j generates the requested fraction for each discrete
+index:
+ˆ︁ρi,j(t) =µ ψ,j (˜︁oi(t)) =σ(f ψ,j (˜︁oi(t))),(30)
+whereσis the sigmoid function andψcollects the branch
+parameters. Branch0controls offloading through the current
+association. Requests below the minimum effective fraction
+ρmin invoke local execution.
+The shared Q-network evaluates each complete index–
+fraction pair:
+qi,j(t) =Q θ (˜︁oi(t), j,ˆ︁ρi,j(t)).(31)
+Its inputs are the fused observation, a one-hot encoding of
+j, and that branch’s scalar fraction. The output estimates the
+discounted user return associated with the requested pair and
+subsequent decisions. Bothψandθare shared across users.
+Letm i,j(t)indicate whether candidate indexjsatisfies the
+current action conditions, and defineK i(t) ={j:m i,j(t) =
+1}. The stay index always belongs toK i(t). Online action
+selection is
+d⋆
+i (t) = arg max
+j∈Ki(t)
+qi,j(t),
+ˆ︁ρi(t) =ˆ︁ρi,d⋆
+i (t)(t).
+(32)
+The sigmoid output satisfiesC 2, and the mask implements the
+candidate, trigger, link, and migration checks inC 1 andC 3–
+C5. The execution-stage admission rules enforceC 6 as users
+share the remaining capacity.
+Equations (30) and (31) expose the coupling between
+representation and control: the same contention information
+conditions both the workload proposed for a candidate and
+the estimated value of assigning that workload to it. The final
+selection therefore compares satellite actions together with
+their associated continuous fractions.
+D. Training and Online Execution
+Training uses an experience replay bufferDof joint transi-
+tions, each containing the user tuples( ˜︁o, d,ˆ︁ρ, r,˜︁o′, δ,m,m ′).
+Here,ˆ︁ρis the requested fraction, the primed quantities describe
+the next observation, andδindicates a true terminal transition.
+The buffer stores the encoded observations used for the
+decisions. A minibatch ofBjoint transitions providesBN
+user samples for the shared PDQN networks.
+Task feedback is assigned when an outcome is resolved. For
+local-only execution, the reserved completion time determines
+the outcome at dispatch; remote outcomes are evaluated upon
+MEC completion, expiration, or termination. Interruption,
+association-failure, and load-balance feedback are assigned in
+the corresponding slot. Thus, the replay reward follows (29),
+including outcomes from previously dispatched workloads.
+LetQ ¯θ andµ ¯ψ,j denote the target networks. For a sampled
+next observation, the online networks select
+d′ = arg max
+j:m′
+j=1
+Qθ (˜︁o′, j, µψ,j(˜︁o′)).(33)
+The target networks then evaluate this choice:
+y=r+γ(1−δ)Q ¯θ
+(︁˜︁o′, d′, µ ¯ψ,d′(˜︁o′)
+)︁
+.(34)
+The Q-network minimizes
+LQ(θ) =E D
+[︂
+(Qθ(˜︁o, d,ˆ︁ρ)−y)2
+]︂
+.(35)
+Time-limit truncation retains bootstrapping, since unfinished
+workloads continue to have future value.
+The parameter branches are updated through the Q-network
+using the objective
+Lµ(ψ) =−η µED
+[︃
+max
+j:mj=1
+Qθ (˜︁o, j, µψ,j(˜︁o))
+]︃
+,(36)
+whereη µ >0scales the parameter objective. During this
+update,θis held constant and gradients propagate through the
+continuous parameter of the maximizing feasible branch. Both
+optimizers use gradient clipping. EveryC tar learning updates,
+the target parameters are copied from the online networks:
+¯θ←θand ¯ψ←ψ.
+Exploration samples a feasible discrete index and a contin-
+uous fraction uniformly from[0,1]. After the initial replay

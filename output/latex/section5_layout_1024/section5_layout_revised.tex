@@ -1,0 +1,463 @@
+% Replacement for Section V through the end of the uploaded source.
+% Load section5_layout_preamble.tex at the end of the preamble first.
+% This file is a document fragment, not a standalone document.
+
+\FloatBarrier
+\Needspace{8\baselineskip}
+\section{Performance Evaluation}
+\label{sec:performance_evaluation}
+
+\subsection{Experimental Setup and Evaluation Protocol}
+\label{subsec:experimental_setup}
+
+We evaluate HAN--PDQN in a multi-user LEO satellite edge
+computing network comprising 66 satellites distributed
+across six orbital planes. The orbital altitude and
+inclination are 550~km and $53^\circ$, respectively.
+Ground users are distributed around
+$(39.9^\circ\mathrm{N},116.4^\circ\mathrm{E})$, and the
+population varies from 20 to 40 users.
+User locations and orbital starting times are resampled
+at episode initialization. Each episode contains
+512 slots, with a slot duration of 1~s.
+Tables~\ref{tab:simulation_parameters} and~\ref{tab:training_parameters}
+summarize the system and training parameters, respectively.
+
+% Place the two parameter tables together, outside the text columns.
+\begin{strip}
+\noindent
+\begin{minipage}[t]{0.485\textwidth}
+\vspace{0pt}
+\LEOTableSetup
+\captionof{table}{System Parameters}
+    \label{tab:simulation_parameters}
+    \centering
+    \footnotesize
+    \renewcommand{\arraystretch}{1.08}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{p{0.60\linewidth}p{0.32\linewidth}}
+        \hline
+        Parameter & Value \\
+        \hline
+        Orbital planes / satellites per plane & $6/11$ \\
+        Orbital altitude / inclination & $550$ km / $53^\circ$ \\
+        Number of users, $N$ & $20,25,30,35,40$ \\
+        User deployment radius & $5^\circ$ \\
+        Slot duration, $\Delta t$ & $1$ s \\
+        Episode length & $512$ slots \\
+        Carrier frequency, $f_c$ & $20$ GHz \\
+        Uplink bandwidth per satellite, $B_s$ & $10$ MHz \\
+        User / satellite transmit power & $24/40$ dBm \\
+        User / satellite antenna gain & $38.5/34$ dBi \\
+        Noise temperature / noise figure & $354.81$ K / $2$ dB \\
+        Local processing rate, $f_i$ & $1$ Gcycle/s \\
+        Total MEC processing rate, $F_s$ & $10$ Gcycle/s \\
+        MEC capacity / concurrency limit & $6/2$ tasks \\
+        Task arrival probability & $0.35$ per user-slot \\
+        Minimum elevation, $\theta_{\min}$ & $10^\circ$ \\
+        Visibility thresholds, $v_{\min},v_{\mathrm{trig}}$
+        & $60$ s \\
+        Target SNR threshold, $\Gamma_{\min}$ & $-5$ dB \\
+        Association-change overhead, $\delta^{\mathrm{ho}}$
+        & $0.6$ s \\
+        Output-to-input size ratio, $\zeta$ & $0.1$ \\
+        Amplifier efficiency / circuit power & $0.38$ / $0.05$ W \\
+        Local energy coefficient, $\kappa_i$ & $10^{-27}$ \\
+        Minimum effective offloading fraction & $0.05$ \\
+        \hline
+    \end{tabular}
+\end{minipage}\hfill%
+\begin{minipage}[t]{0.485\textwidth}
+\vspace{0pt}
+\LEOTableSetup
+\captionof{table}{Algorithm and Training Parameters}
+    \label{tab:training_parameters}
+    \centering
+    \footnotesize
+    \renewcommand{\arraystretch}{1.08}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{p{0.60\linewidth}p{0.32\linewidth}}
+        \hline
+        Parameter & Value \\
+        \hline
+        Interaction budget per run & $150{,}000$ steps \\
+        Training seeds & $42$--$46$ \\
+        Evaluation episodes per seed & $5$ \\
+        Discount factor, $\gamma$ & $0.99$ \\
+        HAN layers / attention heads & $2/4$ \\
+        HAN hidden / output dimension & $64/64$ \\
+        PDQN Q-network hidden widths & $256,128$ \\
+        PDQN parameter-branch hidden widths & $128,64$ \\
+        PDQN learning rate & $10^{-3}$ \\
+        HAN--PDQN / PDQN replay batch size & $512/128$ \\
+        PDQN replay capacity & $50{,}000$ \\
+        PDQN replay warm-up & $1{,}000$ steps \\
+        PDQN target-copy interval & $500$ updates \\
+        PDQN exploration probability & $1.0\rightarrow0.02$ \\
+        MAPPO learning rate & $10^{-4}$ \\
+        MAPPO rollout length / update epochs & $1024/4$ \\
+        MAPPO minibatch size & $512$ \\
+        MADDPG actor / critic learning rate
+        & $10^{-4}/(3\times10^{-4})$ \\
+        MADDPG replay batch size & $128$ \\
+        MADDPG target soft-update coefficient & $0.005$ \\
+        \hline
+    \end{tabular}
+\end{minipage}
+\end{strip}
+
+Each user generates a task independently with probability
+0.35 per slot. Tasks are classified as light, medium,
+and heavy with probabilities 0.3, 0.5, and 0.2.
+For light tasks, the input size, computation demand,
+and deadline are uniformly sampled from
+$[1,3]$~Mbit, $[0.3,0.8]$~Gcycle, and $[1.5,3]$~s,
+respectively. The corresponding ranges are
+$[5,10]$~Mbit, $[1.2,2.5]$~Gcycle, and $[2.5,5.5]$~s
+for medium tasks, and
+$[12,25]$~Mbit, $[3,7]$~Gcycle, and $[4,8]$~s
+for heavy tasks.
+Each MEC provides a total processing rate of
+10~Gcycle/s through two 5-GHz cores.
+The utility weights are
+$(\omega_{\mathrm D},\omega_{\mathrm E},
+\omega_{\mathrm I},\omega_{\mathrm F},\omega_{\mathrm L})
+=(0.60,0.40,0.30,0.20,0.05)$,
+with $E_{\mathrm{ref}}=1$~J.
+
+We compare HAN--PDQN with six benchmarks:
+\begin{itemize}
+    \item \textit{HAN+MAPPO}: A graph-assisted multi-agent
+    proximal policy optimization controller for joint
+    satellite selection and offloading.
+
+    \item \textit{MAPPO}: A multi-agent proximal policy
+    optimization controller using raw user, task, and
+    candidate-satellite observations.
+
+    \item \textit{MADDPG}: A multi-agent deep deterministic
+    policy gradient controller using raw observations
+    to generate satellite and offloading decisions.
+
+    \item \textit{PDQN}: A parameterized Q-learning
+    controller using raw observations without HAN
+    representations.
+
+    \item \textit{Min-Distance}: A distance-based policy
+    that requests the nearest admissible satellite
+    under the handover conditions and requests full
+    offloading. It retains the current association
+    when no shorter admissible alternative is available.
+
+    \item \textit{Full-Local}: A policy that processes
+    all tasks locally and issues no handover requests.
+\end{itemize}
+All methods operate under the same task, communication,
+MEC service, and admission models.
+
+For each user population, the learning methods are trained
+with seeds 42--46 and an interaction budget of
+$1.5\times10^5$ environment steps per run.
+Table~\ref{tab:training_parameters} reports the principal
+training settings.
+HAN--PDQN and PDQN use replay batch sizes of 512 and 128,
+respectively. Periodic model evaluation is performed
+every 25,000 environment steps for the PDQN and MAPPO
+variants, and every ten episodes for MADDPG.
+Checkpoints are selected according to their mean
+evaluation return.
+
+Each selected policy is evaluated over five episodes
+per training seed, using matched scenario seeds across
+methods. Performance metrics are first averaged over
+these episodes and then summarized across the five
+training seeds. Shaded regions and error bars represent
+95\% bootstrap confidence intervals at the training-seed
+level.
+
+The reported metrics follow
+Section~\ref{subsec:task_computation_model}.
+Successful-task delay is averaged over successful tasks,
+whereas the deadline violation rate is normalized by
+the number of generated tasks.
+Energy per successful task divides the total accounted
+terminal energy by the successful-task count.
+We additionally report cumulative blocked user-time,
+total terminal energy per episode, and handovers per
+user-minute to characterize service continuity and
+operating costs.
+
+\Needspace{7\baselineskip}
+\subsection{Training Convergence and Hyperparameter Sensitivity}
+\label{subsec:training_performance}
+
+Fig.~\ref{fig:algorithm_convergence} compares the training
+returns of the five learning methods with 30 users.
+The episode return accumulates the user-averaged slot
+reward over an episode, and each curve averages the
+corresponding returns across training seeds.
+The figure includes complete episodes within the
+interaction budget.
+
+\par\addvspace{6pt}
+\noindent\begin{minipage}{\columnwidth}
+\LEOFigureSetup
+\centering
+    \includegraphics[
+        trim=2.5mm 5mm 0mm 1mm,
+        clip,
+        width=\linewidth
+    ]{algorithm_convergence_u30.pdf}
+    \captionof{figure}{Training returns with 30 users and 512 steps
+    per episode. Curves show five-seed means with 95\%
+    bootstrap confidence intervals. No smoothing is applied;
+    MAPPO variants retain their two-episode logging intervals.}
+    \label{fig:algorithm_convergence}
+\end{minipage}
+\par\addvspace{8pt}
+
+HAN+MAPPO and MAPPO improve rapidly during the initial
+training stage and subsequently approach lower return
+levels. HAN--PDQN and PDQN exhibit a more pronounced
+increase during the intermediate stage, after which
+HAN--PDQN maintains the highest mean return.
+Averaged over the final 20 complete episodes,
+HAN--PDQN achieves a return of 87.78, compared with
+76.85 for PDQN. The corresponding returns of HAN+MAPPO
+and MAPPO are approximately 59.30 and 57.86.
+MADDPG exhibits lower late-stage returns and greater
+variation across seeds.
+The comparison therefore favors HAN--PDQN in the
+quality of the learned policy under the allocated
+interaction budget.
+
+We next examine the sensitivity of HAN--PDQN to its
+learning rate and replay batch size in
+Fig.~\ref{fig:hyperparameter_convergence}.
+For the learning-rate experiment, the batch size is
+fixed at 512 and the rate is selected from
+$\{10^{-4},3\times10^{-4},10^{-3},3\times10^{-3}\}$.
+For the batch-size experiment, the learning rate is
+fixed at $10^{-3}$ and the batch size is selected from
+$\{128,256,512,1024\}$.
+Each setting uses five training seeds.
+
+\par\addvspace{6pt}
+\noindent\begin{minipage}{\columnwidth}
+\LEOFigureSetup
+\centering
+    \includegraphics[
+        trim=5.5mm 0.8mm 0mm 5mm,
+        clip,
+        width=\linewidth
+    ]{convergence_u30.pdf}
+    \captionof{figure}{Hyperparameter sensitivity with 30 users:
+    (a) learning rate with batch size 512;
+    (b) replay batch size with learning rate $10^{-3}$.
+    Curves show five-seed means and 95\% bootstrap confidence
+    intervals after a three-episode trailing mean.}
+    \label{fig:hyperparameter_convergence}
+\end{minipage}
+\par\addvspace{8pt}
+
+In Fig.~\ref{fig:hyperparameter_convergence}(a), learning
+rates between $10^{-4}$ and $10^{-3}$ attain similar
+late-stage returns. Increasing the rate to
+$3\times10^{-3}$ produces a substantially lower mean
+return and a wider confidence interval.
+This behavior indicates sensitivity to aggressive
+updates when the value estimates and continuous
+action parameters evolve together.
+
+Fig.~\ref{fig:hyperparameter_convergence}(b) shows that
+batch sizes 128, 512, and 1024 reach comparable return
+levels, whereas batch size 256 yields a lower mean
+and greater variation across seeds.
+The dependence on batch size is therefore nonmonotonic
+over the examined settings.
+The default combination of learning rate $10^{-3}$
+and batch size 512 attains a high return with a
+consistent five-seed training profile and is used
+for the subsequent HAN--PDQN comparisons.
+
+\Needspace{7\baselineskip}
+\subsection{Task Performance under User Scaling}
+\label{subsec:user_scaling_performance}
+
+Fig.~\ref{fig:task_performance} evaluates task service
+as the user population increases from 20 to 40.
+The per-user arrival process remains unchanged, so
+a larger population increases the aggregate demand
+for the shared uplink and MEC resources.
+HAN--PDQN achieves the lowest mean successful-task
+delay, deadline violation rate, and energy per successful
+task at every evaluated population.
+
+\begin{strip}
+\noindent\begin{minipage}{\textwidth}
+\LEOFigureSetup
+\centering
+    \includegraphics[
+        trim=1.8mm 3.3mm 1.4mm 1.8mm,
+        clip,
+        width=\linewidth
+    ]{figure1_line_metrics.pdf}
+    \captionof{figure}{Task performance versus the number of users:
+    (a) average successful-task delay;
+    (b) deadline violation rate;
+    (c) terminal energy per successful task.
+    Curves show five-training-seed means, and shaded regions
+    indicate 95\% bootstrap confidence intervals.}
+    \label{fig:task_performance}
+\end{minipage}
+\end{strip}
+
+In Fig.~\ref{fig:task_performance}(a), the mean
+successful-task delay of HAN--PDQN increases from
+1554.9~ms at 20 users to 1906.7~ms at 40 users.
+The corresponding PDQN values are 1608.2 and 1939.9~ms.
+At 30 users, HAN--PDQN achieves 1779.7~ms, compared
+with 1820.7~ms for PDQN and 2053.8~ms for HAN+MAPPO.
+The increase with population is consistent with
+greater contention for upload bandwidth and MEC
+service. Throughout this range, the proposed controller
+maintains a lower delay despite the growing demand.
+
+The reliability difference is more pronounced in
+Fig.~\ref{fig:task_performance}(b).
+At 30 users, the deadline violation rate is 6.89\%
+for HAN--PDQN and 9.47\% for PDQN, a reduction of
+2.58 percentage points.
+HAN+MAPPO and MAPPO yield 18.38\% and 18.83\%,
+respectively, under the same population.
+At 40 users, HAN--PDQN maintains a violation rate
+of 10.99\%, compared with 13.08\% for PDQN,
+24.24\% for HAN+MAPPO, and 37.47\% for Min-Distance.
+These results show that the delay advantage is
+accompanied by improved deadline compliance.
+
+Fig.~\ref{fig:task_performance}(c) further shows that
+HAN--PDQN uses less terminal energy per successful
+task across all evaluated populations.
+Its value increases from 0.948~J at 20 users to
+1.491~J at 40 users, while PDQN increases from
+1.040 to 1.537~J.
+At 30 users, HAN--PDQN requires 1.242~J per successful
+task, compared with 1.318~J for PDQN and 2.376~J
+for Min-Distance.
+The combination of lower delay, fewer deadline violations,
+and lower energy per successful task indicates an
+improvement across the three task-service dimensions.
+
+Full-Local exhibits nearly constant delay and energy
+per successful task as the population changes, consistent
+with users operating independent local processors.
+Its deadline violation rate nevertheless remains
+approximately 49\%, and its energy per successful
+task is approximately 4.1~J.
+The joint consideration of delay and task outcomes
+therefore reveals the service limitations of relying
+entirely on local computation.
+
+For an aggregate comparison, we first take the arithmetic
+mean of each metric over the five user populations
+and then compute its relative reduction against PDQN.
+Under this convention, HAN--PDQN reduces successful-task
+delay, deadline violation rate, and energy per successful
+task by 2.16\%, 21.26\%, and 5.72\%, respectively.
+The largest relative improvement occurs in deadline
+compliance, while the delay and energy improvements
+remain consistent across the evaluated populations.
+
+\Needspace{7\baselineskip}
+\subsection{Service Continuity and Operating Costs}
+\label{subsec:service_operating_costs}
+
+Fig.~\ref{fig:service_operating_costs} complements the
+task-level results by examining service interruption,
+aggregate terminal energy, and handover activity.
+These metrics reveal how different association and
+offloading policies balance connection availability
+against the conditions under which tasks are executed.
+
+\begin{strip}
+\noindent\begin{minipage}{\textwidth}
+\LEOFigureSetup
+\centering
+    \includegraphics[
+        trim=3mm 3.3mm 1.4mm 1.8mm,
+        clip,
+        width=\linewidth
+    ]{figure2_bar_metrics.pdf}
+    \captionof{figure}{Service continuity and operating costs:
+    (a) blocked user-time per episode;
+    (b) total terminal energy per episode;
+    (c) handovers per user-minute.
+    Bars show five-training-seed means with 95\% bootstrap
+    confidence intervals. Full-Local is omitted from (a)
+    and performs no handovers in (c).}
+    \label{fig:service_operating_costs}
+\end{minipage}
+\end{strip}
+
+In Fig.~\ref{fig:service_operating_costs}(a), HAN--PDQN
+has lower mean blocked user-time than PDQN at every
+population. At 30 users, the values are 284.08 and
+298.12~user-s per episode, respectively.
+The cumulative quantity increases with population,
+partly because more users contribute to the total
+observation time.
+Min-Distance yields a slightly lower value of
+276.32~user-s at 30 users, but its deadline violation
+rate in Fig.~\ref{fig:task_performance}(b) is much higher.
+Connection availability therefore needs to be considered
+together with the processing conditions and workload
+assigned to the selected satellite.
+
+Fig.~\ref{fig:service_operating_costs}(b) shows that
+HAN--PDQN also maintains the lowest mean total
+terminal energy over the evaluated populations.
+At 30 users, it consumes 6.18~kJ per episode,
+compared with 6.37~kJ for PDQN,
+8.41~kJ for Min-Distance, and 11.26~kJ for Full-Local.
+Total energy measures the system's accumulated
+terminal expenditure, whereas
+Fig.~\ref{fig:task_performance}(c) measures the
+expenditure per successful task.
+The improvement in both quantities shows that the
+energy-efficiency gain accompanies a reduction in
+aggregate terminal consumption.
+
+The handover results in
+Fig.~\ref{fig:service_operating_costs}(c) show a
+different ordering among the methods.
+At 30 users, HAN--PDQN performs 0.606 handovers per
+user-minute, compared with 0.659 for PDQN,
+0.192 for HAN+MAPPO, and 0.198 for Min-Distance.
+Thus, HAN--PDQN obtains its task-performance advantage
+with fewer handovers than PDQN, while remaining more
+active in satellite reassociation than HAN+MAPPO
+and Min-Distance.
+The lower switching activity of the latter policies
+is accompanied by higher task delay, deadline violations,
+and energy per successful task.
+This comparison reflects the role of the long-term
+objective in balancing immediate switching costs
+against subsequent task-service conditions.
+
+Using the same across-population averaging convention
+as in Section~\ref{subsec:user_scaling_performance},
+HAN--PDQN reduces mean blocked user-time,
+total terminal energy, and handover frequency relative
+to PDQN by 7.85\%, 3.19\%, and 14.82\%, respectively.
+These operating-cost reductions accompany the
+task-level improvements, linking the quality of
+completed service to the association and workload
+decisions that sustain it.
+
+\FloatBarrier
+
+% Insert the Conclusion here when ready; keep the bibliography below it.
+\bibliographystyle{IEEEtran}
+\bibliography{sample}
+\end{document}
