@@ -1,8 +1,10 @@
 # 实验待办与统一协议
 
-更新日期：2026-11-06。主方法：**HAN+PDQN**。
+更新日期：2026-11-11。主方法：**HAN+PDQN**。
 
-本清单区分代码可运行、小规模验证通过、正式实验完成。新入口已实现并通过 CPU 小规模验证，**未启动正式 150,000 步多种子训练**；不预设联合训练一定优于冻结版。
+本清单区分代码可运行、小规模验证通过、正式实验完成。v1 已在服务器运行，用户因耗时暂停并决定用新版从零重训；不是此前记录的“从未启动”。当前 v2 的正式五种子实验尚未完成，不预设联合训练一定优于冻结版。
+
+11 月 11 日用户日志仅确认 U30/seed43 的 v1 匹配 PDQN 完成 150k 步（独立测试 reward=84.8932），联合版日志到 25,600 步。不能据此标记所有规模/种子完成，也不将此次用户计划清理的 v1 数据与 `multiseed_0907` 历史实验混淆。
 
 ## 已完成的准备
 
@@ -13,6 +15,8 @@
 - [x] 独立验证/测试、实际参数记录、代码指纹和完成文件校验。
 - [x] 完整回合边界恢复：replay、优化器、在线/目标网络、随机状态及当时最佳模型。
 - [x] CPU 真实环境短试跑；HAN 梯度与更新、目标同步、批图隔离、梯度累积、评估随机状态隔离、模拟中断后恢复一致性检查。
+- [x] v2：CPU 先拼接图再批量传输，当前/下一图输入在同次更新内复用；无 dropout 且单微批时复用当前图的 HAN 计算图，两种损失仍共同更新编码器。
+- [x] v2：动作选择直接使用设备上的 HAN 表示，移除嵌入 GPU→CPU→GPU 往返；降低逐微批同步；加入短基准和每分钟速度日志。
 
 ## 两种方法和固定协议
 
@@ -27,14 +31,15 @@
 |---|---|
 | 用户数 / 训练种子 | U30；42、43、44、45、46 |
 | 预算 / 回合长度 | 每次 150,000 环境步；每回合最多 512 步；末尾不完整回合不进入收敛图 |
-| Replay batch / 容量 / 预热 | 512 / 50,000 / 1,000 条联合时隙转移；每条包含全部用户 |
+| Replay batch / 容量 / 预热 | 128 / 50,000 / 1,000 条联合时隙转移；每条包含全部用户 |
 | Q 网络 / 参数网络 | `(256,128)` / `(128,64)`，沿用现有 PDQN 结构与目标定义 |
 | 学习率 | Q 与参数网络均 1e-3；HAN 单独 1e-4，属于待验证的起始设置 |
 | HAN | 64 维、4 头、2 层、现有五类元路径、dropout=0；无预训练 |
 | HAN 更新 | 累积 TD 和参数损失的梯度，每轮一次 HAN Adam 更新；不重复注册进两个头部优化器 |
 | 梯度裁剪 / 折扣 | 0.5 / 0.99 |
-| 更新频率 | 满足预热后，每环境步一次 replay 更新；每 500 次更新同步目标 Q、参数网络和 HAN |
-| 探索 | ε：1→0.02；衰减长度为预算的 25%，按学习更新计数；BC=0，无启发式安全探索混入 |
+| 更新频率 | 满足预热后，每 4 环境步一次 replay 更新；默认更新位置 1000、1004、…、150000，共 37,251 次 |
+| 目标同步 | 每 125 次优化更新同步目标 Q、参数网络和 HAN，约相当于 500 环境步 |
+| 探索 | ε：1→0.02；衰减长度按频率换算为 9,375 次更新（约 37,500 环境步），不会因降低更新频率而拖到训练末期；BC=0 |
 | 掩码 | 环境统一的链路、迁移容量、提前切换门控，不只检查卫星可见性 |
 | 时限 | 真终止才关闭后续价值；512 步截断继续 bootstrap，使用重置前状态 |
 | 边界到达 | 模拟器报告终点不再生成下一决策任务；仅为训练 bootstrap 补生成下一决策任务，测试记账保持原规则 |
@@ -42,11 +47,14 @@
 | 测试 | 锁定模型后，另一组 20 个场景；不参与选模 |
 | 场景种子 | 训练：`训练seed * 1000000 + episode_index`；验证：1000000000 起；测试：2000000000 起 |
 | 统计 | 先按每模型的测试回合汇总，再按训练种子求均值与 95% bootstrap 区间 |
-| 显存控制 | 默认每 16 条转移一个微批，按其占完整 batch 的比例累积梯度；实际 batch=512，每完整 batch 才进行一次各优化器更新 |
+| 显存控制 | 默认 microbatch=128，即完整 batch 一次更新；显存不足可指定 microbatch=32，仍按权重累积成有效 batch=128 |
+| 进度 | 默认每 60 秒报告环境 steps/s、优化更新次数及剩余小时估计，并保留每 10 回合日志 |
 
 不同方法、训练种子和用户规模共用预先固定的验证/测试场景。场景复用用于配对，不构成额外独立训练种子。训练、验证、测试种子空间不重合。验证使用独立环境，并恢复 Python、NumPy、Torch 和动作探索随机状态。
 
 新入口记录实际 `PDQNConfig`，命令中的 batch 和学习率会真正传入算法。旧入口保留历史语义，本次补实验统一使用新入口。
+
+v2 的 batch 和更新频率调整属于新协议，不与 v1 数值合并，也不从 v1 `resume.pt` 接续。单次优化的数学目标保留；训练期间抽样的总转移数明显减少，仍需检验最终性能。本地单线程 CPU、U30、真实 replay 的短基准：v1 默认单次更新约 9.64 秒；同为 batch=128/microbatch=128 时，v1 约 2.86 秒、v2 约 2.41 秒；结合每 4 步更新后，v2 平均每环境步分摊约 0.60 秒更新计算。相同配置/初始权重/样本的一次更新中，Q、参数网络、HAN 和目标 HAN 权重差值为零。这些是本地实现检查，不是服务器 GPU 加速保证或收敛结果。
 
 ## 直接运行
 
@@ -59,24 +67,29 @@ python scripts/run_matched_pdqn_suite.py --dry-run
 # 两方法各 12 步，结果自动进入独立 smoke_test 子目录
 python scripts/run_matched_pdqn_suite.py --smoke-test --device cpu
 
+# 在服务器先测实际吞吐与峰值显存；不创建正式实验、不保存权重
+python scripts/run_matched_pdqn_suite.py --benchmark --device cuda --benchmark-output results/benchmark_matched_pdqn_20261111.json
+
 # U30、五种子、两方法；完成后独立测试、汇总、出图
-python scripts/run_matched_pdqn_suite.py --device cuda
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111
 
 # 也可先完成全部训练，再单独测试
-python scripts/run_matched_pdqn_suite.py --device cuda --stage train
-python scripts/run_matched_pdqn_suite.py --device cuda --stage test
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111 --stage train
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111 --stage test
 
 # 中断恢复：使用相同参数、代码、设备类型和 PyTorch 版本
-python scripts/run_matched_pdqn_suite.py --device cuda --resume
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111 --resume
 
 # 按预先规划扩展五规模；验证并复用已完成的 U30
-python scripts/run_matched_pdqn_suite.py --device cuda --extend-suite --user-counts 20 25 30 35 40
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111 --extend-suite --user-counts 20 25 30 35 40
 
 # 只重建完整的新结果汇总与图
-python scripts/run_matched_pdqn_suite.py --stage aggregate
+python scripts/run_matched_pdqn_suite.py --output-dir results/multiseed_joint_20261111 --stage aggregate
 ```
 
 `--output-dir` 可指定结果位置，默认 `results/multiseed_joint_20261106/`。修改学习率、batch、场景划分或代码时使用新输出目录。扩展矩阵后，重跑各阶段也需传入扩展后的完整 `--user-counts` / `--seeds` / `--methods`。
+
+以上正式命令显式使用新目录，保留原默认路径。`--benchmark` 只测第一个用户规模和第一个训练 seed、所选两种方法，采集真实转移、预热后计时，报告更新耗时、完整环境步速度和粗略 150k 耗时；粗估不含验证和 checkpoint 写盘，并受 GPU 竞争影响。当前本地 PyTorch 仅支持 CPU，3090 实测由服务器运行此命令取得。若显存不足，基准与正式运行均添加 `--microbatch-size 32`；正式开始后不能随意改微批参数再续训。
 
 `--resume` 恢复最近落盘的完整回合边界，未保存的步数从该边界按原随机状态重算；不把只加载权重称作完整续训。恢复文件包含原始图 replay，内存和磁盘需求明显大于旧权重。默认每 25k 步后的第一个完整回合边界保存，可用 `--save-interval` 调整。CPU 已验证恢复后权重一致；GPU 逐位复现还依赖硬件与浮点实现。
 

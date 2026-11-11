@@ -8,6 +8,7 @@
 - 训练入口 `scripts/train.py --algorithm pdqn` 对应 `HANPDQNTrainer`；结果方法键为 `han_pdqn`，图表名为 `HAN+PDQN`。
 - 对比脚本中的 `pdqn` 是不带 HAN 的 PDQN 基线；不能与主方法 `han_pdqn` 混淆。HAN+MAPPO 是历史主方法、当前对比方法。
 - 2026-11-06 起，统一协议的补充实验使用 `scripts/run_matched_pdqn_suite.py`：`han_pdqn_joint` 为从随机初始化开始的 HAN+PDQN 联合训练，`pdqn_matched` 为设置匹配的无 HAN 对照，均不需要预训练。默认 U30、seed42–46，新结果另存 `results/multiseed_joint_20261106/`。新机制已实现并完成小规模验证，正式实验完成情况以清单为准。
+- 2026-11-11 用户因 v1 训练过慢暂停服务器进程，明确选择按新版从零重训。该入口现为协议 v2：两方法共同默认 batch=128、microbatch=128、每 4 环境步更新一次，目标每 125 次更新同步；探索衰减同步换算。默认输出路径保留，建议用 `--output-dir results/multiseed_joint_20261111` 单独记录 v2；不得从 v1 checkpoint 续训或混合统计。先使用 `--benchmark --device cuda` 测吞吐，见 `docs/EXPERIMENT_TODO.md`。
 - 现有 `multiseed_0907`、`dif_converge` 的 HAN+PDQN 及旧入口 `scripts/train.py --algorithm pdqn` 使用预训练且冻结的 HAN、编码观测 replay；该旧入口新训练仍需要 `pretrained_han_path`。保留其 `han_pdqn` 身份，不得改名为联合训练结果。学习率为 `pdqn_lr`，不要误把 PPO 的 `learning_rate`、`n_steps`、`n_epochs` 当作 PDQN 参数。进度见 `docs/EXPERIMENT_TODO.md`。
 - 历史结果的 `is_system` 记录当次运行角色，并不决定当前论文主方法。20260804 单种子目录中 HAN+PDQN 位于 `u*/learned_baselines/han_pdqn/`，应按 `method=han_pdqn` 读取其指标。
 - 保留历史 CSV/JSON/checkpoint 和实验日志的真实算法身份；不要把 HAN+MAPPO 的数值或权重改名成 HAN+PDQN。重画历史图时另存输出。

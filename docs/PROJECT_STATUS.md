@@ -4,13 +4,15 @@
 
 > 2026-09-08 更新：多用户套件默认写入 `results/multiseed_0907/seed{seed}/u{num_users}`，主方法训练也在 `learned_baselines/han_pdqn` 下。`--with-sca` 可调用独立 SCA 评估并校验后汇总；旧 run-id 路径须用 `--legacy-layout`。完整命令见 [多种子目录说明](MULTISEED_LAYOUT.md)。
 
-更新日期：2026-11-06。用户确认主方法为 **HAN+PDQN**。
+更新日期：2026-11-11。用户确认主方法为 **HAN+PDQN**。
 
-## 当前执行重点（2026-11-06）
+## 当前执行重点（2026-11-11）
 
-新增 `scripts/run_matched_pdqn_suite.py`，默认 U30、seed42–46，方法键为 `pdqn_matched`、`han_pdqn_joint`。两者统一 batch=512、PDQN 学习率=1e-3、梯度裁剪=0.5、25k 步验证、可行性掩码与时限截断规则。联合版保存原始图 replay，重算编码并更新 HAN，配套目标 HAN，不需要预训练。
+`scripts/run_matched_pdqn_suite.py` 默认 U30、seed42–46，方法键为 `pdqn_matched`、`han_pdqn_joint`。11 月 11 日更新到 v2：两者统一 batch=128、microbatch=128、每 4 环境步更新一次，PDQN 学习率=1e-3、梯度裁剪=0.5、25k 步验证、可行性掩码和截断规则。目标每 125 次更新同步；ε 衰减长度按频率换算。联合版保存原始图 replay、重算编码并更新 HAN，配套目标 HAN，无需预训练。
 
-新入口已实现，CPU 小规模训练/独立测试与关键回归检查通过；**尚未启动正式 150k 五种子训练**。新结果写入 `results/multiseed_joint_20261106/`。验证/测试场景独立；回合边界保存完整 replay、优化器、网络及随机状态。运行说明和分阶段清单见 [EXPERIMENT_TODO.md](EXPERIMENT_TODO.md)。
+用户提供的 11 月 10–11 日服务器日志表明，v1 已正式运行：U30/seed43 的匹配 PDQN 完成 150k 步，TEST reward=84.8932；联合版日志到 25,600 步，速度约 2.07 秒/步。此处仅记录用户提供的运行状态，没有将日志当成完整五种子结果。用户随后暂停服务器任务，明确选择用新版从零重训，拟自行清理服务器此次 v1 产物；本次没有删除本地历史实验。
+
+v2 优化了 CPU 批图打包后整体传输、单次更新内输入复用、当前图编码复用和 GPU 动作直接计算，新增 `--benchmark` 和每分钟速度日志。默认输出目录保留 `results/multiseed_joint_20261106/`；建议显式另存 `results/multiseed_joint_20261111/`。v2 正式训练待运行，不与 v1 混合。验证/测试独立，回合边界保存完整恢复状态。详见 [EXPERIMENT_TODO.md](EXPERIMENT_TODO.md)。
 
 已核实旧 `multiseed_0907` 为 5 规模 × 7 方法 × 5 种子，共 175 条方法/种子记录；`dif_converge` 已完成冻结版 U30 的 7 配置 × 5 种子扫描，其中 30 次新运行、5 次默认配置复用。它们都不是联合训练结果。
 
@@ -34,7 +36,7 @@
 
 核心实现：`scripts/train.py::HANPDQNTrainer`、`src/algorithm/pdqn.py`、`src/model/hetero_gnn.py`。
 PDQN 的参数网络给出候选离散动作的连续卸载参数，Q 网络选择离散动作。
-旧入口从检查点加载 HAN 并冻结，replay 存储编码后的观测；其历史结果不能描述为端到端联合训练。新入口实现从零联合训练，当前仅完成软件及小规模验证。
+旧入口从检查点加载 HAN 并冻结，replay 存储编码后的观测；其历史结果不能描述为端到端联合训练。新入口实现从零联合训练，v1 已有服务器运行日志但因耗时暂停，v2 正式结果尚未完成。
 预训练开销、来源和种子划分需要在正式实验中记录。
 
 ## 已有结果如何读取

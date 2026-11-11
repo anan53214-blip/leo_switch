@@ -1,7 +1,7 @@
 import copy
 import json
 import random
-from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -60,6 +60,23 @@ def test_effective_pdqn_settings_match(protocol):
     assert a == b
 
 
+@pytest.mark.parametrize("method", ["pdqn_matched", "han_pdqn_joint"])
+def test_device_action_path_preserves_original_exploration(protocol, method):
+    learner, _, replay = populated(protocol, method)
+    state = replay.data[0][0]
+    for epsilon in (0.0, 0.3, 1.0):
+        rng = copy.deepcopy(learner.rng.bit_generator.state)
+        with torch.no_grad():
+            raw = learner.encode([state]).cpu().numpy()
+        expected = learner.act(raw, state.masks, epsilon=epsilon)
+        expected_rng = copy.deepcopy(learner.rng.bit_generator.state)
+        learner.rng.bit_generator.state = rng
+        actual = learner.act_state(state, epsilon=epsilon)
+        for left, right in zip(actual, expected):
+            np.testing.assert_allclose(left, right, rtol=0, atol=1e-7)
+        assert learner.rng.bit_generator.state == expected_rng
+
+
 def test_graph_batching_has_no_cross_snapshot_attention(protocol):
     learner, _, replay = populated(protocol)
     states = [item[0] for item in replay.data]
@@ -67,6 +84,51 @@ def test_graph_batching_has_no_cross_snapshot_attention(protocol):
         batch = learner.encode(states)
         individually = torch.cat([learner.encode([state]) for state in states])
     torch.testing.assert_close(batch, individually, rtol=2e-5, atol=2e-6)
+
+
+def test_packed_graphs_match_original_han_batching(protocol):
+    from scripts.train import HANMAPPOTrainer
+    learner, _, replay = populated(protocol)
+    states = [record[0] for record in replay.data]
+    with torch.no_grad():
+        old = HANMAPPOTrainer._encode_graph_snapshots(
+            SimpleNamespace(device=learner.device, han_encoder=learner.encoder), [s.graph for s in states])
+        expected = torch.cat((torch.tensor(np.stack([s.raw for s in states])), torch.stack(old["user"])), -1).flatten(0, 1)
+        actual = learner.encode(states)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
+def test_cached_encoding_matches_recomputed_microbatch_gradients(protocol):
+    full, _, replay = populated(protocol)
+    small = copy.deepcopy(full)
+    full.microbatch = full.config.batch_size
+    small.microbatch = 2
+    replay_small = copy.deepcopy(replay)
+    for _ in range(3):
+        a, b = full.update(replay), small.update(replay_small)
+        for key in ("q_loss", "param_loss", "han_grad_norm"):
+            assert a[key] == pytest.approx(b[key], rel=3e-4, abs=2e-6)
+    for module in ("encoder", "target_encoder", "q_net", "param_nets"):
+        for name, value in getattr(full, module).state_dict().items():
+            torch.testing.assert_close(value, getattr(small, module).state_dict()[name], rtol=3e-4, atol=3e-6)
+
+
+def test_full_batch_reuses_packed_inputs_and_current_encoding(protocol, monkeypatch):
+    learner, _, replay = populated(protocol)
+    learner.microbatch = learner.config.batch_size
+    counts = {"pack": 0, "online": 0, "target": 0}
+    original_pack = suite.GraphInputs.pack
+    def pack(*args, **kwargs):
+        counts["pack"] += 1
+        return original_pack(*args, **kwargs)
+    monkeypatch.setattr(suite.GraphInputs, "pack", pack)
+    hooks = [learner.encoder.register_forward_hook(lambda *args: counts.update(online=counts["online"] + 1)),
+             learner.target_encoder.register_forward_hook(lambda *args: counts.update(target=counts["target"] + 1))]
+    try:
+        learner.update(replay)
+    finally:
+        for hook in hooks: hook.remove()
+    assert counts == {"pack": 2, "online": 2, "target": 1}
 
 
 def test_joint_gradients_target_sync_and_replay_contains_raw_graphs(protocol):
@@ -141,7 +203,9 @@ def test_raw_update_matches_existing_pdqn_math(protocol):
 
 
 @pytest.mark.parametrize("method", ["pdqn_matched", "han_pdqn_joint"])
-def test_interrupted_resume_matches_uninterrupted_training(protocol, tmp_path, monkeypatch, method):
+@pytest.mark.parametrize("frequency", [1, 4])
+def test_interrupted_resume_matches_uninterrupted_training(protocol, tmp_path, monkeypatch, method, frequency):
+    protocol["train_frequency"] = frequency
     uninterrupted, interrupted = tmp_path / "full", tmp_path / "resume"
     suite.train_one(protocol, method, 42, 2, uninterrupted, "cpu")
     original_save = suite.atomic_torch
@@ -168,6 +232,7 @@ def test_interrupted_resume_matches_uninterrupted_training(protocol, tmp_path, m
                 torch.testing.assert_close(value, b["learner"]["encoder"][key], rtol=0, atol=0)
     history = suite.read_json(interrupted / "training_history.json")
     assert [r["total_steps"] for r in history["validation"]] == [6, 12]
+    assert history["summary"]["optimizer_updates"] == (12 - 4) // frequency + 1
     result = suite.test_one(protocol, method, 42, 2, interrupted, "cpu")
     assert result["evaluation_seeds"] == protocol["test_seeds"]
     assert result["checkpoint_step"] in [6, 12]
@@ -188,7 +253,28 @@ def test_dry_run_has_no_output_side_effects(tmp_path, capsys):
     plan = json.loads(capsys.readouterr().out)
     assert plan["runs"] == 10
     assert not destination.exists()
-    assert plan["protocol"]["pdqn"]["batch_size"] == 512
+    assert plan["protocol"]["pdqn"]["batch_size"] == 128
+    assert plan["protocol"]["train_frequency"] == 4
+    assert plan["protocol"]["pdqn"]["epsilon_decay_steps"] == 9375
+    assert plan["protocol"]["pdqn"]["target_update_interval"] == 125
+
+
+def test_update_schedule_is_independent_of_episode_resets():
+    config = SimpleNamespace(batch_size=128, warmup_steps=1000)
+    updates = [step for step in range(1, 150001) if suite.update_due(step, min(step, 50000), config, 4)]
+    assert len(updates) == 37251
+    assert updates[:3] == [1000, 1004, 1008]
+    assert updates[-1] == 150000
+    assert not suite.update_due(999, 10000, config, 4)
+
+
+def test_benchmark_does_not_create_experiment_directory(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(suite, "benchmark", lambda protocol, args, device: {"device": device, "measurements": []})
+    output = tmp_path / "experiment"
+    report = tmp_path / "benchmark.json"
+    suite.main(["--benchmark", "--device", "cpu", "--output-dir", str(output), "--benchmark-output", str(report)])
+    assert not output.exists()
+    assert json.loads(capsys.readouterr().out) == suite.read_json(report)
 
 
 def test_suite_matrix_can_only_be_explicitly_extended(tmp_path, monkeypatch):

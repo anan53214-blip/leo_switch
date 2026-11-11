@@ -1,5 +1,7 @@
 # LEO 卫星网络切换与任务卸载联合优化（HAN+PDQN）
 
+> 2026-11-11：统一入口升级为协议 v2，两方法共同默认 batch=128、每 4 环境步更新一次，并优化图打包、传输和计算复用。新增 `--benchmark` 短基准，每分钟报告训练速度与剩余时间估计。用户已暂停耗时较长的 v1，选择从零重训；v2 不读取 v1 恢复文件，正式新版结果仍待运行。
+
 > 2026-11-06：新增 [统一协议入口](scripts/run_matched_pdqn_suite.py)，运行设置匹配的 PDQN 与从零联合训练 HAN+PDQN。默认 U30、五种子，验证/测试分离，支持完整回放断点恢复。已有论文数值仍来自冻结版；软件及小规模验证通过不代表正式补充实验完成。详见 [实验待办](docs/EXPERIMENT_TODO.md)。
 
 > 2026-09-08 更新：多用户套件默认写入 `results/multiseed_0907/seed{seed}/u{num_users}`，主方法训练也在 `learned_baselines/han_pdqn` 下。`--with-sca` 可调用独立 SCA 评估并校验后汇总；旧 run-id 路径须用 `--legacy-layout`。完整命令见 [多种子目录说明](docs/MULTISEED_LAYOUT.md)。
@@ -49,15 +51,19 @@ SCA 使用独立评估入口补充，不自动训练或混入旧结果。
 python scripts/run_matched_pdqn_suite.py --dry-run
 # 小规模真实环境验证，写入独立的 smoke_test 子目录
 python scripts/run_matched_pdqn_suite.py --smoke-test --device cpu
+# 先在实际服务器测速度，不启动正式实验、不保存训练权重
+python scripts/run_matched_pdqn_suite.py --benchmark --device cuda
 # 正式 GPU 实验，无需预训练权重
-python scripts/run_matched_pdqn_suite.py --device cuda
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111
 # 中断后恢复完整 replay、优化器、目标网络和随机状态
-python scripts/run_matched_pdqn_suite.py --device cuda --resume
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111 --resume
 # 按预先规划扩展到五规模，校验并复用已完成的 U30
-python scripts/run_matched_pdqn_suite.py --device cuda --extend-suite --user-counts 20 25 30 35 40
+python scripts/run_matched_pdqn_suite.py --device cuda --output-dir results/multiseed_joint_20261111 --extend-suite --user-counts 20 25 30 35 40
 ```
 
-新结果写入 `results/multiseed_joint_20261106/`，保留历史默认路径。默认 batch=512、PDQN 学习率=1e-3、HAN 学习率=1e-4、梯度裁剪=0.5；每 25k 步在固定 5 个验证场景选模型，再在另一组 20 个场景测试。`--microbatch-size 16` 用梯度累积控制显存，实际 batch 仍为 512。恢复文件含原始图 replay，需为其留出内存和磁盘空间。
+默认路径仍为 `results/multiseed_joint_20261106/`，以上命令显式把 v2 另存 `results/multiseed_joint_20261111/`。两方法共同默认 batch=128、microbatch=128、每 4 环境步更新一次；PDQN 学习率=1e-3、HAN 学习率=1e-4、梯度裁剪=0.5。目标网络每 125 次更新同步，约对应 500 环境步；ε 衰减长度按更新频率换算，保持约 37,500 环境步的衰减尺度。验证仍为每 25k 步、5 个固定场景，独立测试仍为另 20 个场景。
+
+`--benchmark` 测真实图样本的单次更新与完整环境步耗时，并报告 GPU 峰值显存；本地只能验证 CPU，服务器 3090 的实际速度需现场测量。显存不足可在基准和正式命令中同时设置 `--microbatch-size 32`，有效 batch 保持 128。降低 batch 和更新频率改变了学习预算，属于新实验协议，不保证性能与 v1 完全一致；只在相同设置下验证实现优化的数值一致性。恢复文件仍含原始图 replay，需留出内存与磁盘空间。
 
 以下为**旧冻结版本入口**；预训练路径须替换为实际存在且版本匹配的检查点。旧检查点不含完整 replay，不是新入口的完整恢复格式。
 
